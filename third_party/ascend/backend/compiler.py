@@ -57,6 +57,7 @@ from triton.backends.ascend.utils import (
     downgrade_llir,
     force_disable_ffts,
     get_cann_version_file_hash,
+    is_compile_on_910_95,
 )
 from triton.backends.ascend.driver import (NPUUtils)
 from triton.backends.compiler import (
@@ -64,7 +65,6 @@ from triton.backends.compiler import (
     GPUTarget,
 )
 from triton.runtime.cache import _base32, get_dump_manager
-from triton.tools.get_ascend_devices import is_compile_on_910_95
 
 
 # TODO: materialize the concrete min shape
@@ -556,6 +556,12 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
                 f"--enable-code-motion={code_motion}",
             ]
 
+        enable_preload = metadata["enable_preload"]
+        if enable_preload is not None:
+            _compile_option_list += [
+                f"--enable-preload={enable_preload}",
+            ]
+
         disable_tightly_coupled_buffer_reuse = metadata["disable_tightly_coupled_buffer_reuse"]
         if disable_tightly_coupled_buffer_reuse:
             _compile_option_list += ["--disable-tightly-coupled-buffer-reuse"]
@@ -563,6 +569,14 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
         _compile_option_list += [
             f"--enable-auto-bind-sub-block={get_auto_bind_sub_block_option(metadata)}",
         ]
+        npu_utils = NPUUtils()
+        if npu_utils.has_device_limit():
+            _compile_option_list += [
+                f"--custom-aic-number={npu_utils.get_aicore_num()}",
+            ]
+            _compile_option_list += [
+                f"--custom-aiv-number={npu_utils.get_aivector_core_num()}",
+            ]
 
         if force_disable_ffts():
             _compile_option_list += ["--disable-ffts"]
@@ -701,6 +715,10 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
         hfusion_enable_multiple_consumer_fusion = metadata["hfusion_enable_multiple_consumer_fusion"]
         if hfusion_enable_multiple_consumer_fusion:
             cmd_list += [f"--hfusion-enable-multiple-consumer-fusion={hfusion_enable_multiple_consumer_fusion}"]
+
+        plan_memory_strategy = metadata["plan_memory_strategy"]
+        if plan_memory_strategy is not None:
+            cmd_list += [f"--plan-memory-strategy={plan_memory_strategy}"]
 
         enable_cross_if_fusion = metadata["enable_cross_if_fusion"]
         if enable_cross_if_fusion:
@@ -985,7 +1003,7 @@ class NPUOptions:
     auto_blockify_size: int = 1
     add_auto_scheduling: bool = False
     enable_auto_blockify: bool = None
-    compile_on_910_95: bool = is_compile_on_910_95
+    compile_on_910_95: bool = None
     optimize_dynamic_offset: bool = False
     enable_mask_fallback_conversion: bool = False
     enable_warp_specialization: bool = False
@@ -1040,14 +1058,14 @@ class NPUOptions:
     disable_auto_inject_block_sync: bool = None
     enable_mixed_cv: bool = None
     enable_vf_fusion: bool = None
-    enable_dynamic_cv_pipeline: bool = True if is_compile_on_910_95 else False
+    enable_dynamic_cv_pipeline: bool = None
     # Gates the cube-loader penetration + cube-for block merge feature. Off by
     # default so existing scenarios are unaffected; opt in per kernel to fuse a
     # matmul's loader for-loop into the matmul's cube compute block.
     enable_cube_block_merge: bool = False
     enable_ub_refine_opt: bool = False
     # Multi-cache insertion optimization: avoid redundant tensor compute in the middle of an `if`.
-    enable_buffer_insert_optimization: bool = False
+    enable_buffer_insert_optimization: bool = True
     hfusion_enable_multiple_consumer_fusion: bool = False
     enable_cross_if_fusion: bool = False
     has_auto_blockify_blacklist_op: Optional[bool] = None
@@ -1055,6 +1073,8 @@ class NPUOptions:
     inter_cache_num: int = None
     load_cache_num: int = None
 
+    # plan memory strategy: "default" (default) or "largest-first"
+    plan_memory_strategy: str = None
     stream: int = None
     parallel_mode: str = "simd"
     force_simt_only: bool = False
@@ -1196,6 +1216,12 @@ class AscendBackend(BaseBackend):
             args = {k: opts[k] for k in NPUOptions.__dataclass_fields__.keys() if k in opts}
             args.setdefault("arch", self.target.arch)
             options = NPUOptions(**args)
+            # Lazy init compile_on_910_95 if not provided
+            if options.compile_on_910_95 is None:
+                object.__setattr__(options, "compile_on_910_95", is_compile_on_910_95())
+            # Lazy init enable_dynamic_cv_pipeline if not provided
+            if options.enable_dynamic_cv_pipeline is None:
+                object.__setattr__(options, "enable_dynamic_cv_pipeline", is_compile_on_910_95())
             # Costmodel path should avoid extra BC<->MLIR conversion stages
             # to keep compile-only autotune routing lightweight and stable.
             if getattr(options, "enable_costmodel_backend", False):
