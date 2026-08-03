@@ -1,0 +1,23 @@
+{
+  "adapter_root": "third_party/ascend/AscendNPU-IR/ub_overflow_model_cpp/data/adapter",
+  "adapters": [
+    {
+      "path": "attn_fwd.ttadapter",
+      "kernel_type": "mixcv"
+    }
+  ],
+  "fixed_bisheng_options": [
+    "--enable-hfusion-compile=true",
+    "--enable-hivm-compile=true",
+    "--enable-triton-kernel-compile=true",
+    "--disable-auto-cv-work-space-manage=false",
+    "--enable-preload=false",
+    "--enable-code-motion=true",
+    "--enable-auto-bind-sub-block=true",
+    "--enable-hivm-auto-storage-align=true",
+    "--limit-auto-multi-buffer-buffer=only-cube",
+    "--enable-hivm-cross-core-gss=true",
+    "--enable-hivm-inject-block-all-sync=false",
+    "--disable-auto-inject-block-sync=false"
+  ]
+}

@@ -67,6 +67,31 @@ from triton.backends.compiler import (
 from triton.runtime.cache import _base32, get_dump_manager
 
 
+_UB_MODEL_RESULT_PREFIX = "BISHENGIR_UB_MODEL_RESULT "
+
+
+def _parse_ub_model_result(stderr: bytes):
+    if not stderr:
+        return None
+
+    result = None
+    for line in stderr.decode("utf-8", errors="replace").splitlines():
+        if not line.startswith(_UB_MODEL_RESULT_PREFIX):
+            continue
+        result = {}
+        for item in line[len(_UB_MODEL_RESULT_PREFIX):].split():
+            key, separator, value = item.partition("=")
+            if not separator:
+                continue
+            if value in ("true", "false"):
+                result[key] = value == "true"
+            elif value.isdecimal():
+                result[key] = int(value)
+            else:
+                result[key] = value
+    return result
+
+
 # TODO: materialize the concrete min shape
 def min_dot_size(target: GPUTarget):
     return lambda lhsType, rhsType: (1, 1, 1)
@@ -935,6 +960,11 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
                 bishengir_hivm_opt,
                 "--enable-triton-kernel-compile=true",
             ]
+            if opt.enable_ub_overflow_prediction:
+                _compile_option_list += [
+                    "--enable-ub-overflow-prediction=true",
+                    f"--prune-predicted-ub-overflow={opt.prune_predicted_ub_overflow}",
+                ]
 
         _compile_option_list += ["--mlir-print-ir-after-failure"]
         _compile_option_list += ["--mlir-print-stacktrace-on-diagnostic"]
@@ -958,6 +988,10 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
 
         if opt.debug:
             _save_npuir_debug_output(ret.stdout, ret.stderr, tmpdir, metadata["hash"])
+
+        ub_model_result = _parse_ub_model_result(ret.stderr)
+        if ub_model_result is not None:
+            metadata["ub_model_result"] = ub_model_result
 
         stdout_str = ret.stdout.decode('utf-8') if ret.stdout else ''
         match = re.search(r'UB\s+size\s*=\s*(\d+)\s*bits', stdout_str)
@@ -1033,6 +1067,8 @@ class NPUOptions:
     vf_fusion_mode: str = None
     enable_ubuf_saving: bool = None
     enable_preload: bool = None
+    enable_ub_overflow_prediction: bool = False
+    prune_predicted_ub_overflow: bool = False
     enable_auto_bind_sub_block: bool = None
     disable_tightly_coupled_buffer_reuse: bool = False
     enable_select_analysis: bool = True
@@ -1109,6 +1145,9 @@ class NPUOptions:
     superblock_factor: int = 0
 
     def __post_init__(self):
+        if self.prune_predicted_ub_overflow and not self.enable_ub_overflow_prediction:
+            raise ValueError("prune_predicted_ub_overflow requires enable_ub_overflow_prediction")
+
         # Parse compile_mode and set related fields
         if self.compile_mode == "simd":
             object.__setattr__(self, "parallel_mode", "simd")

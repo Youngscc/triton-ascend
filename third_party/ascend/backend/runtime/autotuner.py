@@ -224,12 +224,38 @@ class AutoTilingTuner(Autotuner):
         do_bench=None,
         auto_profile_dir=None,
         hints=None,
+        compile_only=False,
+        compile_only_options=None,
     ):
         """
         :param key: a list of argument names whose runtime value changes invalidate the autotune cache
             and trigger re-evaluation of candidate configs.
         :type key: List[str]
         """
+        self.compile_only = compile_only
+        self.compile_only_options = compile_only_options
+        if self.compile_only:
+            if self.compile_only_options is None:
+                raise ValueError("compile_only_options is required when compile_only=True")
+            super().__init__(
+                fn,
+                arg_names,
+                configs,
+                key,
+                reset_to_zero,
+                restore_value,
+                pre_hook,
+                post_hook,
+                prune_configs_by,
+                warmup,
+                rep,
+                use_cuda_graph,
+                do_bench,
+            )
+            self.best_config = None
+            self.configs_timings = {}
+            return
+
         _validate_user_hints(fn, hints)
         reserved_hints, config_hints = _split_hints(hints)
         config_hints = _normalize_config_hints(
@@ -2021,6 +2047,11 @@ class AutoTilingTuner(Autotuner):
         return key
 
     def run(self, *args, **kwargs):
+        if self.compile_only:
+            from .adapter_compile_only import run_adapter_compile_only
+
+            return run_adapter_compile_only(self.compile_only_options)
+
         key = self.generate_key_and_configs(*args, **kwargs)
         cache_miss = key not in self.cache
         if self.is_simt_mode and kwargs.get('simt_stack_limit', None) is None:
@@ -2489,7 +2520,8 @@ class AutoTilingTuner(Autotuner):
 
 
 def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None, pre_hook=None, post_hook=None,
-             warmup=None, rep=None, use_cuda_graph=False, do_bench=None, *, auto_prof_dir=None, hints=None):
+             warmup=None, rep=None, use_cuda_graph=False, do_bench=None, *, auto_prof_dir=None, hints=None,
+             compile_only=False, compile_only_options=None):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
 
@@ -2547,13 +2579,17 @@ def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_va
         If this parameter is None or the best config is retrieved from cache, the profiling process will be ignored.
     :type auto_prof_dir: str
     :param hints: a dict of autotune hint auguments passed to AutoTilingTuner.
+    :param compile_only: route explicitly configured adapter inputs through BiSheng to local PlanMemory without
+        device benchmarking or kernel launch. Defaults to False and does not change normal autotune behavior.
+    :param compile_only_options: Adapter compile-only inputs and execution options. Required when compile_only=True.
     """
 
     def decorator(fn):
         return AutoTilingTuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, pre_hook=pre_hook,
                                post_hook=post_hook, prune_configs_by=prune_configs_by, warmup=warmup, rep=rep,
                                use_cuda_graph=use_cuda_graph, do_bench=do_bench, auto_profile_dir=auto_prof_dir,
-                               hints=hints)
+                               hints=hints, compile_only=compile_only,
+                               compile_only_options=compile_only_options)
 
     return decorator
 
