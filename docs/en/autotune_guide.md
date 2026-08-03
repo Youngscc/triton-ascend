@@ -286,7 +286,7 @@ matmul_kernel[grid](a, b, M, N, K)
 This means:
 
 - tiling-related parameters are still generated automatically by Triton-Ascend;
-- non-tiling parameters or compilation parameters are provided explicitly by the user through `hints`;
+- non-tiling parameters or compilation parameters (such as GROUP_SIZE_M and multibuffer) are provided explicitly by the user through `hints`;
 - autotune evaluates the combined search space of both parts.
 
 ## Summary

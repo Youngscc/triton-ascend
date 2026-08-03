@@ -224,7 +224,6 @@ Linear_Algebra_Ops/dot_scaled.md
 |[not](./Logical_Ops/not.md) | 逻辑非操作 |
 |[logical_and](./Logical_Ops/logical_and.md)| 用于对两个张量进行逐元素逻辑与运算 |
 |[logical_or](./Logical_Ops/logical_or.md)| 用于对两个张量进行逐元素逻辑或运算 |
-|[not](./Logical_Ops/not.md) | 将tensor的值按位取反。 |
 |[invert](./Logical_Ops/invert.md) | 将tensor每个值按比特位进行翻转。 |
 |[lshift](./Logical_Ops/lshift.md) | 根据给定的位移数将tensor张量进行左移位。 |
 |[rshift](./Logical_Ops/rshift.md) | 根据给定的位移数将tensor张量进行右移位。 |

@@ -4,7 +4,7 @@
 
 ### 一、自动合并Grid分核优化原则
 
-部分场景下，Triton算子从GPU迁移到NPU。由于体系结构的差异，基于GPU开发的Triton算子Grid分核数较多。在NPU上执行时，无法一次全部调度，多轮下发导致下发时延过大，影响算子性能。基于NPU优Triton算子过程中，需要首先检查Grid分核数。当分核数较大时，使用TRITON_ALL_BLOCKS_PARALLEL环境变量提升算子执行性能。
+部分场景下，Triton算子从GPU迁移到NPU。由于体系结构的差异，基于GPU开发的Triton算子Grid分核数较多。在NPU上执行时，无法一次全部调度，多轮下发导致下发时延过大，影响算子性能。基于NPU优化Triton算子过程中，需要首先检查Grid分核数。当分核数较大时，使用TRITON_ALL_BLOCKS_PARALLEL环境变量提升算子执行性能。
 
 ## 指令并行优化
 
@@ -45,6 +45,7 @@ Triton算子在NPU上执行时，为了提升性能，NPU底层提供multi buffe
         M: tl.constexpr,                # len of the vector
         BLOCK_SIZE: tl.constexpr
     ):
+        N = BLOCK_SIZE
         idx = tl.arange(0, N)
         mask = idx < M
     -   data = tl.load(input + idx, mask = mask) # 或者指定other=-1等值

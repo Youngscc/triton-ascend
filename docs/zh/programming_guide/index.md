@@ -127,7 +127,7 @@ def add_kernel(x_ptr,
 ```python
 # conv_state = tensor([2048, 3], bfloat16)
 conv_state = tl.load(conv_state_ptr + conv_batch_offs * conv_batch_stride + doffs * 3 + tl.arange(0, 2048 * 3)) # 当成1D tensor load，此时由于numel对齐，不会自动补齐。
-conv_state_T = conv_state.reshape(128, 16 * 3).trans().reshape(16, 3 * 128).trans().reshape(3 * 2048,) # 长轴(2048)裂出一根对齐轴(16)借给短轴(3)，从而让两个轴都对齐
+conv_state_T = conv_state.reshape(128, 16 * 3).transpose().reshape(16, 3 * 128).transpose().reshape(3 * 2048,) # 长轴(2048)裂出一根对齐轴(16)借给短轴(3)，从而让两个轴都对齐
 ```
 
 ### 先将数据搬运到UB上，再从UB中select目标值
@@ -136,7 +136,7 @@ conv_state_T = conv_state.reshape(128, 16 * 3).trans().reshape(16, 3 * 128).tran
 
 - 示例
 
-```diff
+```python
 @triton.jit
 def pick_kernel(
         x_ptr,

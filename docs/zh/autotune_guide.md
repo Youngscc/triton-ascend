@@ -284,7 +284,7 @@ matmul_kernel[grid](a, b, M, N, K)
 这种方式的含义是：
 
 - Tiling 相关参数仍然由 Triton-Ascend 自动生成；
-- 非 Tiling 参数或编译参数由用户通过 `hints` 显式给出候选集合；
+- 非 Tiling 参数或编译参数（如 `GROUP_SIZE_M` 和 `multibuffer`）由用户通过 `hints` 显式给出候选集合；
 - autotune 会对两部分组合后的配置空间做评估。
 
 ## 小结

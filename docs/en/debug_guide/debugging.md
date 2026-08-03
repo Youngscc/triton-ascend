@@ -159,7 +159,7 @@ Go to the dump path and view **kernel.ttir.mlir** and **kernel.ttadapter.mlir**.
 - TTIR example
 The **kernel.ttir.mlir** file is as follows:
 
-```text
+```mlir
 module {
   tt.func public @add_kernel(%arg0: !tt.ptr<f32> {tt.divisibility = 16 : i32} , %arg1: !tt.ptr<f32> {tt.divisibility = 16 : i32} , %arg2: !tt.ptr<f32> {tt.divisibility = 16 : i32} , %arg3: i32 {tt.divisibility = 16 : i32} ) attributes {noinline = false} {
     %cst = arith.constant dense<0.000000e+00> : tensor<1024xf32> loc(#loc1)
@@ -201,7 +201,7 @@ The TTIR layer is still based on the native abstraction (such as `!tt.ptr<f32>`,
 - TTAdapter IR example
 The **kernel.ttadapter.mlir** file is as follows:
 
-```text
+```mlir
 module {
   func.func @add_kernel(%arg0: memref<?xi8>, %arg1: memref<?xi8>, %arg2: memref<?xf32> {tt.divisibility = 16 : i32, tt.tensor_kind = 0 : i32}, %arg3: memref<?xf32> {tt.divisibility = 16 : i32, tt.tensor_kind = 0 : i32}, %arg4: memref<?xf32> {tt.divisibility = 16 : i32, tt.tensor_kind = 1 : i32}, %arg5: i32 {tt.divisibility = 16 : i32}, %arg6: i32, %arg7: i32, %arg8: i32, %arg9: i32, %arg10: i32, %arg11: i32) attributes {SyncBlockLockArgIdx = 0 : i64, WorkspaceArgIdx = 1 : i64, global_kernel = "local", mix_mode = "aiv", parallel_mode = "simd"} {
     %cst = arith.constant 0.000000e+00 : f32
