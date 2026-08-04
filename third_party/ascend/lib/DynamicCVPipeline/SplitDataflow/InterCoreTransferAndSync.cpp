@@ -475,18 +475,17 @@ InterCoreTransferAndSyncPass::createTransferAllocs(
 
     builder.setInsertionPointAfter(prodEndOp);
   } else {
-    builder.setInsertionPoint(consStartOp);
+    builder.setInsertionPointAfter(prodEndOp);
     consAllocOp = builder.create<memref::AllocOp>(loc, allocType);
     auto markConsOp = annotateTightlyCoupledBuffer(builder, consAllocOp, loc);
 
-    builder.setInsertionPointAfter(prodEndOp);
     prodAllocOp = builder.create<memref::AllocOp>(loc, allocType);
     auto markProdOp = annotateTightlyCoupledBuffer(builder, prodAllocOp, loc);
 
     attachTransferTags(prodAllocOp, prodBlockId, prodTag, transferIndex);
-    attachTransferTags(consAllocOp, consBlockId, consTag, transferIndex);
+    attachTransferTags(consAllocOp, prodBlockId, consTag, transferIndex);
     attachTransferTags(markProdOp, prodBlockId, prodTag, transferIndex);
-    attachTransferTags(markConsOp, consBlockId, consTag, transferIndex);
+    attachTransferTags(markConsOp, prodBlockId, consTag, transferIndex);
   }
   markAllocIndex++;
 
@@ -1338,6 +1337,7 @@ LogicalResult InterCoreTransferAndSyncPass::handleCubeToVector(
   LOG_DEBUG("[newProdEnd]" << *prodEnd << "\n");
   LOG_DEBUG("[newConsStart]" << *consStart << "\n");
   LOG_DEBUG("[newConsEnd]" << *consEnd << "\n");
+
   Operation *consumedDataOp = nullptr;
   Operation *transferOp =
       insertCubeToVectorTransfer(builder, srcValue, prodEnd, consStart, loc,
@@ -1351,6 +1351,7 @@ LogicalResult InterCoreTransferAndSyncPass::handleCubeToVector(
 
   bool isStoreDirectly =
       isStoreDirectlyInUserChain(consumedDataOp->getResult(0));
+
   insertInterCoreSync(builder, transferOp, newConsStart, newConsEnd, flagId,
                       loc, transferIndex, flagIdReuseManager, consumedDataOp,
                       isStoreDirectly);
