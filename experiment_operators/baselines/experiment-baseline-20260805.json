@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "baseline_ref": "experiment-baseline-20260805",
+  "baseline_commit": "the commit containing this manifest; resolve with git rev-list -n 1 experiment-baseline-20260805",
+  "captured_at": "2026-08-05T09:37:29+08:00",
+  "repository": {
+    "branch": "codex/experiment",
+    "remote_branch": "origin/experiment",
+    "parent_commit": "5c4f58725",
+    "ascend_npu_ir_commit": "d4405acb6159d2203889ae4527a735c310da9a3e",
+    "llvm_commit": "c195c1d8c3e5eecf126d38ef8b9fa5869379d97b"
+  },
+  "remote": {
+    "host": "huawei-server",
+    "project": "/home/yuanye/code/triton-ascend",
+    "container": "sgl-sky",
+    "container_image": "swr.cn-southwest-2.myhuaweicloud.com/base_image/dockerhub/lmsysorg/sglang:main-cann9.0.0-a3",
+    "npu_smi": "25.5.1",
+    "python": "3.11.15",
+    "torch": "2.10.0+cpu",
+    "torch_npu": "2.10.0",
+    "preinstalled_triton": "3.2.0"
+  },
+  "toolchain": {
+    "mode": "dev",
+    "bishengir_compile": "1.2.0",
+    "bishengir_sha256": "8e4c7c5a90a39244e50cf76ef50a3e471b2136bd587b955fdbb19e9751cffc15",
+    "hivmc": "0.2.0 (3af4c111df44 2026-04-30)",
+    "bitcode_sha256": {
+      "meta_op.aic.c220.bc": "2d781affc5ae242c67381485194799abd5c359d6b7ea2ff5b46aaff73b50db4b",
+      "meta_op.aiv.c220.bc": "db99653a98d9010704d7460b0195069c1f885635ebcb25642f38201d8a672781",
+      "meta_op.mix.aic.c220.bc": "e21839867600b54c7676e7e05f726bd6c50a45b85cd11a5d9a9411b062396158",
+      "meta_op.mix.aiv.c220.bc": "59ca2beb6422e237faacc8c013039d5a5b9815749ef244520566857c4916af58",
+      "host.bc": "1aa88a6b7d318fe5090666e6430b86560875583bfd331e1edb6cf0a28673b948"
+    }
+  },
+  "candidate_sha256": {
+    "fused_attention.py": "780e5121e95d8aaba6e7f918a86cdf0bfcb025e9f186edb17a2b1a8614c92b36",
+    "unified_attention.py": "36f50e28defb72c1ad337c221c49627b66b9aaf89035f3d4e05514d7a5c4ef22",
+    "hstu_attention.py": "83419cb8d2eb0ab38e9003df4c1b276459b20305d6770bc3a4469a734c0a68e4"
+  },
+  "smoke_tests": [
+    {
+      "operator": "vector_add",
+      "mode": "baseline",
+      "device": 0,
+      "run_id": "20260805-093729-847",
+      "log_sha256": "8bd582bafc5f2d8cf97b86f9e4ac459c3acf55065668271216740270dbfa77d7",
+      "result": "passed",
+      "max_difference": 0.0
+    },
+    {
+      "operator": "fused_attention",
+      "mode": "dev",
+      "device": 1,
+      "run_id": "20260805-093730-864",
+      "log_sha256": "0e98c72930f5cc7775c8affd79316639f02eebf7cc22a33822ebff5c3071d3ed",
+      "result": "passed",
+      "warmup": 1,
+      "active": 1,
+      "latency_ms": 2.921699
+    },
+    {
+      "operator": "unified_attention",
+      "mode": "dev",
+      "device": 2,
+      "run_id": "20260805-093730-874",
+      "log_sha256": "0b5943f4b37aa7a22dca4acd14bb065bfdfe7989e213ee8895ce486912723548",
+      "result": "passed",
+      "warmup": 1,
+      "active": 1,
+      "latency_ms": 0.302726
+    },
+    {
+      "operator": "hstu_attention_fwd",
+      "mode": "dev",
+      "device": 3,
+      "run_id": "20260805-093731-888",
+      "log_sha256": "a56c4f2d7ed1c7c740b936ccba2fcd5190b844e864cd4ed3edca1ad28b482ec1",
+      "result": "passed",
+      "warmup": 1,
+      "active": 1,
+      "latency_ms": 0.048741
+    }
+  ],
+  "notes": [
+    "Smoke-test latencies validate the pipeline and are not formal experiment measurements.",
+    "Raw logs are stored outside Git under .codex-remote/logs/ using the run IDs above.",
+    "The extracted_stages source archive and all build/cache directories are excluded from this baseline commit."
+  ]
+}
