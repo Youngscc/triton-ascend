@@ -51,11 +51,11 @@ NPU 与 GPU 的计算单元和支持的数据类型存在差异。迁移后应�
 
 ```diff
 import torch
-+import torch_npu  # 【新增】导入昇腾NPU PyTorch适配库，提供NPU设备支持
+import torch_npu  # 【新增】导入昇腾NPU PyTorch适配库，提供NPU设备支持
 import triton
 import triton.language as tl
 
--DEVICE = triton.runtime.driver.active.get_active_torch_device()  # 【删除】GPU设备自动获取，NPU无需此逻辑
+# DEVICE = triton.runtime.driver.active.get_active_torch_device()  # 【删除】GPU设备自动获取，NPU无需此逻辑
 
 @triton.jit
 def add_kernel(
@@ -76,7 +76,7 @@ def add_kernel(
 
 def add(x: torch.Tensor, y: torch.Tensor):
     output = torch.empty_like(x)
--    assert x.device == DEVICE and y.device == DEVICE and output.device == DEVICE  # 【删除】GPU设备一致性校验，NPU无需显式断言
+    # assert x.device == DEVICE and y.device == DEVICE and output.device == DEVICE  # 【删除】GPU设备一致性校验，NPU无需显式断言
     n_elements = output.numel()
     grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']), )
     add_kernel[grid](x, y, output, n_elements, BLOCK_SIZE=1024)
@@ -84,10 +84,10 @@ def add(x: torch.Tensor, y: torch.Tensor):
 
 torch.manual_seed(0)
 size = 98432
--x = torch.rand(size, device='cuda')  # 【删除】GPU设备指定
-+x = torch.rand(size, device='npu')  # 【修改】指定为昇腾NPU设备
--y = torch.rand(size, device='cuda')  # 【删除】GPU设备指定
-+y = torch.rand(size, device='npu')  # 【修改】指定为昇腾NPU设备
+# x = torch.rand(size, device='cuda')  # 【删除】GPU设备指定
+x = torch.rand(size, device='npu')  # 【修改】指定为昇腾NPU设备
+# y = torch.rand(size, device='cuda')  # 【删除】GPU设备指定
+y = torch.rand(size, device='npu')  # 【修改】指定为昇腾NPU设备
 output_torch = x + y
 output_triton = add(x, y)
 print(output_torch)
@@ -123,11 +123,11 @@ def test_npu_1d(shape, dtype):
     XS = shape[0]
     YS = 4
 
--    x = torch.randint(-1000, 1000, (XS,), dtype=dtype, device='cuda')
-+    x = torch.randint(-1000, 1000, (XS,), dtype=dtype, device='npu')
+    # x = torch.randint(-1000, 1000, (XS,), dtype=dtype, device='cuda')
+    x = torch.randint(-1000, 1000, (XS,), dtype=dtype, device='npu')
     std = torch.broadcast_to(x, (YS, XS))
--    output = torch.randint(-1000, 1000, (YS, XS), dtype=dtype, device='cuda')
-+    output = torch.randint(-1000, 1000, (YS, XS), dtype=dtype, device='npu')
+    # output = torch.randint(-1000, 1000, (YS, XS), dtype=dtype, device='cuda')
+    output = torch.randint(-1000, 1000, (YS, XS), dtype=dtype, device='npu')
     fn_broadcast_1d[(1,)](output, x, XS, YS)
     assert torch.allclose(std, output)
 ```
