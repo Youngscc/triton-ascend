@@ -8,6 +8,11 @@ change-history narration such as what an older command did, what was replaced,
 or how the current procedure differs from a previous version. Git history is
 the source for that information.
 
+Keep the standard experiment procedure in
+`experiment_operators/EXECUTION_GUIDE.md` free of A5-specific commands. Keep
+the complete A5/Ascend 950 procedure in
+`experiment_operators/A5_EXECUTION_GUIDE.md`.
+
 ## Repositories and paths
 
 - Local checkout: `/Users/YokeLove/huawei/triton-ascend`

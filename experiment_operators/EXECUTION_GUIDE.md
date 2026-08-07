@@ -16,7 +16,7 @@ depth(1..4) × multibuffer_num(1..4) × vf_merge_level(0..2)
 ```bash
 mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
-ssh-keygen -t ed25519 -C "huawei-server-A5" -f "$HOME/.ssh/id_ed25519"
+ssh-keygen -t ed25519 -C "huawei-server" -f "$HOME/.ssh/id_ed25519"
 ```
 
 编辑本地的 `~/.ssh/config`：
@@ -30,7 +30,7 @@ ${EDITOR:-vi} "$HOME/.ssh/config"
 加入以下固定配置：
 
 ```sshconfig
-Host huawei-server-A5
+Host huawei-server
     HostName 192.168.25.217
     User root
     Port 22
@@ -41,7 +41,7 @@ Host huawei-server-A5
 
 ```bash
 chmod 600 "$HOME/.ssh/config"
-ssh huawei-server-A5
+ssh huawei-server
 ```
 
 随后进入本地仓库，一次性编辑配置文件：
@@ -57,155 +57,16 @@ LOCAL_PROJECT="/你的本地绝对路径/triton-ascend"
 REMOTE_PROJECT="/服务器上的绝对路径/triton-ascend"
 ```
 
-`REMOTE_HOST="huawei-server-A5"` 和 `REMOTE_CONTAINER="yy-npu"` 已在文件中固定，
+`REMOTE_HOST="huawei-server"` 和 `REMOTE_CONTAINER="sgl-sky"` 已在文件中固定，
 不需要用户修改或 `export`。所有远程实验脚本都会自动读取这个配置文件，
 两个路径只需修改一次。检查配置：
 
 ```bash
 source tools/remote_experiment/config.sh
 test -d "$LOCAL_PROJECT" || echo "本地路径不存在: $LOCAL_PROJECT"
-ssh huawei-server-A5 "test -d '$REMOTE_PROJECT'" || \
+ssh huawei-server "test -d '$REMOTE_PROJECT'" || \
   echo "服务器路径尚不存在，首次 sync.sh 会创建它"
 ```
-
-## A5 环境下需要特别执行的命令
-
-本项目把 A5/Ascend 950 系列识别为 `Ascend910_95*` 或 `Ascend950*`，并走
-A5 NPUIR 编译路径。代码同步、结果回拉和汇总命令与前文相同；A5 上不同的
-地方主要是先确认芯片、激活该机器的 CANN，以及使用带 A5 开关的编译器。
-
-### 1. 创建只允许使用物理 7 卡的 A5 容器
-
-本实验根据宿主机能力使用 Ascend Docker Runtime 或显式设备挂载，只授权
-物理 7 卡。容器不使用 `--privileged`。
-
-先在本地同步源码，然后登录 A5 服务器并进入服务器仓库：
-
-```bash
-./tools/remote_experiment/sync.sh
-source tools/remote_experiment/config.sh
-ssh -t huawei-server-A5 "cd '$REMOTE_PROJECT' && exec bash"
-```
-
-在 A5 服务器宿主机执行环境配置脚本：
-
-```bash
-./tools/remote_experiment/setup-a5-container.sh
-```
-
-脚本检查 NPU，拉取缺失的官方镜像
-`quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11`，并根据宿主机状态选择
-Ascend Docker Runtime 或 A5 显式设备挂载。它创建 `yy-npu`，只授权物理
-7 卡，并在 `.codex-remote/venv` 中安装当前仓库。已经存在的容器不会被删除或
-覆盖。
-
-虚拟环境放在 `$REMOTE_PROJECT/.codex-remote/venv`，不会修改镜像的全局
-Python，也不会被普通 `sync.sh` 覆盖。远程执行脚本和
-`run_all_sweeps.sh` 默认都会使用这个环境。
-
-容器内物理 7 卡编号为逻辑设备 `0`。
-
-因此算子代码应继续使用 `npu:0` 或当前默认设备，**不要在容器里使用
-`npu:7`**。`npu-smi info` 可能通过管理设备显示宿主机的其他卡，但这不代表
-其他 `/dev/davinci*` 计算设备已经授权给容器。
-
-### 2. 进入 A5 容器并确认芯片和设备隔离
-
-在本地仓库根目录执行：
-
-```bash
-source tools/remote_experiment/config.sh
-ssh -t huawei-server-A5 \
-  "docker exec -it yy-npu bash -c 'cd \"$REMOTE_PROJECT\" && exec bash'"
-```
-
-以下命令在 **A5 容器内**执行：
-
-```bash
-if [[ -f /usr/local/Ascend/cann/set_env.sh ]]; then
-  source /usr/local/Ascend/cann/set_env.sh
-else
-  source /usr/local/Ascend/ascend-toolkit/set_env.sh
-fi
-npu-smi info
-python3 - <<'PY'
-import acl
-import torch
-import torch_npu
-
-soc = acl.get_soc_name()
-print("CANN SoC name:", soc)
-assert soc.startswith(("Ascend910_95", "Ascend950")), \
-    f"当前设备没有被识别为 A5/Ascend 950: {soc}"
-print("visible NPU count:", torch.npu.device_count())
-assert torch.npu.device_count() == 1, "容器没有被限制为单卡"
-torch.npu.set_device(0)
-print("logical npu:0:", torch.npu.get_device_name(0))
-PY
-ls -l /dev/davinci* /dev/davinci_manager /dev/hisi_hdc
-```
-
-预期 PyTorch 只报告一个逻辑设备 `npu:0`。如果报告多个可用 NPU，说明设备
-隔离配置不正确，不要开始正式实验。
-
-判断 A5 编译路径时以 `acl.get_soc_name()` 的输出为准，不要仅凭服务器名称
-判断。正常的板上执行不需要手工设置 `TRITON_ASCEND_ARCH`；项目会从 CANN
-运行时读取实际 SoC。只有离线编译时才考虑使用准确的
-`TRITON_ASCEND_ARCH=Ascend910_95xx`，不能照抄其他 A5 型号。
-
-### 3. 在 A5 上重建自编译 BishengIR
-
-修改过 AscendNPU-IR C++，或者第一次在 A5 环境部署自编译工具链时，退出
-容器并在**本地仓库根目录**执行：
-
-```bash
-./tools/remote_experiment/sync.sh
-./tools/remote_experiment/rebuild-compiler.sh
-```
-
-`rebuild-compiler.sh` 已固定包含 A5 所需的 CMake 开关：
-
-```text
--DLLVM_BSPUB_DAVINCI_BISHENGIR_A5=ON
--DLLVM_BSPUB_DAVINCI_BISHENGIR_A5_NPUIR=ON
-```
-
-不要在 A5 上改用只为 A2/A3 构建的 `bishengir-compile`，也不要只复制一个
-编译器可执行文件；它旁边对应版本的 `lib/meta_op.*.bc` 和 `host.bc` 也必须
-存在。上述重建脚本会准备这套配套文件。
-
-### 4. A5 冒烟验证
-
-先从本地启动项目自带的 Vector Add，确认 Python、当前源码、A5 编译器和
-NPU 运行时能够连通：
-
-```bash
-REMOTE_MODE=dev ./tools/remote_experiment/run.sh \
-  python -u third_party/ascend/tutorials/01-vector-add.py
-./tools/remote_experiment/logs.sh latest
-```
-
-Vector Add 通过后，在 A5 容器内用一个配置做实验控制器冒烟测试：
-
-```bash
-if [[ -f /usr/local/Ascend/cann/set_env.sh ]]; then
-  source /usr/local/Ascend/cann/set_env.sh
-else
-  source /usr/local/Ascend/ascend-toolkit/set_env.sh
-fi
-SWEEP_LIMIT=1 SWEEP_WARMUP=1 SWEEP_ACTIVE=1 \
-  ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
-```
-
-确认该行完成正确性、NPU latency 和非零 UB 记录之后，再执行正式 48 组：
-
-```bash
-./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
-```
-
-不要把 A2/A3 上生成的 Triton cache 或 NPU 二进制复制到 A5 复用。
-`run_all_sweeps.sh` 会为正式运行创建新的 cache；A5 的性能和 UB 结果也应当
-作为独立设备数据保存，不能与 A2/A3 数据直接合并比较。
 
 ## 1. 本地代码同步到服务器
 
@@ -239,8 +100,8 @@ RSYNC_DELETE=1 ./tools/remote_experiment/sync.sh
 
 ```bash
 source tools/remote_experiment/config.sh
-ssh -t huawei-server-A5 \
-  "docker exec -it yy-npu bash -c 'cd \"$REMOTE_PROJECT\" && exec bash'"
+ssh -t huawei-server \
+  "docker exec -it sgl-sky bash -c 'cd \"$REMOTE_PROJECT\" && exec bash'"
 ```
 
 执行一个算子的完整 48 组实验：
@@ -396,7 +257,7 @@ python3 experiment_operators/summarize_latest.py
 
 ## 6. 不进入容器，使用后台任务运行
 
-也可以从本地直接同步并在 `yy-npu` 中启动后台任务：
+也可以从本地直接同步并在 `sgl-sky` 中启动后台任务：
 
 ```bash
 ./tools/remote_experiment/sync.sh

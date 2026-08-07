@@ -13,14 +13,10 @@ REMOTE_PROJECT="/server/path/to/triton-ascend"
 The SSH alias `huawei-server-A5` and container name `yy-npu` are fixed by the
 workflow and do not need to be exported.
 
-See `experiment_operators/EXECUTION_GUIDE.md` for initial SSH-key and
-`~/.ssh/config` setup. The container must be able to see `REMOTE_PROJECT` at
-the same absolute path as the server host (the current container mounts the
-server's `/home`).
-
-For an A5/Ascend 950 machine, also follow the guide's dedicated A5 section.
-It covers CANN SoC verification, the A5 NPUIR compiler build, a Vector Add
-gate, and the single-configuration smoke test required before a formal sweep.
+Use `experiment_operators/EXECUTION_GUIDE.md` for the standard experiment
+procedure. Use `experiment_operators/A5_EXECUTION_GUIDE.md` for the dedicated
+A5/Ascend 950 single-card environment. The container must see
+`REMOTE_PROJECT` at the same absolute path as the server host.
 
 From the repository root:
 
