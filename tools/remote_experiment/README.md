@@ -18,6 +18,10 @@ See `experiment_operators/EXECUTION_GUIDE.md` for initial SSH-key and
 the same absolute path as the server host (the current container mounts the
 server's `/home`).
 
+For an A5/Ascend 950 machine, also follow the guide's dedicated A5 section.
+It covers CANN SoC verification, the A5 NPUIR compiler build, a Vector Add
+gate, and the single-configuration smoke test required before a formal sweep.
+
 From the repository root:
 
 ```bash
@@ -57,7 +61,7 @@ under the target that are absent locally.
 The isolated development environment is selected only with
 `REMOTE_MODE=dev`:
 
-- Python environment: the path selected by `REMOTE_VENV`
+- Python environment: `.codex-remote/venv` below `REMOTE_PROJECT` by default
 - Python and Ascend backend: this repository's `python/` tree
 - BishengIR compiler: `.codex-remote/ascendnpu-ir-build-explicit/bin`
 - Triton cache: `.codex-remote/triton-cache`

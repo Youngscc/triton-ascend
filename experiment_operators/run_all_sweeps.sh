@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
-DEV_VENV="${TRITON_ASCEND_DEV_VENV:-/home/yuanye/.venvs/triton-ascend-dev}"
+DEV_VENV="${TRITON_ASCEND_DEV_VENV:-$PROJECT_ROOT/.codex-remote/venv}"
 DEV_COMPILER_DIR="${TRITON_ASCEND_COMPILER_DIR:-$PROJECT_ROOT/.codex-remote/ascendnpu-ir-build-explicit/bin}"
 WARMUP="${SWEEP_WARMUP:-5}"
 ACTIVE="${SWEEP_ACTIVE:-30}"

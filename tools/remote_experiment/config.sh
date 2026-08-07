@@ -14,7 +14,7 @@ if [[ "$LOCAL_PROJECT" == /CHANGE_ME/* || "$REMOTE_PROJECT" == /CHANGE_ME/* ]]; 
   return 2 2>/dev/null || exit 2
 fi
 REMOTE_LOG_DIR="${REMOTE_LOG_DIR:-$REMOTE_PROJECT/.codex-remote/logs}"
-REMOTE_VENV="${REMOTE_VENV:-/home/yuanye/.venvs/triton-ascend-dev}"
+REMOTE_VENV="${REMOTE_VENV:-$REMOTE_PROJECT/.codex-remote/venv}"
 REMOTE_COMPILER_BUILD="${REMOTE_COMPILER_BUILD:-$REMOTE_PROJECT/.codex-remote/ascendnpu-ir-build-explicit}"
 REMOTE_TRITON_CACHE="${REMOTE_TRITON_CACHE:-$REMOTE_PROJECT/.codex-remote/triton-cache}"
 # Keep the shared container unchanged by default. The current source tree and
