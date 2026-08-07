@@ -16,9 +16,9 @@ the source for that information.
 - Experiment branch: local `codex/experiment`, tracking `origin/experiment`
 - Server SSH alias: `huawei-server-A5`
 - Server project path: `/home/yuanye/code/triton-ascend`
-- Experiment container: `sgl-sky`
+- Experiment container: `yy-npu`
 
-The `sgl-sky` container bind-mounts the host's `/home`, so the server project
+The `yy-npu` container bind-mounts the host's `/home`, so the server project
 path is also the project path inside the container. Do not use `docker cp` for
 normal source synchronization.
 
@@ -34,7 +34,7 @@ REMOTE_MODE=dev ./tools/remote_experiment/run.sh \
 ./tools/remote_experiment/logs.sh latest
 ```
 
-`run.sh` starts a detached command inside `sgl-sky` and prints a run ID, log
+`run.sh` starts a detached command inside `yy-npu` and prints a run ID, log
 path, and host PID. `logs.sh` follows the newest log with `tail -F`; pressing
 Ctrl-C only stops log following. The container is intentionally invoked with
 non-login `bash -c`; this image's `bash -lc` initialization can block.

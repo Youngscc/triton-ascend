@@ -30,7 +30,7 @@ An operator is promoted from candidate to accepted only when all of these hold:
    `tl.dot` plus vector/reduction work), so CVPipeline and VF merge are relevant.
 3. A deterministic launcher, input factory, and correctness oracle exist or
    can be supplied with a small wrapper without rewriting the kernel algorithm.
-4. Baseline execution passes correctness in `sgl-sky`.
+4. Baseline execution passes correctness in `yy-npu`.
 5. None of the three experiment values is hard-coded in a way that overrides
    the requested configuration.
 6. In development mode, each axis is proven to reach the intended compiler
@@ -133,7 +133,7 @@ remaining configurations indefinitely.
 
 ### Run one complete operator sweep inside the container
 
-When already attached to the `sgl-sky` container, pass exactly one Python
+When already attached to the `yy-npu` container, pass exactly one Python
 operator wrapper to the repository-root entry point. It activates the
 development venv, selects the repository-built BishengIR compiler, creates a
 fresh Triton cache, and runs all 48 configurations for that operator:

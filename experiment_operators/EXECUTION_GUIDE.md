@@ -57,7 +57,7 @@ LOCAL_PROJECT="/你的本地绝对路径/triton-ascend"
 REMOTE_PROJECT="/服务器上的绝对路径/triton-ascend"
 ```
 
-`REMOTE_HOST="huawei-server-A5"` 和 `REMOTE_CONTAINER="sgl-sky"` 已在文件中固定，
+`REMOTE_HOST="huawei-server-A5"` 和 `REMOTE_CONTAINER="yy-npu"` 已在文件中固定，
 不需要用户修改或 `export`。所有远程实验脚本都会自动读取这个配置文件，
 两个路径只需修改一次。检查配置：
 
@@ -76,8 +76,8 @@ A5 NPUIR 编译路径。代码同步、结果回拉和汇总命令与前文相�
 
 ### 1. 创建只允许使用物理 7 卡的 A5 容器
 
-本实验使用 Ascend Docker Runtime 自动挂载 A5 所需设备，并通过
-`ASCEND_VISIBLE_DEVICES=7` 只授权物理 7 卡。容器不使用 `--privileged`。
+本实验根据宿主机能力使用 Ascend Docker Runtime 或显式设备挂载，只授权
+物理 7 卡。容器不使用 `--privileged`。
 
 先在本地同步源码，然后登录 A5 服务器并进入服务器仓库：
 
@@ -87,74 +87,23 @@ source tools/remote_experiment/config.sh
 ssh -t huawei-server-A5 "cd '$REMOTE_PROJECT' && exec bash"
 ```
 
-以下构建和创建命令均在 **A5 服务器宿主机**执行，基础镜像使用 950 标签：
+在 A5 服务器宿主机执行环境配置脚本：
 
 ```bash
-docker build \
-  --build-arg CANN_BASE_IMAGE=quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11 \
-  -t yokelove-npu:latest \
-  -f docker/Dockerfile .
+./tools/remote_experiment/setup-a5-container.sh
 ```
 
-创建容器前确认物理 7 卡可用，并确认 Docker 已注册 `ascend` runtime：
-
-```bash
-npu-smi info
-docker info --format '{{json .Runtimes}}' | grep -q '"ascend"' \
-  && echo '[可用] Ascend Docker Runtime' \
-  || echo '[缺少] Ascend Docker Runtime'
-```
-
-如果 runtime 检查输出 `[缺少]`，需要由服务器管理员安装与当前 A5 驱动配套的
-Ascend Docker Runtime，然后再创建容器。
-
-如果 `docker ps -a --format '{{.Names}}'` 已经列出 `sgl-sky`，先确认该容器
-是否满足配置要求；仅在容器不存在时执行以下创建命令：
-
-```bash
-docker run -u 0 -dit \
-  --name=sgl-sky \
-  --runtime=ascend \
-  --net=host \
-  --workdir="$PWD" \
-  --shm-size=512g \
-  --security-opt seccomp=unconfined \
-  -e ASCEND_VISIBLE_DEVICES=7 \
-  -v /usr/local/dcmi:/usr/local/dcmi \
-  -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
-  -v /usr/local/sbin/npu-smi:/usr/local/sbin/npu-smi \
-  -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
-  -v /home:/home \
-  -v /etc/ascend_install.info:/etc/ascend_install.info \
-  yokelove-npu:latest \
-  /bin/bash
-```
-
-容器创建后，为当前仓库建立隔离的开发 Python 环境。以下命令仍在 A5 宿主机
-执行；`docker exec` 后面的命令在新容器中运行：
-
-```bash
-docker exec -u root -it sgl-sky /bin/bash
-# docker run 已把服务器仓库设置为容器工作目录；先确认当前位置。
-pwd
-if [[ -f /usr/local/Ascend/cann/set_env.sh ]]; then
-  source /usr/local/Ascend/cann/set_env.sh
-else
-  source /usr/local/Ascend/ascend-toolkit/set_env.sh
-fi
-python3 -m venv --system-site-packages .codex-remote/venv
-source .codex-remote/venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e .
-```
+脚本检查 NPU，拉取缺失的官方镜像
+`quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11`，并根据宿主机状态选择
+Ascend Docker Runtime 或 A5 显式设备挂载。它创建 `yy-npu`，只授权物理
+7 卡，并在 `.codex-remote/venv` 中安装当前仓库。已经存在的容器不会被删除或
+覆盖。
 
 虚拟环境放在 `$REMOTE_PROJECT/.codex-remote/venv`，不会修改镜像的全局
 Python，也不会被普通 `sync.sh` 覆盖。远程执行脚本和
 `run_all_sweeps.sh` 默认都会使用这个环境。
 
-Ascend Docker Runtime 根据 `ASCEND_VISIBLE_DEVICES=7` 挂载 A5 所需设备、
-配置 device cgroup，并只向容器进程授权物理 7 卡。容器内该卡编号为逻辑设备
-`0`。
+容器内物理 7 卡编号为逻辑设备 `0`。
 
 因此算子代码应继续使用 `npu:0` 或当前默认设备，**不要在容器里使用
 `npu:7`**。`npu-smi info` 可能通过管理设备显示宿主机的其他卡，但这不代表
@@ -167,7 +116,7 @@ Ascend Docker Runtime 根据 `ASCEND_VISIBLE_DEVICES=7` 挂载 A5 所需设备�
 ```bash
 source tools/remote_experiment/config.sh
 ssh -t huawei-server-A5 \
-  "docker exec -it sgl-sky bash -c 'cd \"$REMOTE_PROJECT\" && exec bash'"
+  "docker exec -it yy-npu bash -c 'cd \"$REMOTE_PROJECT\" && exec bash'"
 ```
 
 以下命令在 **A5 容器内**执行：
@@ -291,7 +240,7 @@ RSYNC_DELETE=1 ./tools/remote_experiment/sync.sh
 ```bash
 source tools/remote_experiment/config.sh
 ssh -t huawei-server-A5 \
-  "docker exec -it sgl-sky bash -c 'cd \"$REMOTE_PROJECT\" && exec bash'"
+  "docker exec -it yy-npu bash -c 'cd \"$REMOTE_PROJECT\" && exec bash'"
 ```
 
 执行一个算子的完整 48 组实验：
@@ -447,7 +396,7 @@ python3 experiment_operators/summarize_latest.py
 
 ## 6. 不进入容器，使用后台任务运行
 
-也可以从本地直接同步并在 `sgl-sky` 中启动后台任务：
+也可以从本地直接同步并在 `yy-npu` 中启动后台任务：
 
 ```bash
 ./tools/remote_experiment/sync.sh
