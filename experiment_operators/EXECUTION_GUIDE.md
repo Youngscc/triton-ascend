@@ -16,7 +16,7 @@ depth(1..4) × multibuffer_num(1..4) × vf_merge_level(0..2)
 ```bash
 mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
-ssh-keygen -t ed25519 -C "huawei-server" -f "$HOME/.ssh/id_ed25519"
+ssh-keygen -t ed25519 -C "huawei-server-A5" -f "$HOME/.ssh/id_ed25519"
 ```
 
 编辑本地的 `~/.ssh/config`：
@@ -30,7 +30,7 @@ ${EDITOR:-vi} "$HOME/.ssh/config"
 加入以下固定配置：
 
 ```sshconfig
-Host huawei-server
+Host huawei-server-A5
     HostName 192.168.25.217
     User root
     Port 22
@@ -41,7 +41,7 @@ Host huawei-server
 
 ```bash
 chmod 600 "$HOME/.ssh/config"
-ssh huawei-server
+ssh huawei-server-A5
 ```
 
 随后进入本地仓库，一次性编辑配置文件：
@@ -57,14 +57,14 @@ LOCAL_PROJECT="/你的本地绝对路径/triton-ascend"
 REMOTE_PROJECT="/服务器上的绝对路径/triton-ascend"
 ```
 
-`REMOTE_HOST="huawei-server"` 和 `REMOTE_CONTAINER="sgl-sky"` 已在文件中固定，
+`REMOTE_HOST="huawei-server-A5"` 和 `REMOTE_CONTAINER="sgl-sky"` 已在文件中固定，
 不需要用户修改或 `export`。所有远程实验脚本都会自动读取这个配置文件，
 两个路径只需修改一次。检查配置：
 
 ```bash
 source tools/remote_experiment/config.sh
 test -d "$LOCAL_PROJECT" || echo "本地路径不存在: $LOCAL_PROJECT"
-ssh huawei-server "test -d '$REMOTE_PROJECT'" || \
+ssh huawei-server-A5 "test -d '$REMOTE_PROJECT'" || \
   echo "服务器路径尚不存在，首次 sync.sh 会创建它"
 ```
 
@@ -86,7 +86,7 @@ A5 NPUIR 编译路径。代码同步、结果回拉和汇总命令与前文相�
 ```bash
 ./tools/remote_experiment/sync.sh
 source tools/remote_experiment/config.sh
-ssh -t huawei-server "cd '$REMOTE_PROJECT' && exec bash"
+ssh -t huawei-server-A5 "cd '$REMOTE_PROJECT' && exec bash"
 ```
 
 以下构建和创建命令均在 **A5 服务器宿主机**执行。镜像必须选择 950，而不是
@@ -95,17 +95,26 @@ ssh -t huawei-server "cd '$REMOTE_PROJECT' && exec bash"
 ```bash
 docker build \
   --build-arg CANN_BASE_IMAGE=quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11 \
-  -t triton-ascend-a5-dev:latest \
+  -t yokelove-npu:latest \
   -f docker/Dockerfile .
 ```
 
-创建容器前先确认物理 7 卡和三个管理设备存在：
+创建容器前先用 `npu-smi info` 确认物理 7 卡可用，再查看 Docker 需要挂载的
+设备节点。下面的检查只打印结果，即使设备缺失也不会退出当前终端：
 
 ```bash
+npu-smi info
 for dev in /dev/davinci7 /dev/davinci_manager /dev/devmm_svm /dev/hisi_hdc; do
-  test -e "$dev" || { echo "缺少设备: $dev" >&2; exit 1; }
+  if [[ -e "$dev" ]]; then
+    echo "[存在] $dev"
+  else
+    echo "[缺少] $dev"
+  fi
 done
 ```
+
+如果出现 `[缺少]`，不要执行后面的 `docker run`，先检查宿主机驱动和设备号。
+旧命令中的 `exit 1` 不适合直接粘贴到登录 shell，因为它会关闭当前 shell。
 
 如果 `docker ps -a --format '{{.Names}}'` 已经列出 `sgl-sky`，不要重复执行
 下面的创建命令；应先确认旧容器是否可以继续使用。新建容器的最终命令为：
@@ -128,7 +137,7 @@ docker run -u 0 -dit \
   -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
   -v /home:/home \
   -v /etc/ascend_install.info:/etc/ascend_install.info \
-  triton-ascend-a5-dev:latest \
+  yokelove-npu:latest \
   /bin/bash
 ```
 
@@ -175,7 +184,7 @@ Python，也不会被普通 `sync.sh` 覆盖。远程执行脚本和
 
 ```bash
 source tools/remote_experiment/config.sh
-ssh -t huawei-server \
+ssh -t huawei-server-A5 \
   "docker exec -it sgl-sky bash -c 'cd \"$REMOTE_PROJECT\" && exec bash'"
 ```
 
@@ -300,7 +309,7 @@ RSYNC_DELETE=1 ./tools/remote_experiment/sync.sh
 
 ```bash
 source tools/remote_experiment/config.sh
-ssh -t huawei-server \
+ssh -t huawei-server-A5 \
   "docker exec -it sgl-sky bash -c 'cd \"$REMOTE_PROJECT\" && exec bash'"
 ```
 

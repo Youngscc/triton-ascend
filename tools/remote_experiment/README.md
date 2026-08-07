@@ -10,7 +10,7 @@ LOCAL_PROJECT="/local/path/to/triton-ascend"
 REMOTE_PROJECT="/server/path/to/triton-ascend"
 ```
 
-The SSH alias `huawei-server` and container name `sgl-sky` are fixed by the
+The SSH alias `huawei-server-A5` and container name `sgl-sky` are fixed by the
 workflow and do not need to be exported.
 
 See `experiment_operators/EXECUTION_GUIDE.md` for initial SSH-key and

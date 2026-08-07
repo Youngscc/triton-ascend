@@ -1,6 +1,6 @@
 # Project memory: local Codex + remote Ascend experiments
 
-This repository is developed locally and experiments run on `huawei-server`.
+This repository is developed locally and experiments run on `huawei-server-A5`.
 Read this file before changing the remote-experiment workflow.
 
 ## Repositories and paths
@@ -9,7 +9,7 @@ Read this file before changing the remote-experiment workflow.
 - Fork remote: `origin` (`Youngscc/triton-ascend`)
 - Source remote: `upstream` (`triton-lang/triton-ascend`)
 - Experiment branch: local `codex/experiment`, tracking `origin/experiment`
-- Server SSH alias: `huawei-server`
+- Server SSH alias: `huawei-server-A5`
 - Server project path: `/home/yuanye/code/triton-ascend`
 - Experiment container: `sgl-sky`
 

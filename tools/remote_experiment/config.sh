@@ -5,7 +5,7 @@ LOCAL_PROJECT="/CHANGE_ME/local/triton-ascend"
 REMOTE_PROJECT="/CHANGE_ME/server/triton-ascend"
 
 # These names are part of the fixed experiment environment.
-REMOTE_HOST="huawei-server"
+REMOTE_HOST="huawei-server-A5"
 REMOTE_CONTAINER="sgl-sky"
 
 if [[ "$LOCAL_PROJECT" == /CHANGE_ME/* || "$REMOTE_PROJECT" == /CHANGE_ME/* ]]; then
