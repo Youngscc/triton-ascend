@@ -419,6 +419,7 @@ def _status(
 
 
 class AdapterCompileExecutor:
+
     def __init__(self, options: CompileOnlyOptions):
         self.options = options
 
@@ -675,23 +676,36 @@ def _summarize(rows: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
                 if path:
                     decision_paths[path] = decision_paths.get(path, 0) + 1
         summaries[mode] = {
-            "candidates": len(mode_rows),
-            "candidate_wall_sum_ns": sum(timings),
-            "candidate_wall_min_ns": min(timings),
-            "candidate_wall_median_ns": _percentile(timings, 0.5),
-            "candidate_wall_p95_ns": _percentile(timings, 0.95),
-            "candidate_wall_max_ns": max(timings),
-            "model_ns_sum": sum(int(row.get("model_ns") or 0) for row in mode_rows),
-            "fallback_count": sum(int(row.get("fallback_count") or 0) for row in mode_rows),
-            "reached_plan_memory": sum(bool(row.get("reached_plan_memory")) for row in mode_rows),
-            "statuses": statuses,
-            "model_attempt_decision_paths": decision_paths,
-            "non_overflow_fast_path_attempts": decision_paths.get("non_overflow_upper_bound", 0),
-            "candidates_with_non_overflow_fast_path": sum(
-                any(attempt.get("decision_path") == "non_overflow_upper_bound"
+            "candidates":
+            len(mode_rows),
+            "candidate_wall_sum_ns":
+            sum(timings),
+            "candidate_wall_min_ns":
+            min(timings),
+            "candidate_wall_median_ns":
+            _percentile(timings, 0.5),
+            "candidate_wall_p95_ns":
+            _percentile(timings, 0.95),
+            "candidate_wall_max_ns":
+            max(timings),
+            "model_ns_sum":
+            sum(int(row.get("model_ns") or 0) for row in mode_rows),
+            "fallback_count":
+            sum(int(row.get("fallback_count") or 0) for row in mode_rows),
+            "reached_plan_memory":
+            sum(bool(row.get("reached_plan_memory")) for row in mode_rows),
+            "statuses":
+            statuses,
+            "model_attempt_decision_paths":
+            decision_paths,
+            "non_overflow_fast_path_attempts":
+            decision_paths.get("non_overflow_upper_bound", 0),
+            "candidates_with_non_overflow_fast_path":
+            sum(
+                any(
+                    attempt.get("decision_path") == "non_overflow_upper_bound"
                     for attempt in row.get("attempt_results", ()))
-                for row in mode_rows
-            ),
+                for row in mode_rows),
         }
         repeat_totals: dict[int, int] = {}
         for row in mode_rows:
@@ -753,7 +767,8 @@ def _experiment_metrics(rows: Iterable[dict[str, Any]]) -> dict[str, dict[str, A
         metrics["no_overflow_model_overhead"] = {
             "definition": "paired shadow minus baseline for successful candidate runs without overflow or fallback",
             "paired_candidate_runs": len(no_overflow_keys),
-            "unique_input_configurations": len({key[:2] for key in no_overflow_keys}),
+            "unique_input_configurations": len({key[:2]
+                                                for key in no_overflow_keys}),
             "baseline_wall_sum_ns": baseline_ns,
             "shadow_wall_sum_ns": shadow_ns,
             "total_overhead_ns": delta_ns,
@@ -770,7 +785,8 @@ def _experiment_metrics(rows: Iterable[dict[str, Any]]) -> dict[str, dict[str, A
         metrics["overall_prune_speedup"] = {
             "definition": "paired baseline minus prune across all candidate runs",
             "paired_candidate_runs": len(all_keys),
-            "unique_input_configurations": len({key[:2] for key in all_keys}),
+            "unique_input_configurations": len({key[:2]
+                                                for key in all_keys}),
             "baseline_wall_sum_ns": baseline_ns,
             "prune_wall_sum_ns": prune_ns,
             "time_saved_ns": saved_ns,

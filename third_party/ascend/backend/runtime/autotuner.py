@@ -2588,8 +2588,7 @@ def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_va
         return AutoTilingTuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, pre_hook=pre_hook,
                                post_hook=post_hook, prune_configs_by=prune_configs_by, warmup=warmup, rep=rep,
                                use_cuda_graph=use_cuda_graph, do_bench=do_bench, auto_profile_dir=auto_prof_dir,
-                               hints=hints, compile_only=compile_only,
-                               compile_only_options=compile_only_options)
+                               hints=hints, compile_only=compile_only, compile_only_options=compile_only_options)
 
     return decorator
 

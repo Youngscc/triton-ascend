@@ -245,6 +245,7 @@ def test_checkpoint_repairs_a_partial_final_line(tmp_path):
 
 
 def test_experiment_metrics_use_paired_candidates_and_exclude_overflow():
+
     def row(mode, config_id, wall_ns, overflow=False):
         return {
             "adapter_digest": "adapter",
