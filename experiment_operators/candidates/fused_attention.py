@@ -34,6 +34,22 @@ Extra Credits:
 
 import os
 
+
+def _experiment_compile_options():
+    options = {}
+    depth = os.getenv("EXPERIMENT_DEPTH")
+    if depth is not None:
+        depth = int(depth)
+        options["cv_pipeline_depth"] = depth
+        options["cv_num_buffers"] = depth
+    multibuffer_num = os.getenv("EXPERIMENT_MULTIBUFFER_NUM")
+    if multibuffer_num is not None:
+        options["multibuffer_num"] = int(multibuffer_num)
+    merge = os.getenv("EXPERIMENT_VF_MERGE_LEVEL")
+    if merge is not None:
+        options["vf_merge_level"] = int(merge)
+    return options
+
 import torch
 import torch_npu
 import triton
@@ -280,7 +296,7 @@ class _attention(torch.autograd.Function):
 
         out = torch.empty_like(q)
         stage = 3 if causal else 1
-        extra_kern_args = {}
+        extra_kern_args = _experiment_compile_options()
 
         # Number of NPU cores (adjust based on hardware)
         num_cores = 20

@@ -2,9 +2,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=tools/remote_experiment/config.sh
 source "$SCRIPT_DIR/config.sh"
+PROJECT_ROOT="$LOCAL_PROJECT"
+
+if [[ ! -d "$PROJECT_ROOT" ]]; then
+  printf 'LOCAL_PROJECT does not exist: %s\n' "$PROJECT_ROOT" >&2
+  exit 2
+fi
 
 ssh "$REMOTE_HOST" "mkdir -p -- '$REMOTE_PROJECT'"
 

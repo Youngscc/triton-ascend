@@ -1,9 +1,22 @@
 # Local-to-server experiment loop
 
-This uses the SSH alias `huawei-server`, synchronizes the project into
-`/home/yuanye/code/triton-ascend`, and runs commands inside the existing
-`sgl-sky` container. The container mounts `/home`, so the same project path is
-visible inside and outside the container.
+This uses an SSH alias, synchronizes a local checkout into a configurable
+server checkout, and runs commands inside an existing experiment container.
+Configure the two checkout paths once by editing
+`tools/remote_experiment/config.sh`:
+
+```bash
+LOCAL_PROJECT="/local/path/to/triton-ascend"
+REMOTE_PROJECT="/server/path/to/triton-ascend"
+```
+
+The SSH alias `huawei-server` and container name `sgl-sky` are fixed by the
+workflow and do not need to be exported.
+
+See `experiment_operators/EXECUTION_GUIDE.md` for initial SSH-key and
+`~/.ssh/config` setup. The container must be able to see `REMOTE_PROJECT` at
+the same absolute path as the server host (the current container mounts the
+server's `/home`).
 
 From the repository root:
 
@@ -25,6 +38,17 @@ REMOTE_MODE=dev ./tools/remote_experiment/run.sh \
 ./tools/remote_experiment/logs.sh 20260803-180000-12345
 ```
 
+Pull generated result directories from the server back into the local checkout:
+
+```bash
+./tools/remote_experiment/pull-results.sh
+```
+
+This uses `--progress` for compatibility with the older macOS rsync. Set
+`PULL_SESSION_LOGS=1` to pull `.codex-remote/logs` too. Result pulling is
+additive by default; `RSYNC_DELETE=1` makes the server result directory an exact
+local mirror and may remove local-only historical results.
+
 The default sync is additive. To mirror local deletions on the server, use
 `RSYNC_DELETE=1 ./tools/remote_experiment/sync.sh`; this removes remote files
 under the target that are absent locally.
@@ -33,7 +57,7 @@ under the target that are absent locally.
 The isolated development environment is selected only with
 `REMOTE_MODE=dev`:
 
-- Python environment: `/home/yuanye/.venvs/triton-ascend-dev`
+- Python environment: the path selected by `REMOTE_VENV`
 - Python and Ascend backend: this repository's `python/` tree
 - BishengIR compiler: `.codex-remote/ascendnpu-ir-build-explicit/bin`
 - Triton cache: `.codex-remote/triton-cache`

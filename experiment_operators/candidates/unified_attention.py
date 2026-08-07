@@ -22,6 +22,22 @@ QDTYPES = [None]
 NUM_BLOCKS = [32768, 2048]
 
 
+def _experiment_compile_options():
+    options = {}
+    depth = os.getenv("EXPERIMENT_DEPTH")
+    if depth is not None:
+        depth = int(depth)
+        options["cv_pipeline_depth"] = depth
+        options["cv_num_buffers"] = depth
+    multibuffer_num = os.getenv("EXPERIMENT_MULTIBUFFER_NUM")
+    if multibuffer_num is not None:
+        options["multibuffer_num"] = int(multibuffer_num)
+    merge = os.getenv("EXPERIMENT_VF_MERGE_LEVEL")
+    if merge is not None:
+        options["vf_merge_level"] = int(merge)
+    return options
+
+
 @triton.jit
 def cdiv_fn(x, y):
     return (x + y - 1) // y
@@ -320,6 +336,7 @@ def unified_attention(
         query_start_len_ptr=cu_seqlens_q,
         num_seqs=num_seqs,
         BLOCK_M=BLOCK_M,
+        **_experiment_compile_options(),
     )
 
 

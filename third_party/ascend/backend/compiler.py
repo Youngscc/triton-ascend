@@ -27,6 +27,7 @@ import re
 import shlex
 import subprocess
 import tempfile
+import time
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -625,10 +626,20 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
             _compile_option_list += \
                 [f"--limit-auto-multi-buffer-only-for-local-buffer={limit_auto_multi_buffer_only_for_local_buffer}"]
 
-        set_workspace_multibuffer = metadata["set_workspace_multibuffer"]
+        cv_pipeline_depth = metadata.get("cv_pipeline_depth")
+        if cv_pipeline_depth is not None:
+            _compile_option_list += \
+                [f"--set-cv-pipeline-depth={cv_pipeline_depth}"]
+        cv_num_buffers = metadata.get("cv_num_buffers")
+        set_workspace_multibuffer = (cv_num_buffers if cv_num_buffers is not None
+                                     else metadata["set_workspace_multibuffer"])
         if set_workspace_multibuffer is not None:
             _compile_option_list += \
                 [f"--set-workspace-multibuffer={set_workspace_multibuffer}"]
+        multibuffer_num = metadata.get("multibuffer_num")
+        if multibuffer_num is not None:
+            _compile_option_list += \
+                [f"--set-local-multibuffer={multibuffer_num}"]
 
         auto_multi_buffer = metadata["limit_auto_multi_buffer_of_local_buffer"]
         if auto_multi_buffer is None:
@@ -734,21 +745,23 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
         if opt.debug or os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
             print(f"[DEBUG] cmd_list: {' '.join(cmd_list)}")
 
+        compile_started = time.perf_counter()
         try:
             ret = subprocess.run(cmd_list, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
         except subprocess.CalledProcessError as e:
             if opt.debug:
                 _save_npuir_debug_output(e.stdout, e.stderr, tmpdir, metadata["hash"])
             raise
+        metadata["compile_time_ms"] = (time.perf_counter() - compile_started) * 1000
 
         if opt.debug:
             _save_npuir_debug_output(ret.stdout, ret.stderr, tmpdir, metadata["hash"])
 
         stdout_str = ret.stdout.decode('utf-8') if ret.stdout else ''
-        match = re.search(r'UB\s+size\s*=\s*(\d+)\s*bits', stdout_str)
-        if match:
+        matches = re.findall(r'UB\s+size\s*=\s*(\d+)\s*bits', stdout_str)
+        if matches:
             # get the ub bits of triton kernel from bisheng for inductor autotune using
-            metadata["required_ub_bits"] = int(match.group(1))
+            metadata["required_ub_bits"] = max(map(int, matches))
 
         if not Path(bin_path).exists():
             error_msg = ret.stderr.decode('utf-8') if ret.stderr else ''
@@ -893,10 +906,24 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
             _compile_option_list += \
                 [f"--limit-auto-multi-buffer-only-for-local-buffer={limit_auto_multi_buffer_only_for_local_buffer}"]
 
-        set_workspace_multibuffer = metadata["set_workspace_multibuffer"]
+        cv_pipeline_depth = metadata.get("cv_pipeline_depth")
+        if cv_pipeline_depth is not None:
+            _compile_option_list += \
+                [f"--set-cv-pipeline-depth={cv_pipeline_depth}"]
+        cv_num_buffers = metadata.get("cv_num_buffers")
+        set_workspace_multibuffer = (cv_num_buffers if cv_num_buffers is not None
+                                     else metadata["set_workspace_multibuffer"])
         if set_workspace_multibuffer is not None:
             _compile_option_list += \
                 [f"--set-workspace-multibuffer={set_workspace_multibuffer}"]
+        multibuffer_num = metadata.get("multibuffer_num")
+        if multibuffer_num is not None:
+            _compile_option_list += \
+                [f"--set-local-multibuffer={multibuffer_num}"]
+
+        vf_merge_level = metadata["vf_merge_level"]
+        if vf_merge_level is not None:
+            _compile_option_list += [f"--enable-vf-merge-level={vf_merge_level}"]
 
         tile_mix_vector_loop = metadata["tile_mix_vector_loop"]
         if tile_mix_vector_loop is not None:
@@ -956,20 +983,22 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
         elif os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
             print(f"[DEBUG] cmd_list: {' '.join(cmd_list)}")
 
+        compile_started = time.perf_counter()
         try:
             ret = subprocess.run(cmd_list, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
         except subprocess.CalledProcessError as e:
             if opt.debug:
                 _save_npuir_debug_output(e.stdout, e.stderr, tmpdir, metadata["hash"])
             raise
+        metadata["compile_time_ms"] = (time.perf_counter() - compile_started) * 1000
 
         if opt.debug:
             _save_npuir_debug_output(ret.stdout, ret.stderr, tmpdir, metadata["hash"])
 
         stdout_str = ret.stdout.decode('utf-8') if ret.stdout else ''
-        match = re.search(r'UB\s+size\s*=\s*(\d+)\s*bits', stdout_str)
-        if match:
-            metadata["required_ub_bits"] = int(match.group(1))
+        matches = re.findall(r'UB\s+size\s*=\s*(\d+)\s*bits', stdout_str)
+        if matches:
+            metadata["required_ub_bits"] = max(map(int, matches))
 
         if not Path(bin_path).exists():
             error_msg = ret.stderr.decode('utf-8') if ret.stderr else ''
@@ -1023,7 +1052,6 @@ class NPUOptions:
     instrumentation_mode: str = ""
     allow_fp8e4nv: bool = False
     auto_tile_and_bind_subblock: bool = True
-    vf_merge_level: int = 0
     supported_fp8_dtypes: Tuple[str] = ("fp8e5", "fp8e4b15", "fp8e4nv", "fp8e4b8", "fp8e5b16")
     deprecated_fp8_dtypes: Tuple[str] = ()
     vf_merge_level: int = 1
@@ -1059,6 +1087,16 @@ class NPUOptions:
     limit_auto_multi_buffer_only_for_local_buffer: bool = None
     limit_auto_multi_buffer_of_local_buffer: str = None
     limit_auto_multi_buffer_buffer: str = None
+    # Number of versions used by the ordinary local-buffer path in
+    # MarkMultiBuffer.  This does not control CVPipeline workspace buffers or
+    # the dedicated preload-local value (currently 4).
+    multibuffer_num: int = None
+    # Explicit experiment controls.  The legacy
+    # set_workspace_multibuffer option controlled both values; keep it below
+    # as a compatibility alias, but never let it silently disagree with the
+    # independent buffer-count option.
+    cv_pipeline_depth: int = None
+    cv_num_buffers: int = None
     set_workspace_multibuffer: int = None
     tile_mix_vector_loop: int = None
     tile_mix_cube_loop: int = None
@@ -1119,6 +1157,45 @@ class NPUOptions:
         from triton.backends.ascend import _apply_ascend_patch
 
         _apply_ascend_patch()
+
+        if self.vf_merge_level not in (0, 1, 2):
+            raise ValueError(
+                f"vf_merge_level must be one of 0, 1, or 2; got {self.vf_merge_level}"
+            )
+
+        if self.multibuffer_num is not None and self.multibuffer_num not in (1, 2, 3, 4):
+            raise ValueError(
+                "multibuffer_num must be one of 1, 2, 3, or 4; "
+                f"got {self.multibuffer_num}"
+            )
+
+        if self.cv_num_buffers is not None and self.set_workspace_multibuffer is not None:
+            if self.cv_num_buffers != self.set_workspace_multibuffer:
+                raise ValueError(
+                    "cv_num_buffers and legacy set_workspace_multibuffer "
+                    f"disagree ({self.cv_num_buffers} != {self.set_workspace_multibuffer})"
+                )
+
+        depth = self.cv_pipeline_depth
+        num_buffers = (self.cv_num_buffers if self.cv_num_buffers is not None
+                       else self.set_workspace_multibuffer)
+        if depth is not None or num_buffers is not None:
+            if depth is None:
+                depth = num_buffers
+            if num_buffers is None:
+                num_buffers = depth
+            if depth not in (1, 2, 3, 4):
+                raise ValueError(
+                    f"cv_pipeline_depth must be one of 1, 2, 3, or 4; got {depth}"
+                )
+            if not 1 <= num_buffers <= depth:
+                raise ValueError(
+                    "cv_num_buffers must satisfy 1 <= cv_num_buffers <= "
+                    f"cv_pipeline_depth; got depth={depth}, num_buffers={num_buffers}"
+                )
+            object.__setattr__(self, "cv_pipeline_depth", depth)
+            object.__setattr__(self, "cv_num_buffers", num_buffers)
+            object.__setattr__(self, "set_workspace_multibuffer", num_buffers)
         # Parse compile_mode and set related fields
         if self.compile_mode == "simd":
             object.__setattr__(self, "parallel_mode", "simd")

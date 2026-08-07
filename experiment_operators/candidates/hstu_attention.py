@@ -33,6 +33,22 @@ import triton.language as tl
 import triton.runtime.driver as driver
 import numpy as np
 import torch.nn.functional as F
+
+
+def _experiment_compile_options():
+    options = {}
+    depth = os.getenv("EXPERIMENT_DEPTH")
+    if depth is not None:
+        depth = int(depth)
+        options["cv_pipeline_depth"] = depth
+        options["cv_num_buffers"] = depth
+    multibuffer_num = os.getenv("EXPERIMENT_MULTIBUFFER_NUM")
+    if multibuffer_num is not None:
+        options["multibuffer_num"] = int(multibuffer_num)
+    merge = os.getenv("EXPERIMENT_VF_MERGE_LEVEL")
+    if merge is not None:
+        options["vf_merge_level"] = int(merge)
+    return options
 from triton.backends.ascend.testing import do_bench_npu
 
 DEVICE = "npu"
@@ -613,6 +629,7 @@ def triton_hstu_attention_fwd(
         BLOCK_N,
         mask,
         bias,
+        **_experiment_compile_options(),
     )
     return out
 
