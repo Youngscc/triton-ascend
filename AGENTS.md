@@ -3,6 +3,11 @@
 This repository is developed locally and experiments run on `huawei-server-A5`.
 Read this file before changing the remote-experiment workflow.
 
+Documentation must describe only the current final procedure. Do not retain
+change-history narration such as what an older command did, what was replaced,
+or how the current procedure differs from a previous version. Git history is
+the source for that information.
+
 ## Repositories and paths
 
 - Local checkout: `/Users/YokeLove/huawei/triton-ascend`

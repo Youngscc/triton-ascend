@@ -6,7 +6,7 @@
 depth(1..4) × multibuffer_num(1..4) × vf_merge_level(0..2)
 ```
 
-`run_all_sweeps.sh` 中的 “all” 指一个算子的全部配置，不再表示一次执行所有算子。每次完整运行结束后，脚本会扫描结果目录中已经存在的所有算子，为每个算子选择最新的一次完整结果，并重新生成汇总表和交互式 HTML。
+`run_all_sweeps.sh` 中的 “all” 指一个算子的全部配置。每次完整运行结束后，脚本会扫描结果目录中已经存在的所有算子，为每个算子选择最新的一次完整结果，并重新生成汇总表和交互式 HTML。
 
 ## 0. 首次配置 SSH 和两个项目路径
 
@@ -76,10 +76,8 @@ A5 NPUIR 编译路径。代码同步、结果回拉和汇总命令与前文相�
 
 ### 1. 创建只允许使用物理 7 卡的 A5 容器
 
-安装指南中的通用 `docker run` 示例不能原样用于本实验：它挂载了
-`/dev/davinci0` 到 `/dev/davinci7` 全部设备。部分示例还带有
-`--privileged`；特权容器会削弱设备隔离，因此“只允许使用 7 卡”时必须删掉
-该选项。
+本实验使用 Ascend Docker Runtime 自动挂载 A5 所需设备，并通过
+`ASCEND_VISIBLE_DEVICES=7` 只授权物理 7 卡。容器不使用 `--privileged`。
 
 先在本地同步源码，然后登录 A5 服务器并进入服务器仓库：
 
@@ -89,8 +87,7 @@ source tools/remote_experiment/config.sh
 ssh -t huawei-server-A5 "cd '$REMOTE_PROJECT' && exec bash"
 ```
 
-以下构建和创建命令均在 **A5 服务器宿主机**执行。镜像必须选择 950，而不是
-安装指南示例中的 A3 标签：
+以下构建和创建命令均在 **A5 服务器宿主机**执行，基础镜像使用 950 标签：
 
 ```bash
 docker build \
@@ -99,38 +96,30 @@ docker build \
   -f docker/Dockerfile .
 ```
 
-创建容器前先用 `npu-smi info` 确认物理 7 卡可用，再查看 Docker 需要挂载的
-设备节点。下面的检查只打印结果，即使设备缺失也不会退出当前终端：
+创建容器前确认物理 7 卡可用，并确认 Docker 已注册 `ascend` runtime：
 
 ```bash
 npu-smi info
-for dev in /dev/davinci7 /dev/davinci_manager /dev/devmm_svm /dev/hisi_hdc; do
-  if [[ -e "$dev" ]]; then
-    echo "[存在] $dev"
-  else
-    echo "[缺少] $dev"
-  fi
-done
+docker info --format '{{json .Runtimes}}' | grep -q '"ascend"' \
+  && echo '[可用] Ascend Docker Runtime' \
+  || echo '[缺少] Ascend Docker Runtime'
 ```
 
-如果出现 `[缺少]`，不要执行后面的 `docker run`，先检查宿主机驱动和设备号。
-旧命令中的 `exit 1` 不适合直接粘贴到登录 shell，因为它会关闭当前 shell。
+如果 runtime 检查输出 `[缺少]`，需要由服务器管理员安装与当前 A5 驱动配套的
+Ascend Docker Runtime，然后再创建容器。
 
-如果 `docker ps -a --format '{{.Names}}'` 已经列出 `sgl-sky`，不要重复执行
-下面的创建命令；应先确认旧容器是否可以继续使用。新建容器的最终命令为：
+如果 `docker ps -a --format '{{.Names}}'` 已经列出 `sgl-sky`，先确认该容器
+是否满足配置要求；仅在容器不存在时执行以下创建命令：
 
 ```bash
 docker run -u 0 -dit \
   --name=sgl-sky \
+  --runtime=ascend \
   --net=host \
   --workdir="$PWD" \
   --shm-size=512g \
   --security-opt seccomp=unconfined \
-  --device=/dev/davinci7:/dev/davinci7:rwm \
-  --device=/dev/davinci_manager:/dev/davinci_manager:rwm \
-  --device=/dev/devmm_svm:/dev/devmm_svm:rwm \
-  --device=/dev/hisi_hdc:/dev/hisi_hdc:rwm \
-  -e ASCEND_RT_VISIBLE_DEVICES=7 \
+  -e ASCEND_VISIBLE_DEVICES=7 \
   -v /usr/local/dcmi:/usr/local/dcmi \
   -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
   -v /usr/local/sbin/npu-smi:/usr/local/sbin/npu-smi \
@@ -163,20 +152,13 @@ python -m pip install -e .
 Python，也不会被普通 `sync.sh` 覆盖。远程执行脚本和
 `run_all_sweeps.sh` 默认都会使用这个环境。
 
-这里使用两层限制：
-
-- Docker 只挂载 `/dev/davinci7`，其他计算卡设备节点不会进入容器；
-- `ASCEND_RT_VISIBLE_DEVICES=7` 只向容器进程暴露物理 7 卡，并把它重编号为
-  逻辑设备 `0`。
+Ascend Docker Runtime 根据 `ASCEND_VISIBLE_DEVICES=7` 挂载 A5 所需设备、
+配置 device cgroup，并只向容器进程授权物理 7 卡。容器内该卡编号为逻辑设备
+`0`。
 
 因此算子代码应继续使用 `npu:0` 或当前默认设备，**不要在容器里使用
 `npu:7`**。`npu-smi info` 可能通过管理设备显示宿主机的其他卡，但这不代表
 其他 `/dev/davinci*` 计算设备已经授权给容器。
-
-如果 A5 主机安装并配置了 Ascend Docker Runtime，也可以用
-`ASCEND_VISIBLE_DEVICES=7` 让该 runtime 自动挂载设备；上述命令采用显式
-`--device`，不依赖主机额外配置 Ascend Docker Runtime，两种挂载方式不要
-混在同一个命令中。
 
 ### 2. 进入 A5 容器并确认芯片和设备隔离
 
@@ -188,7 +170,7 @@ ssh -t huawei-server-A5 \
   "docker exec -it sgl-sky bash -c 'cd \"$REMOTE_PROJECT\" && exec bash'"
 ```
 
-以下命令改为在 **A5 容器内**执行：
+以下命令在 **A5 容器内**执行：
 
 ```bash
 if [[ -f /usr/local/Ascend/cann/set_env.sh ]]; then
@@ -211,12 +193,11 @@ assert torch.npu.device_count() == 1, "容器没有被限制为单卡"
 torch.npu.set_device(0)
 print("logical npu:0:", torch.npu.get_device_name(0))
 PY
-ls -l /dev/davinci* /dev/davinci_manager
+ls -l /dev/davinci* /dev/davinci_manager /dev/hisi_hdc
 ```
 
-预期只有一个计算设备节点 `/dev/davinci7`，而 PyTorch 报告一个逻辑设备
-`npu:0`。如果还能看到 `/dev/davinci0` 到 `/dev/davinci6`，说明容器仍是
-特权容器或挂载参数不正确，不要开始正式实验。
+预期 PyTorch 只报告一个逻辑设备 `npu:0`。如果报告多个可用 NPU，说明设备
+隔离配置不正确，不要开始正式实验。
 
 判断 A5 编译路径时以 `acl.get_soc_name()` 的输出为准，不要仅凭服务器名称
 判断。正常的板上执行不需要手工设置 `TRITON_ASCEND_ARCH`；项目会从 CANN
@@ -348,7 +329,7 @@ SWEEP_LIMIT=2 SWEEP_WARMUP=1 SWEEP_ACTIVE=1 \
   ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
 ```
 
-`SWEEP_LIMIT` 产生的是不完整结果，不会替换 HTML 中该算子此前的完整正式结果。
+`SWEEP_LIMIT` 产生的是不完整结果，不会替换 HTML 中该算子已经存在的完整正式结果。
 
 ### 算子 Python 文件需要满足的接口
 
