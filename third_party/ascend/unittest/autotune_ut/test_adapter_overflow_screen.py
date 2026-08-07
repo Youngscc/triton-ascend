@@ -52,9 +52,7 @@ def test_infer_kernel_type_from_adapter_metadata(tmp_path):
 
 def test_artifacts_only_include_planmemory_confirmed_cases(tmp_path):
     config_ids = [
-        hashlib.sha256(
-            json.dumps(config.values, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
+        hashlib.sha256(json.dumps(config.values, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
         for config in STRESS_CONFIGS
     ]
 
@@ -86,6 +84,5 @@ def test_artifacts_only_include_planmemory_confirmed_cases(tmp_path):
     assert set(by_adapter) == {"positive.ttadapter"}
     assert mismatches == 1
     assert len(json.loads(cases.read_text(encoding="utf-8"))) == 1
-    assert json.loads(manifest.read_text(encoding="utf-8"))["adapters"] == [
-        {"kernel_type": "mixcv", "path": "positive.ttadapter"}
-    ]
+    assert json.loads(
+        manifest.read_text(encoding="utf-8"))["adapters"] == [{"kernel_type": "mixcv", "path": "positive.ttadapter"}]
