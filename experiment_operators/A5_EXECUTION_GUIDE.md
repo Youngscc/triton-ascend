@@ -59,6 +59,78 @@ REMOTE_CONTAINER="yy-npu"
 
 ## 3. 创建并配置容器
 
+### 3.1 宿主机基线
+
+`huawei-server-A5` 使用以下环境：
+
+| 项目 | 取值 |
+| --- | --- |
+| 宿主机用户态 | openEuler |
+| CPU 架构 | `x86_64` / Docker `linux/amd64` |
+| NPU | 8 张 Ascend 950，实验固定使用物理 7 卡 |
+| Docker | 18.09.0，`overlay2` |
+| Docker runtime | `runc`，无 Ascend Docker Runtime |
+| Docker Root 可用空间 | 约 41 GiB |
+| 项目与构建产物 | 保存在 `/home`，使用大容量数据分区 |
+
+宿主机是 openEuler 不要求容器也使用 openEuler。本实验固定使用
+Ubuntu 22.04 用户态的 CANN 基础镜像，容器与宿主机共用 Linux 内核。
+
+在宿主机上确认环境：
+
+```bash
+uname -m
+docker version
+docker info --format 'Storage={{.Driver}} Runtimes={{json .Runtimes}} Root={{.DockerRootDir}}'
+df -h "$(docker info --format '{{.DockerRootDir}}')" /home
+npu-smi info
+ls -l /dev/davinci7 /dev/davinci_manager /dev/hisi_hdc
+```
+
+### 3.2 准备基础镜像
+
+使用以下官方 CANN 基础镜像：
+
+```text
+quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11
+```
+
+不要在该宿主机上使用 `docker/3.2.1-...-950-*/Dockerfile` 构建完整发布
+镜像。CANN、torch-npu、LLVM 构建中间层和 Docker cache 可能耗尽当前仅
+41 GiB 的 Docker Root 空间。容器只承载 CANN 基础环境；当前仓库、Python
+venv、Triton 缓存和自定义 AscendNPU-IR 构建产物均放在挂载的 `/home`
+中。
+
+检查镜像是否已存在：
+
+```bash
+docker image inspect quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11
+```
+
+不存在时拉取：
+
+```bash
+docker pull quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11
+```
+
+如果 A5 上的拉取持续超时，在可正常访问 Quay 且 CPU 架构同为 `x86_64`
+的 Linux 机器上准备离线包：
+
+```bash
+docker pull quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11
+docker save quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11 \
+  | gzip > cann-9.0.0-950-x86_64.tar.gz
+```
+
+将压缩包传到 A5 的 `/home` 大容量分区，然后导入：
+
+```bash
+gzip -dc /home/yuanye/cann-9.0.0-950-x86_64.tar.gz | docker load
+docker image inspect quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11
+```
+
+### 3.3 创建容器
+
 登录 A5 服务器宿主机并进入服务器仓库：
 
 ```bash
@@ -76,11 +148,12 @@ ssh -t huawei-server-A5 "cd '$REMOTE_PROJECT' && exec bash"
 
 1. 使用 `npu-smi info` 检查宿主机 NPU；
 2. 拉取缺失的官方 CANN 950 镜像；
-3. 根据宿主机能力选择 Ascend Docker Runtime 或显式设备挂载；
+3. 在当前只有 `runc` 的宿主机上显式挂载 NPU 设备节点；
 4. 创建不带 `--privileged` 的 `yy-npu`；
 5. 只授权物理 7 卡；
-6. 在 `.codex-remote/venv` 创建项目隔离环境并安装当前仓库；
-7. 验证容器内只有一个逻辑设备 `npu:0`。
+6. 将宿主机 `/home` 原位挂载到容器；
+7. 在 `.codex-remote/venv` 创建项目隔离环境并安装当前仓库；
+8. 验证容器内只有一个逻辑设备 `npu:0`。
 
 已经存在的 `yy-npu` 不会被脚本删除或覆盖。脚本会输出启动、进入或人工重建
 容器所需的命令。
