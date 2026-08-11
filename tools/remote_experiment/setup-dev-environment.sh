@@ -46,28 +46,33 @@ if [[ -z "$repo_git_dir" ]]; then
   exit 1
 fi
 unset checkout_git_dir project_top repo_top
-test -x "$REMOTE_HOST_CLANG" || {
-  printf 'missing host compiler: %s\n' "$REMOTE_HOST_CLANG" >&2
+test -x "$REMOTE_HOST_CC" || {
+  printf 'missing host C compiler: %s\n' "${REMOTE_HOST_CC:-not found}" >&2
   exit 1
 }
-test -x "$REMOTE_HOST_CLANGXX" || {
-  printf 'missing host compiler: %s\n' "$REMOTE_HOST_CLANGXX" >&2
-  exit 1
-}
-test -x "$REMOTE_HOST_LLD" || {
-  printf 'missing host linker: %s\n' "$REMOTE_HOST_LLD" >&2
-  exit 1
-}
-test -x "$REMOTE_HOST_LD_LLD" || {
-  printf 'missing host linker: %s\n' "$REMOTE_HOST_LD_LLD" >&2
+test -x "$REMOTE_HOST_CXX" || {
+  printf 'missing host C++ compiler: %s\n' "${REMOTE_HOST_CXX:-not found}" >&2
   exit 1
 }
 
-mkdir -p "$host_toolchain"
-ln -sfn "$REMOTE_HOST_CLANG" "$host_toolchain/clang"
-ln -sfn "$REMOTE_HOST_CLANGXX" "$host_toolchain/clang++"
-ln -sfn "$REMOTE_HOST_LLD" "$host_toolchain/lld"
-ln -sfn "$REMOTE_HOST_LD_LLD" "$host_toolchain/ld.lld"
+if "$REMOTE_HOST_CC" --version 2>/dev/null | head -1 | grep -qi clang \
+  && [[ -x "$REMOTE_HOST_LLD" && -x "$REMOTE_HOST_LD_LLD" ]]; then
+  mkdir -p "$host_toolchain"
+  ln -sfn "$REMOTE_HOST_CC" "$host_toolchain/clang"
+  ln -sfn "$REMOTE_HOST_CXX" "$host_toolchain/clang++"
+  ln -sfn "$REMOTE_HOST_LLD" "$host_toolchain/lld"
+  ln -sfn "$REMOTE_HOST_LD_LLD" "$host_toolchain/ld.lld"
+  export PATH="$host_toolchain:$PATH"
+  export TRITON_BUILD_WITH_CLANG_LLD=true
+  printf 'host build toolchain: clang/lld (%s, %s)\n' \
+    "$REMOTE_HOST_CC" "$REMOTE_HOST_CXX"
+else
+  export CC="$REMOTE_HOST_CC"
+  export CXX="$REMOTE_HOST_CXX"
+  export TRITON_BUILD_WITH_CLANG_LLD=false
+  printf 'host build toolchain: default linker (%s, %s)\n' \
+    "$REMOTE_HOST_CC" "$REMOTE_HOST_CXX"
+fi
 
 if [[ ! -f "$REMOTE_VENV/bin/activate" || ! -x "$REMOTE_VENV/bin/python" ]]; then
   printf 'creating or repairing project venv: %s\n' "$REMOTE_VENV"
@@ -93,10 +98,8 @@ then
     'cmake>=3.28,<4'
 fi
 
-export PATH="$host_toolchain:$PATH"
 export MAX_JOBS="$jobs"
 export TRITON_BUILD_WITH_CCACHE=true
-export TRITON_BUILD_WITH_CLANG_LLD=true
 export TRITON_BUILD_PROTON=OFF
 export TRITON_BUILD_DISTRIBUTED=OFF
 export TRITON_APPEND_CMAKE_ARGS=-DTRITON_BUILD_UT=OFF

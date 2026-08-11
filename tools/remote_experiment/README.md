@@ -66,6 +66,8 @@ installs a private CMake 3.28+ only when required, builds this checkout's
 Triton-Ascend and `libtriton.so`, performs the editable install, and verifies
 the import paths. It uses the server clone's own `.git`; the mirrored
 `.codex-remote/top-git` is only a compatibility fallback for offline rsync.
+The host build prefers a complete Clang/Lld pair and otherwise uses GCC/G++
+with the default linker; the CANN device compiler path is unchanged.
 
 Do not copy a venv from another host, container, or project path. A Python venv
 contains interpreter and script paths and must be created inside the container

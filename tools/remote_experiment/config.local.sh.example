@@ -11,3 +11,8 @@ REMOTE_HOST="server-ssh-alias"
 # Set this only for an rsync-managed server worktree. A normal server clone
 # uses the default "auto" mode and its own .git directory.
 # REMOTE_SOURCE_MODE="rsync"
+
+# Optional host compiler overrides. The scripts prefer Clang/Lld when the full
+# pair is available and otherwise fall back to GCC/G++ with the default linker.
+# REMOTE_HOST_CC="/usr/bin/gcc"
+# REMOTE_HOST_CXX="/usr/bin/g++"

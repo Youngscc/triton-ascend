@@ -93,6 +93,10 @@ JOBS=32 ./tools/remote_experiment/setup-dev-environment.sh
 4. 构建当前仓库的 Triton C++/MLIR 核心和 `libtriton.so`；
 5. editable 安装当前 Triton-Ascend，并验证实际导入路径。
 
+宿主侧编译优先使用完整的 Clang/Lld 组合；缺少 Clang 或 Lld 时自动使用
+GCC/G++ 和默认 GNU linker。该选择不改变设备侧的 `ccec`、BishengIR 或
+`hivmc`。
+
 脚本优先使用服务器 clone 自身的 `.git`。只有离线 rsync 得到的无 `.git`
 工作树才使用 `.codex-remote/top-git`。
 

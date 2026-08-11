@@ -29,12 +29,12 @@ system_bc_lib="$REMOTE_SYSTEM_COMPILER_LIB"
 build_lib="$REMOTE_COMPILER_BUILD/lib"
 toolchain_bin="$REMOTE_COMPILER_BUILD/a3-toolchain-bin"
 
-test -x "$REMOTE_HOST_CLANG" || {
-  printf 'missing host compiler: %s\n' "$REMOTE_HOST_CLANG" >&2
+test -x "$REMOTE_HOST_CC" || {
+  printf 'missing host C compiler: %s\n' "${REMOTE_HOST_CC:-not found}" >&2
   exit 1
 }
-test -x "$REMOTE_HOST_CLANGXX" || {
-  printf 'missing host compiler: %s\n' "$REMOTE_HOST_CLANGXX" >&2
+test -x "$REMOTE_HOST_CXX" || {
+  printf 'missing host C++ compiler: %s\n' "${REMOTE_HOST_CXX:-not found}" >&2
   exit 1
 }
 test -x "$REMOTE_CCEC" || {
@@ -58,8 +58,8 @@ for name in meta_op.aic.c220.bc meta_op.aiv.c220.bc \
 done
 
 cmake -S "$llvm_source" -B "$REMOTE_COMPILER_BUILD" -G Ninja \
-  -DCMAKE_C_COMPILER="$REMOTE_HOST_CLANG" \
-  -DCMAKE_CXX_COMPILER="$REMOTE_HOST_CLANGXX" \
+  -DCMAKE_C_COMPILER="$REMOTE_HOST_CC" \
+  -DCMAKE_CXX_COMPILER="$REMOTE_HOST_CXX" \
   -DCMAKE_BUILD_TYPE=Release \
   -DLLVM_ENABLE_PROJECTS=mlir \
   -DLLVM_EXTERNAL_PROJECTS=bishengir \

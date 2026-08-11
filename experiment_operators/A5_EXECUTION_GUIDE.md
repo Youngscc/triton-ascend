@@ -81,6 +81,8 @@ source tools/remote_experiment/load-cann-environment.sh
 python3 --version
 cmake --version | head -1
 ninja --version
+gcc --version | head -1
+g++ --version | head -1
 command -v ccec || true
 command -v hivmc
 npu-smi info
@@ -115,6 +117,10 @@ $REMOTE_PROJECT/.codex-remote/venv
 它会复用容器已有的 Torch、Torch-NPU 和 CANN，构建当前服务器 checkout 的
 Triton-Ascend 与 `libtriton.so`，并执行 editable 安装。服务器直接 clone 的
 仓库使用自身 `.git`，不需要 `.codex-remote/top-git`。
+
+宿主侧构建工具会自动选择：完整的 Clang/Lld 可用时使用 Clang/Lld；否则使用
+容器已有的 GCC/G++ 和默认 GNU linker。`ccec`、BishengIR 与 `hivmc` 的设备侧
+编译链不受该选择影响。
 
 检查 venv 和导入位置：
 
