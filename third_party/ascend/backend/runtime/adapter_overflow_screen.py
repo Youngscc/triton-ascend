@@ -182,23 +182,26 @@ def _make_run_id(
     order_seed: int,
 ) -> str:
     identity = {
-        "contract_version": 1,
-        "screen_digest": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        "executor_digest": hashlib.sha256(
-            (Path(__file__).with_name("adapter_compile_only.py")).read_bytes()).hexdigest(),
-        "compiler": _compiler_identity(compiler),
-        "adapters": [
-            {
-                "path": str(adapter.path),
-                "digest": _digest(adapter.path.read_bytes()),
-                "kernel_type": adapter.kernel_type,
-            }
-            for adapter in adapters
-        ],
+        "contract_version":
+        1,
+        "screen_digest":
+        hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "executor_digest":
+        hashlib.sha256((Path(__file__).with_name("adapter_compile_only.py")).read_bytes()).hexdigest(),
+        "compiler":
+        _compiler_identity(compiler),
+        "adapters": [{
+            "path": str(adapter.path),
+            "digest": _digest(adapter.path.read_bytes()),
+            "kernel_type": adapter.kernel_type,
+        } for adapter in adapters],
         "stress_configs": [asdict(config) for config in STRESS_CONFIGS],
-        "fixed_options": list(fixed_options),
-        "timeout": timeout,
-        "order_seed": order_seed,
+        "fixed_options":
+        list(fixed_options),
+        "timeout":
+        timeout,
+        "order_seed":
+        order_seed,
     }
     return _digest(identity)
 
@@ -223,20 +226,23 @@ def _make_tasks(
                 "config_name": config.name,
                 "config_id": config_id,
             })
-            tasks.append(CompileTask(
-                run_id=run_id,
-                candidate_id=candidate_id,
-                adapter=adapter,
-                adapter_digest=adapter_digest,
-                mode=mode,
-                repeat=0,
-                order_index=0,
-                config_id=config_id,
-                normalized_config=dict(config.values),
-            ))
+            tasks.append(
+                CompileTask(
+                    run_id=run_id,
+                    candidate_id=candidate_id,
+                    adapter=adapter,
+                    adapter_digest=adapter_digest,
+                    mode=mode,
+                    repeat=0,
+                    order_index=0,
+                    config_id=config_id,
+                    normalized_config=dict(config.values),
+                ))
     random.Random(order_seed).shuffle(tasks)
-    return [CompileTask(**{**asdict(task), "adapter": task.adapter, "order_index": index})
-            for index, task in enumerate(tasks)]
+    return [
+        CompileTask(**{**asdict(task), "adapter": task.adapter, "order_index": index})
+        for index, task in enumerate(tasks)
+    ]
 
 
 def _run_tasks(
@@ -307,16 +313,8 @@ def _write_artifacts(
     screen_rows: Sequence[dict[str, Any]],
     verify_rows: Sequence[dict[str, Any]],
 ) -> tuple[Path, Path, dict[str, dict[str, Any]], int]:
-    predicted = {
-        _positive_key(row): row
-        for row in screen_rows
-        if row["status"] == "predicted_ub_overflow_final"
-    }
-    verified = {
-        _positive_key(row): row
-        for row in verify_rows
-        if row["status"] == "native_ub_overflow_final"
-    }
+    predicted = {_positive_key(row): row for row in screen_rows if row["status"] == "predicted_ub_overflow_final"}
+    verified = {_positive_key(row): row for row in verify_rows if row["status"] == "native_ub_overflow_final"}
     confirmed_keys = predicted.keys() & verified.keys()
     names = _config_names()
     by_adapter: dict[str, dict[str, Any]] = {}
@@ -324,13 +322,14 @@ def _write_artifacts(
     for key in sorted(confirmed_keys):
         screen = predicted[key]
         adapter_name = Path(screen["adapter_path"]).name
-        entry = by_adapter.setdefault(adapter_name, {
-            "kernel_type": screen["kernel_type"],
-            "confirmed_configs": 0,
-            "screened_configs": len(STRESS_CONFIGS),
-            "confirmed_rate": 0.0,
-            "config_names": [],
-        })
+        entry = by_adapter.setdefault(
+            adapter_name, {
+                "kernel_type": screen["kernel_type"],
+                "confirmed_configs": 0,
+                "screened_configs": len(STRESS_CONFIGS),
+                "confirmed_rate": 0.0,
+                "config_names": [],
+            })
         entry["confirmed_configs"] += 1
         entry["config_names"].append(names[screen["config_id"]])
         cases.append({
@@ -349,10 +348,8 @@ def _write_artifacts(
     manifest_path = report_dir / "overflow_enriched_manifest.json"
     manifest = {
         "adapter_root": str(adapter_root.resolve()),
-        "adapters": [
-            {"path": name, "kernel_type": values["kernel_type"]}
-            for name, values in sorted(by_adapter.items())
-        ],
+        "adapters":
+        [{"path": name, "kernel_type": values["kernel_type"]} for name, values in sorted(by_adapter.items())],
         "fixed_bisheng_options": list(fixed_options),
     }
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -407,19 +404,12 @@ def run_screen(
         progress_interval,
         "screen",
     )
-    positives = {
-        _positive_key(row)
-        for row in screen_rows
-        if row["status"] == "predicted_ub_overflow_final"
-    }
+    positives = {_positive_key(row) for row in screen_rows if row["status"] == "predicted_ub_overflow_final"}
     if observer:
         observer(f"screen complete: {len(positives)} predicted overflow candidates")
 
     verify_tasks = _make_tasks(run_id, adapters, "baseline", STRESS_CONFIGS, order_seed)
-    verify_tasks = [
-        task for task in verify_tasks
-        if (task.adapter_digest, task.config_id) in positives
-    ]
+    verify_tasks = [task for task in verify_tasks if (task.adapter_digest, task.config_id) in positives]
     verify_rows = _run_tasks(
         verify_tasks,
         executor,
@@ -442,10 +432,10 @@ def run_screen(
         adapters=len(adapters),
         stress_configs=len(STRESS_CONFIGS),
         screen_candidates=len(screen_tasks),
-        predicted_overflow_adapters=len({
-            Path(row["adapter_path"]).name for row in screen_rows
-            if row["status"] == "predicted_ub_overflow_final"
-        }),
+        predicted_overflow_adapters=len(
+            {Path(row["adapter_path"]).name
+             for row in screen_rows
+             if row["status"] == "predicted_ub_overflow_final"}),
         predicted_overflow_candidates=len(positives),
         confirmed_overflow_adapters=len(by_adapter),
         confirmed_overflow_candidates=sum(value["confirmed_configs"] for value in by_adapter.values()),
@@ -481,15 +471,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     adapters = discover_adapters(args.adapter_root, args.limit_adapters)
     if args.dry_run:
-        print(json.dumps({
-            "adapters": len(adapters),
-            "stress_configs": len(STRESS_CONFIGS),
-            "screen_candidates": len(adapters) * len(STRESS_CONFIGS),
-            "kernel_types": {
-                kernel_type: sum(adapter.kernel_type == kernel_type for adapter in adapters)
-                for kernel_type in ("vector", "cube", "mixcv")
-            },
-        }, indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "adapters": len(adapters),
+                    "stress_configs": len(STRESS_CONFIGS),
+                    "screen_candidates": len(adapters) * len(STRESS_CONFIGS),
+                    "kernel_types": {
+                        kernel_type: sum(adapter.kernel_type == kernel_type
+                                         for adapter in adapters)
+                        for kernel_type in ("vector", "cube", "mixcv")
+                    },
+                }, indent=2, sort_keys=True))
         return 0
 
     started = time.perf_counter_ns()

@@ -71,7 +71,6 @@ from triton.backends.compiler import (
 )
 from triton.runtime.cache import _base32, get_dump_manager
 
-
 _UB_MODEL_RESULT_PREFIX = "BISHENGIR_UB_MODEL_RESULT "
 
 
