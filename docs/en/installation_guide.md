@@ -65,11 +65,10 @@ If you need to customize the LLVM build process, follow the steps below to compi
     git apply llvm_patch_f6ded0b.patch
     ```
 
-2. **Build LLVM**: The path `{PATH_TO}` is the path where you checked out the LLVM source code in step 1.
+2. **Build LLVM**: The path `/path/llvm-install` is the LLVM installation path planned by the user, which needs to be adjusted according to the actual situation; the path `{PATH_TO}` is the path where the user checked out the LLVM source code in step 1.
 
     ```bash
-    # /path/to/llvm-install is the user's planned LLVM installation path; adjust as needed
-    export LLVM_INSTALL_PREFIX=/path/to/llvm-install
+    export LLVM_INSTALL_PREFIX=/path/llvm-install
     cd {PATH_TO}/llvm-project
     mkdir build
     cd build
@@ -85,6 +84,8 @@ If you need to customize the LLVM build process, follow the steps below to compi
         -DLLVM_ENABLE_LLD=ON \
         -DCMAKE_INSTALL_PREFIX=${LLVM_INSTALL_PREFIX}
     ninja install
+
+    cp  {PATH_TO}/llvm-project/build/bin/FileCheck ${LLVM_INSTALL_PREFIX}/bin/FileCheck
     ```
 
 3. **Compile Triton-Ascend**
@@ -104,7 +105,7 @@ If you need to customize the LLVM build process, follow the steps below to compi
 
 ### Check Image Versions
 
-**Table 2** Mapping of CANN versions to image tags.
+**Table 1** Mapping of CANN versions to image tags.
 <table style="table-layout: fixed; width: 100%; border-collapse: collapse;">
   <tr style="height: 50px;">
     <th style="width: 20%; border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f5f5f5;">CANN Version</th>

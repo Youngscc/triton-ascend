@@ -66,11 +66,10 @@ pip install -e .
     git apply llvm_patch_f6ded0b.patch
     ```
 
-2. **构建LLVM**：路径`{PATH_TO}`为用户第一步检出LLVM源码的路径。
+2. **构建LLVM**：路径 `/path/llvm-install` 为用户规划的LLVM安装路径，需根据实际调整；路径`{PATH_TO}`为用户第一步检出LLVM源码的路径。
 
     ```bash
-    # /path/to/llvm-install 路径为用户规划的llvm安装路径,需根据实际调整
-    export LLVM_INSTALL_PREFIX=/path/to/llvm-install
+    export LLVM_INSTALL_PREFIX=/path/llvm-install
     cd {PATH_TO}/llvm-project
     mkdir build
     cd build
@@ -86,6 +85,8 @@ pip install -e .
         -DLLVM_ENABLE_LLD=ON \
         -DCMAKE_INSTALL_PREFIX=${LLVM_INSTALL_PREFIX}
     ninja install
+
+    cp  {PATH_TO}/llvm-project/build/bin/FileCheck ${LLVM_INSTALL_PREFIX}/bin/FileCheck
     ```
 
 3. **编译Triton-Ascend**
@@ -105,7 +106,7 @@ pip install -e .
 
 ### 检查镜像版本
 
-**表2** CANN版本与镜像标签对照表。
+**表1** CANN版本与镜像标签对照表。
 <table style="table-layout: fixed; width: 100%; border-collapse: collapse;">
   <tr style="height: 50px;">
     <th style="width: 20%; border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f5f5f5;">CANN版本</th>
@@ -257,11 +258,11 @@ endif()
 
 **根因分析**
 
- triton-ascend目录被triton覆盖,导致triton-ascend功能受损。
+triton-ascend目录被triton覆盖，导致triton-ascend功能受损。
 
 **解决措施**
 
- 卸载已损坏的triton-ascend,重新安装即可。以3.2.1 版本为例，可执行如下命令修复：
+卸载已损坏的triton-ascend，重新安装即可。以3.2.1 版本为例，可执行如下命令修复：
 
 ```bash
 pip uninstall triton-ascend triton
@@ -270,7 +271,7 @@ pip install triton-ascend==3.2.1 --extra-index-url=https://mirrors.huaweicloud.c
 
 **问题四：Triton-Ascend 3.2.1版本为何新增依赖triton？**
 
-答复：Triton-Ascend是基于Triton进行的二次开发，与Triton安装目录同名。若用户安装Triton-Ascend之后，在此安装Triton或依赖Triton的三方件，会覆盖Triton目录，导致Triton-Ascend功能受损。
+答复：Triton-Ascend是基于Triton进行的二次开发，与Triton安装目录同名。若用户安装Triton-Ascend之后，再次安装Triton或依赖Triton的三方件，会覆盖Triton目录，导致Triton-Ascend功能受损。
 因此通过增加Triton依赖，当Triton被覆盖安装时会有如下提醒。
 
 ```text
