@@ -13,13 +13,27 @@ else
   return 1 2>/dev/null || exit 1
 fi
 
+_cann_restore_errexit=0
 _cann_restore_nounset=0
+case $- in
+  *e*) _cann_restore_errexit=1; set +e ;;
+esac
 case $- in
   *u*) _cann_restore_nounset=1; set +u ;;
 esac
 # shellcheck source=/dev/null
 source "$_cann_set_env"
+_cann_set_env_status=$?
 if (( _cann_restore_nounset )); then
   set -u
 fi
-unset _cann_set_env _cann_restore_nounset
+if (( _cann_restore_errexit )); then
+  set -e
+fi
+if (( _cann_set_env_status != 0 )); then
+  printf 'CANN environment script failed with status %d: %s\n' \
+    "$_cann_set_env_status" "$_cann_set_env" >&2
+  return "$_cann_set_env_status" 2>/dev/null || exit "$_cann_set_env_status"
+fi
+unset _cann_set_env _cann_set_env_status \
+  _cann_restore_errexit _cann_restore_nounset
