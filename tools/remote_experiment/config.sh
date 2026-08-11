@@ -41,24 +41,24 @@ REMOTE_CCEC="${REMOTE_CCEC:-$_REMOTE_CANN_HOME/tools/ccec_compiler/bin/ccec}"
 REMOTE_LLVM_LINK="${REMOTE_LLVM_LINK:-$_REMOTE_CANN_HOME/tools/bisheng_compiler/bin/llvm-link}"
 REMOTE_HOST_CC="${REMOTE_HOST_CC:-${REMOTE_HOST_CLANG:-}}"
 if [[ -z "$REMOTE_HOST_CC" ]]; then
-  if [[ -x /usr/bin/clang ]]; then
+  if [[ -x /usr/bin/clang-15 ]]; then
+    REMOTE_HOST_CC=/usr/bin/clang-15
+  elif [[ -x /usr/bin/clang ]]; then
     REMOTE_HOST_CC=/usr/bin/clang
-  elif [[ -x /usr/bin/gcc ]]; then
-    REMOTE_HOST_CC=/usr/bin/gcc
   else
-    REMOTE_HOST_CC="$(command -v clang || command -v gcc || true)"
+    REMOTE_HOST_CC="$(command -v clang-15 || command -v clang || true)"
   fi
 fi
 REMOTE_HOST_CXX="${REMOTE_HOST_CXX:-${REMOTE_HOST_CLANGXX:-}}"
 if [[ -z "$REMOTE_HOST_CXX" ]]; then
-  if [[ -x /usr/bin/clang++ ]]; then
+  if [[ -x /usr/bin/clang++-15 ]]; then
+    REMOTE_HOST_CXX=/usr/bin/clang++-15
+  elif [[ -x /usr/bin/clang++ ]]; then
     REMOTE_HOST_CXX=/usr/bin/clang++
-  elif [[ -x /usr/bin/g++ ]]; then
-    REMOTE_HOST_CXX=/usr/bin/g++
   else
-    REMOTE_HOST_CXX="$(command -v clang++ || command -v g++ || true)"
+    REMOTE_HOST_CXX="$(command -v clang++-15 || command -v clang++ || true)"
   fi
 fi
-REMOTE_HOST_LLD="${REMOTE_HOST_LLD:-$(command -v lld || true)}"
-REMOTE_HOST_LD_LLD="${REMOTE_HOST_LD_LLD:-$(command -v ld.lld || true)}"
+REMOTE_HOST_LLD="${REMOTE_HOST_LLD:-$(command -v lld-15 || command -v lld || true)}"
+REMOTE_HOST_LD_LLD="${REMOTE_HOST_LD_LLD:-$(command -v ld.lld-15 || command -v ld.lld || true)}"
 unset _REMOTE_CANN_HOME

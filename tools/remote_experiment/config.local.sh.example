@@ -12,7 +12,10 @@ REMOTE_HOST="server-ssh-alias"
 # uses the default "auto" mode and its own .git directory.
 # REMOTE_SOURCE_MODE="rsync"
 
-# Optional host compiler overrides. The scripts prefer Clang/Lld when the full
-# pair is available and otherwise fall back to GCC/G++ with the default linker.
-# REMOTE_HOST_CC="/usr/bin/gcc"
-# REMOTE_HOST_CXX="/usr/bin/g++"
+# Optional host compiler overrides. The scripts automatically prefer the
+# repository-supported clang-15/clang++-15/lld-15 tools, including their
+# version-suffixed Ubuntu paths. Set these only for a nonstandard installation.
+# REMOTE_HOST_CC="/opt/llvm-15/bin/clang"
+# REMOTE_HOST_CXX="/opt/llvm-15/bin/clang++"
+# REMOTE_HOST_LLD="/opt/llvm-15/bin/lld"
+# REMOTE_HOST_LD_LLD="/opt/llvm-15/bin/ld.lld"
