@@ -1,45 +1,76 @@
-# Project memory: local Codex + remote Ascend experiments
+# Project memory: server-side experiments
 
-This repository is developed locally and experiments run on `huawei-server-A5`.
-Read this file before changing the remote-experiment workflow.
+The server checkout is the primary working tree. Source normally updates with
+Git directly on the server. Builds, compiler invocations, experiments, logs,
+and reporting run on the server; build and foreground experiment commands run
+inside the existing experiment container. Workstation rsync is only a fallback
+when the server cannot access GitHub. Read this file before changing the
+remote-experiment workflow.
 
 Documentation must describe only the current final procedure. Do not retain
 change-history narration such as what an older command did, what was replaced,
 or how the current procedure differs from a previous version. Git history is
 the source for that information.
 
-Keep the standard experiment procedure in
-`experiment_operators/EXECUTION_GUIDE.md` free of A5-specific commands. Keep
-the complete A5/Ascend 950 procedure in
-`experiment_operators/A5_EXECUTION_GUIDE.md`.
+Keep the standard A3 experiment procedure in
+`experiment_operators/EXECUTION_GUIDE.md`. Keep the separate A5/Ascend 950
+procedure in `experiment_operators/A5_EXECUTION_GUIDE.md`.
 
 ## Repositories and paths
 
 - Local checkout: `/Users/YokeLove/huawei/triton-ascend`
+- Server checkout: `/home/y00969467/triton-ascend`
 - Fork remote: `origin` (`Youngscc/triton-ascend`)
 - Source remote: `upstream` (`triton-lang/triton-ascend`)
 - Experiment branch: local `codex/experiment`, tracking `origin/experiment`
-- Server SSH alias: `huawei-server-A5`
-- Server project path: `/home/yuanye/code/triton-ascend`
-- Experiment container: `yy-npu`
+- Active server SSH alias: `huaweiyun`
+- Active server project path: `/home/y00969467/triton-ascend`
+- Active experiment container: `triton-ascend-exp`
 
-The `yy-npu` container bind-mounts the host's `/home`, so the server project
-path is also the project path inside the container. Do not use `docker cp` for
-normal source synchronization.
+The ignored server-side `config.local.sh` stores the server project path and
+existing container name; all server scripts load it through `config.sh`.
+Workstation paths and the SSH alias are configured only when the offline
+`sync.sh` fallback or optional result retrieval is needed. The server project
+path must be visible at the same absolute path inside the container.
 
 ## Standard experiment loop
 
-Run these commands from the repository root:
+Update the checkout on the server, enter the configured existing container,
+and run every build command inside that container:
 
 ```bash
-./tools/remote_experiment/sync.sh
-./tools/remote_experiment/rebuild-compiler.sh  # after AscendNPU-IR C++ changes
+git fetch origin
+git pull --ff-only
+git submodule sync --recursive
+git submodule update --init --recursive
+
+# Enter the container from the server host.
+source tools/remote_experiment/config.sh
+docker exec -u root -it "$REMOTE_CONTAINER" bash
+cd "$REMOTE_PROJECT"
+source tools/remote_experiment/config.sh
+
+# Run build commands inside the container.
+./tools/remote_experiment/setup-dev-environment.sh  # first build / Triton rebuild
+./tools/remote_experiment/rebuild-compiler.sh       # first build / AscendNPU-IR rebuild
+
+# Foreground experiments can also run directly inside the container.
+./run_all_sweeps.sh path/to/operator.py
+
+# Detached execution and log following run on the server host.
+exit
 REMOTE_MODE=dev ./tools/remote_experiment/run.sh \
   python -u path/to/experiment.py --arg value
 ./tools/remote_experiment/logs.sh latest
 ```
 
-`run.sh` starts a detached command inside `yy-npu` and prints a run ID, log
+The setup script creates or repairs `.codex-remote/venv` and uses the server
+clone's own `.git`. The mirrored `.codex-remote/top-git` remains only for the
+offline rsync fallback. Do not copy a venv between hosts, containers, or
+project paths.
+
+`run.sh` calls the server's local Docker daemon, starts a detached command inside
+the configured container, and prints a run ID, log
 path, and host PID. `logs.sh` follows the newest log with `tail -F`; pressing
 Ctrl-C only stops log following. The container is intentionally invoked with
 non-login `bash -c`; this image's `bash -lc` initialization can block.
@@ -47,14 +78,12 @@ non-login `bash -c`; this image's `bash -lc` initialization can block.
 The scripts and their full options are documented in
 `tools/remote_experiment/README.md`.
 
-`run.sh` defaults to `REMOTE_MODE=baseline` and leaves the shared container's
-preinstalled Python, Triton, and BishengIR selection untouched. Explicitly
-passing `REMOTE_MODE=dev` loads the repository's Python tree, the isolated venv
-at `/home/yuanye/.venvs/triton-ascend-dev`, and the custom `bishengir-compile` under
-`.codex-remote/ascendnpu-ir-build-explicit/bin`. Use
-`REMOTE_MODE=baseline ./tools/remote_experiment/run.sh ...` to load the
-container's fully preinstalled Triton and BishengIR instead. Baseline mode is
-the control for separating environment failures from source regressions.
+All experiment commands explicitly pass `REMOTE_MODE=dev`. This loads the
+repository's Python tree, the isolated venv at `.codex-remote/venv`, and the
+custom `bishengir-compile` under
+`.codex-remote/ascendnpu-ir-build-explicit/bin`. The active A3 image's
+preinstalled Triton package is incomplete, so baseline mode is not an
+environment gate for this checkout.
 
 `REMOTE_MODE=dev-compatible` is a control mode: it loads the current repository
 Triton Python/core and Ascend backend, but selects CANN's preinstalled
@@ -62,19 +91,30 @@ BishengIR 1.1 plus `hivmc` 0.2. It is useful for distinguishing a custom
 compiler packaging problem from a frontend or operator problem. It cannot
 validate compiler options that exist only in the custom BishengIR 1.2.
 
-The current Python tree uses a `libtriton.so` built in the remote-only
-`.codex-remote/triton-compatible-src` tree. AscendNPU-IR and its vendored LLVM
-must match the top-level repository gitlinks (`d4405acb` and `c195c1d8` at the
-time of this note); `sync.sh` exact-mirrors both dependency trees.
+The current Python tree must use a `libtriton.so` built from this checkout in
+the server-only development environment. Its first build downloads the
+repository-selected prebuilt LLVM because the top-level Triton LLVM and the
+AscendNPU-IR vendored LLVM serve different builds. AscendNPU-IR and its vendored
+LLVM must match the top-level repository gitlinks in the server checkout.
 
-## Verified environment state (2026-08-05)
+## Verified environment state (2026-08-10)
 
-- `REMOTE_MODE=baseline` passes
-  `third_party/ascend/tutorials/01-vector-add.py` on NPU 0 with maximum
-  Torch/Triton difference `0.0`.
+- The dedicated `triton-ascend-exp` container uses image
+  `swr.cn-southwest-2.myhuaweicloud.com/base_image/dockerhub/lmsysorg/sglang:cann9.0.0-a3-20260723`.
+  It is non-privileged, mounts only the active project plus required driver
+  resources, and exposes all 16 `/dev/davinci*` devices. The pre-existing
+  `tritonsim` container is not modified by this workflow.
 - Dev-mode imports resolve to the current repository's Python and Ascend
   backend, its compatible remote-built `libtriton.so`, and the custom
   BishengIR 1.2.0 compiler.
+- The project venv contains CMake 3.31.10 because the image's CMake 3.22.1 is
+  below AscendNPU-IR's minimum 3.28 requirement. The host/container system
+  CMake is unchanged.
+- The dedicated compiler reports `bishengir-compile 1.2.0` with LLVM 19.1.7;
+  CANN supplies `hivmc 0.2.0`. All four C220 `meta_op` files plus `host.bc`
+  were generated successfully. The final NPU smoke test was deliberately not
+  launched on 2026-08-10 because all 16 cards were occupied by SGLang; rerun
+  Vector Add on an idle card before accepting performance measurements.
 - The custom BishengIR 1.2 compiler is built from the repository-pinned
   AscendNPU-IR and LLVM. Its executable alone is not a complete toolchain:
   adjacent `lib/meta_op.{aic,aiv,mix.aic,mix.aiv}.c220.bc` and `host.bc` are
@@ -200,7 +240,7 @@ usage; never keep only the fastest configuration.
   selects the latest run independently for each operator, and refreshes the
   aggregate tables and HTML. Use `DRY_RUN=1` to validate the command without
   launching the NPU; `SWEEP_LIMIT` is smoke-only and cannot displace a complete
-  run. The full operator, sync, pull, and reporting procedure is in
+  run. The full server-side operator, build, run, and reporting procedure is in
   `experiment_operators/EXECUTION_GUIDE.md`.
 - User-facing measurement CSVs expose one `depth` column for the equal CV
   schedule-depth/buffer-count pair, followed immediately by
@@ -455,7 +495,7 @@ per-candidate UB and latency records, correctness filtering, and a reproducible
 complete table for every accepted operator. No winning configuration is part
 of the requested deliverable.
 
-## Synchronization safety
+## Server artifact safety
 
 Experiment result IDs use fixed UTC+8 time with an explicit `+0800` suffix,
 for example `20260805T120449+0800-fused_attention`. A fixed offset is used so
@@ -463,17 +503,22 @@ the container does not require an IANA tzdata installation. Historical result
 directories ending in `Z` are UTC and must not be renamed because their stored
 artifact paths use the original directory name.
 
-The default rsync is additive and excludes `.git`, `.codex-remote`, virtual
-environments, build/cache directories, and generated experiment output. Keep
-this default for normal iterations. `RSYNC_DELETE=1` enables
-`--delete-delay` and can remove files under the server target that are absent
-locally; use it only when an exact mirror is intended.
+Keep venvs, compiler builds, caches, logs, raw measurements, and generated
+reports under the server checkout's `.codex-remote/`; it is ignored by Git.
+Do not commit or move generated build and experiment artifacts into tracked
+source directories. The project path must remain identical on the server host
+and inside the container.
 
-The first sync can traverse many files because this project contains nested
-third-party source trees. Later syncs are incremental. Avoid syncing large
-generated snapshots or output directories into Git or the experiment mirror.
-The vendored LLVM below AscendNPU-IR is intentionally excluded: the preserved
-branch requires its patch series to remain applied on the server build tree.
+Offline source synchronization is additive and excludes `.git`,
+`.codex-remote`, venvs, build/cache directories, and generated experiment
+output. `config.local.sh` is intentionally synchronized although it is ignored
+by Git. The top-level Git metadata, excluding `.git/modules`, is mirrored
+separately to `.codex-remote/top-git` so `setup.py` can apply the Triton patches
+when the destination is not a real clone. Offline worktrees explicitly set
+`REMOTE_SOURCE_MODE=rsync`; normal server clones use `auto` and their own
+`.git`. `RSYNC_DELETE=1` enables deletion under the server source target and is
+used only when an exact source mirror is intended. Result retrieval is additive
+unless deletion is explicitly enabled.
 
 ## Submodule caution
 

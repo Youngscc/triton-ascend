@@ -1,183 +1,88 @@
-# A5 单卡实验环境执行手册
+# A5/Ascend 950 单算子实验执行手册
 
-本手册用于 `huawei-server-A5` 上的 Ascend 950/A5 环境。实验容器固定为
-`yy-npu`，只授权物理 7 卡；容器内使用逻辑设备 `npu:0`。基础镜像固定为：
+本手册适用于已经由用户创建并能正常启动的 A5 实验容器。服务器仓库是主工作
+区；源码更新在服务器通过 Git 完成，构建和实验在已有容器内完成。本流程不创建、
+删除或重建容器。
 
-```text
-quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11
-```
+## 1. 在 A5 服务器准备源码
 
-## 1. 配置 SSH
-
-在本地生成 SSH 密钥。已有密钥时跳过 `ssh-keygen`：
+服务器能够访问 GitHub 时，在服务器宿主机直接 clone：
 
 ```bash
-mkdir -p "$HOME/.ssh"
-chmod 700 "$HOME/.ssh"
-ssh-keygen -t ed25519 -C "huawei-server-A5" -f "$HOME/.ssh/id_ed25519"
+cd /服务器代码目录
+git clone --recurse-submodules git@github.com:Youngscc/triton-ascend.git
+cd triton-ascend
 ```
 
-在 `~/.ssh/config` 中配置：
-
-```sshconfig
-Host huawei-server-A5
-    HostName 192.168.25.217
-    User root
-    Port 22
-    IdentityFile ~/.ssh/id_ed25519
-```
-
-验证连接：
+更新已有仓库：
 
 ```bash
-chmod 600 "$HOME/.ssh/config"
-ssh huawei-server-A5
+git fetch origin
+git pull --ff-only
+git submodule sync --recursive
+git submodule update --init --recursive
 ```
 
-## 2. 配置项目路径
-
-在本地仓库编辑：
+确认当前分支和依赖版本：
 
 ```bash
-vi tools/remote_experiment/config.sh
+git branch --show-current
+git status --short
+git submodule status --recursive
 ```
 
-设置本地与服务器项目绝对路径，并保持 A5 主机和容器名称如下：
+## 2. 配置已有 A5 容器
+
+在服务器仓库执行：
 
 ```bash
-LOCAL_PROJECT="/你的本地绝对路径/triton-ascend"
-REMOTE_PROJECT="/服务器上的绝对路径/triton-ascend"
-REMOTE_HOST="huawei-server-A5"
-REMOTE_CONTAINER="yy-npu"
+cp tools/remote_experiment/config.local.sh.example \
+  tools/remote_experiment/config.local.sh
+vi tools/remote_experiment/config.local.sh
 ```
 
-同步源码：
+填写服务器项目路径和实际容器名：
 
 ```bash
-./tools/remote_experiment/sync.sh
+REMOTE_PROJECT="/服务器绝对路径/triton-ascend"
+REMOTE_CONTAINER="已有A5容器名"
 ```
 
-## 3. 创建并配置容器
-
-### 3.1 宿主机基线
-
-`huawei-server-A5` 使用以下环境：
-
-| 项目 | 取值 |
-| --- | --- |
-| 宿主机用户态 | openEuler |
-| CPU 架构 | `x86_64` / Docker `linux/amd64` |
-| NPU | 8 张 Ascend 950，实验固定使用物理 7 卡 |
-| Docker | 18.09.0，`overlay2` |
-| Docker runtime | `runc`，无 Ascend Docker Runtime |
-| Docker Root 可用空间 | 约 41 GiB |
-| 项目与构建产物 | 保存在 `/home`，使用大容量数据分区 |
-
-宿主机是 openEuler 不要求容器也使用 openEuler。本实验固定使用
-Ubuntu 22.04 用户态的 CANN 基础镜像，容器与宿主机共用 Linux 内核。
-
-在宿主机上确认环境：
-
-```bash
-uname -m
-docker version
-docker info --format 'Storage={{.Driver}} Runtimes={{json .Runtimes}} Root={{.DockerRootDir}}'
-df -h "$(docker info --format '{{.DockerRootDir}}')" /home
-npu-smi info
-ls -l /dev/davinci7 /dev/davinci_manager /dev/hisi_hdc
-```
-
-### 3.2 准备基础镜像
-
-使用以下官方 CANN 基础镜像：
-
-```text
-quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11
-```
-
-不要在该宿主机上使用 `docker/3.2.1-...-950-*/Dockerfile` 构建完整发布
-镜像。CANN、torch-npu、LLVM 构建中间层和 Docker cache 可能耗尽当前仅
-41 GiB 的 Docker Root 空间。容器只承载 CANN 基础环境；当前仓库、Python
-venv、Triton 缓存和自定义 AscendNPU-IR 构建产物均放在挂载的 `/home`
-中。
-
-检查镜像是否已存在：
-
-```bash
-docker image inspect quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11
-```
-
-不存在时拉取：
-
-```bash
-docker pull quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11
-```
-
-如果 A5 上的拉取持续超时，在可正常访问 Quay 且 CPU 架构同为 `x86_64`
-的 Linux 机器上准备离线包：
-
-```bash
-docker pull quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11
-docker save quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11 \
-  | gzip > cann-9.0.0-950-x86_64.tar.gz
-```
-
-将压缩包传到 A5 的 `/home` 大容量分区，然后导入：
-
-```bash
-gzip -dc /home/yuanye/cann-9.0.0-950-x86_64.tar.gz | docker load
-docker image inspect quay.io/ascend/cann:9.0.0-950-ubuntu22.04-py3.11
-```
-
-### 3.3 创建容器
-
-登录 A5 服务器宿主机并进入服务器仓库：
+检查容器状态、项目挂载和设备节点：
 
 ```bash
 source tools/remote_experiment/config.sh
-ssh -t huawei-server-A5 "cd '$REMOTE_PROJECT' && exec bash"
+docker inspect "$REMOTE_CONTAINER" --format '{{.State.Status}}'
+docker exec "$REMOTE_CONTAINER" test -d "$REMOTE_PROJECT"
+docker inspect "$REMOTE_CONTAINER" \
+  --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+docker exec "$REMOTE_CONTAINER" bash -c \
+  'ls -l /dev/davinci* /dev/davinci_manager /dev/hisi_hdc 2>&1'
 ```
 
-在 A5 服务器宿主机执行：
+服务器宿主机和容器内的项目绝对路径必须相同。项目目录必须是持久化挂载，确保
+`.codex-remote/venv`、编译产物、缓存和实验结果在容器重启后仍然存在。
 
-```bash
-./tools/remote_experiment/setup-a5-container.sh
-```
+## 3. 进入容器并检查 A5 环境
 
-脚本完成以下操作：
-
-1. 使用 `npu-smi info` 检查宿主机 NPU；
-2. 拉取缺失的官方 CANN 950 镜像；
-3. 在当前只有 `runc` 的宿主机上显式挂载 NPU 设备节点；
-4. 创建不带 `--privileged` 的 `yy-npu`；
-5. 只授权物理 7 卡；
-6. 将宿主机 `/home` 原位挂载到容器；
-7. 在 `.codex-remote/venv` 创建项目隔离环境并安装当前仓库；
-8. 验证容器内只有一个逻辑设备 `npu:0`。
-
-已经存在的 `yy-npu` 不会被脚本删除或覆盖。脚本会输出启动、进入或人工重建
-容器所需的命令。
-
-## 4. 进入容器并验证 A5
-
-在本地执行：
+在服务器宿主机执行：
 
 ```bash
 source tools/remote_experiment/config.sh
-ssh -t huawei-server-A5 \
-  "docker exec -it yy-npu bash -c 'cd \"$REMOTE_PROJECT\" && exec bash'"
+docker exec -u root -it "$REMOTE_CONTAINER" bash
+cd "$REMOTE_PROJECT"
+source tools/remote_experiment/config.sh
+source tools/remote_experiment/load-cann-environment.sh
 ```
 
-在容器内执行：
+检查 CANN、Python、构建工具和 NPU：
 
 ```bash
-if [[ -f /usr/local/Ascend/cann/set_env.sh ]]; then
-  source /usr/local/Ascend/cann/set_env.sh
-else
-  source /usr/local/Ascend/ascend-toolkit/set_env.sh
-fi
-source .codex-remote/venv/bin/activate
-
+python3 --version
+cmake --version | head -1
+ninja --version
+command -v ccec || true
+command -v hivmc
 npu-smi info
 
 python3 - <<'PY'
@@ -185,90 +90,175 @@ import acl
 import torch
 import torch_npu
 
-soc = acl.get_soc_name()
-print("CANN SoC name:", soc)
-assert soc.startswith(("Ascend910_95", "Ascend950")), soc
-
-count = torch.npu.device_count()
-print("visible NPU count:", count)
-assert count == 1, count
-
-torch.npu.set_device(0)
-print("logical npu:0:", torch.npu.get_device_name(0))
+print("CANN SoC name:", acl.get_soc_name())
+print("visible NPU count:", torch.npu.device_count())
 PY
 ```
 
-## 5. 构建 A5 编译器
+容器只挂一张物理卡时，程序通常看到逻辑 `npu:0`。不要把宿主机物理卡编号
+直接当成容器逻辑编号。
 
-在本地仓库执行：
+## 4. 创建或修复 A5 项目 venv
+
+继续在容器内项目根目录执行：
 
 ```bash
-./tools/remote_experiment/sync.sh
-./tools/remote_experiment/rebuild-compiler.sh
+JOBS=32 ./tools/remote_experiment/setup-dev-environment.sh
 ```
 
-编译配置包含：
+该命令负责创建和维护：
+
+```text
+$REMOTE_PROJECT/.codex-remote/venv
+```
+
+它会复用容器已有的 Torch、Torch-NPU 和 CANN，构建当前服务器 checkout 的
+Triton-Ascend 与 `libtriton.so`，并执行 editable 安装。服务器直接 clone 的
+仓库使用自身 `.git`，不需要 `.codex-remote/top-git`。
+
+检查 venv 和导入位置：
+
+```bash
+test -x .codex-remote/venv/bin/python
+.codex-remote/venv/bin/python - <<'PY'
+import torch
+import torch_npu
+import triton
+from triton._C import libtriton
+
+print("torch:", torch.__version__)
+print("torch_npu:", torch_npu.__version__)
+print("triton:", triton.__file__)
+print("libtriton:", libtriton.__file__)
+PY
+```
+
+出现 `development venv not found` 时，直接在当前容器和当前项目路径重新执行
+`setup-dev-environment.sh`。不要从其他机器、容器或项目路径复制 venv。
+
+## 5. 构建 A5 BishengIR
+
+继续在容器内执行：
+
+```bash
+JOBS=32 ./tools/remote_experiment/rebuild-compiler.sh
+```
+
+当前构建包含 A5/NPUIR 开关：
 
 ```text
 -DLLVM_BSPUB_DAVINCI_BISHENGIR_A5=ON
 -DLLVM_BSPUB_DAVINCI_BISHENGIR_A5_NPUIR=ON
 ```
 
-编译器目录中的 `bishengir-compile`、`lib/meta_op.*.bc` 和 `host.bc` 必须来自
-同一次构建。
+检查完整编译器包：
+
+```bash
+.codex-remote/ascendnpu-ir-build-explicit/bin/bishengir-compile --version
+test -f .codex-remote/ascendnpu-ir-build-explicit/lib/meta_op.aic.c220.bc
+test -f .codex-remote/ascendnpu-ir-build-explicit/lib/meta_op.aiv.c220.bc
+test -f .codex-remote/ascendnpu-ir-build-explicit/lib/meta_op.mix.aic.c220.bc
+test -f .codex-remote/ascendnpu-ir-build-explicit/lib/meta_op.mix.aiv.c220.bc
+test -f .codex-remote/ascendnpu-ir-build-explicit/lib/host.bc
+```
+
+`bishengir-compile` 和相邻 bitcode 必须来自同一次构建。
 
 ## 6. 冒烟验证
 
-从本地启动 Vector Add：
+容器只暴露一张卡时直接运行：
 
 ```bash
-REMOTE_MODE=dev ./tools/remote_experiment/run.sh \
-  python -u third_party/ascend/tutorials/01-vector-add.py
-./tools/remote_experiment/logs.sh latest
+.codex-remote/venv/bin/python -u \
+  third_party/ascend/tutorials/01-vector-add.py
 ```
 
-在容器内执行单配置实验验证：
+容器暴露多张卡时，先用 `npu-smi info` 选择健康空闲卡，再为当前命令指定：
+
+```bash
+ASCEND_RT_VISIBLE_DEVICES=<物理卡编号> \
+  .codex-remote/venv/bin/python -u \
+  third_party/ascend/tutorials/01-vector-add.py
+```
+
+单配置实验：
 
 ```bash
 SWEEP_LIMIT=1 SWEEP_WARMUP=1 SWEEP_ACTIVE=1 \
   ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
 ```
 
-该配置需要完成正确性检查，记录 NPU latency，并得到非零 UB 数据。
+该配置必须通过正确性检查，记录非零 UB 和 NPU latency。失败时终端会直接打印
+完整错误，独立日志仍保存在结果目录。
 
-## 7. 执行完整实验
+## 7. 完整实验与日志
 
-在 `yy-npu` 内传入一个算子文件：
+在容器内前台运行一个算子：
 
 ```bash
 ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
 ```
 
-完整实验遍历：
+在服务器宿主机后台运行：
+
+```bash
+REMOTE_MODE=dev ./tools/remote_experiment/run.sh \
+  ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
+
+./tools/remote_experiment/logs.sh latest
+```
+
+多卡容器可在 `run.sh` 命令前添加：
+
+```bash
+ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> REMOTE_MODE=dev \
+  ./tools/remote_experiment/run.sh \
+  ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
+```
+
+完整实验产生 48 行，覆盖：
 
 ```text
 depth(1..4) × multibuffer_num(1..4) × vf_merge_level(0..2)
 ```
 
-总计 48 组配置。不要在同一张 NPU 上并行启动多个 sweep。
+## 8. 结果和报告
 
-## 8. 日志、结果与报告
+结果保存在服务器项目：
 
-从本地启动后台实验并跟踪日志：
-
-```bash
-./tools/remote_experiment/sync.sh
-REMOTE_MODE=dev ./tools/remote_experiment/run.sh \
-  ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
-./tools/remote_experiment/logs.sh latest
+```text
+.codex-remote/results/<UTC+8时间>-<operator>/
 ```
 
-同步结果到本地并生成报告：
+在容器内刷新所有算子的最新完整结果：
 
 ```bash
-./tools/remote_experiment/pull-results.sh
-python3 experiment_operators/summarize_latest.py
+source .codex-remote/venv/bin/activate
+python experiment_operators/summarize_latest.py
 ./experiment_operators/generate_latest_report.sh
 ```
 
-A5 的 Triton cache、NPU 二进制、性能数据和 UB 数据作为独立设备数据保存。
+报告位于：
+
+```text
+.codex-remote/results/latest-summary/experiment-report.html
+```
+
+## 9. GitHub 不可达时的备用同步
+
+仅当 A5 服务器不能连接 GitHub 时，在个人电脑配置 `LOCAL_PROJECT`、
+`REMOTE_PROJECT`、`REMOTE_HOST`、`REMOTE_CONTAINER`，并设置：
+
+```bash
+REMOTE_SOURCE_MODE="rsync"
+```
+
+然后从个人电脑执行：
+
+```bash
+./tools/remote_experiment/sync.sh
+```
+
+源码同步排除 `.codex-remote`，不会覆盖服务器 venv、编译产物、缓存、日志和
+结果。同步完成后仍然登录服务器、进入已有 A5 容器，并在容器内执行所有构建和
+实验命令。

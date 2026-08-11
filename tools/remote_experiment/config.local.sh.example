@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+# Required by scripts executed directly on the server and in its container.
+REMOTE_PROJECT="/absolute/server/path/to/triton-ascend"
+REMOTE_CONTAINER="container-name"
+
+# Optional offline-transfer settings. Configure these only on a workstation
+# when the server cannot access GitHub and sync.sh/pull-results.sh are needed.
+LOCAL_PROJECT="/absolute/local/path/to/triton-ascend"
+REMOTE_HOST="server-ssh-alias"
+# Set this only for an rsync-managed server worktree. A normal server clone
+# uses the default "auto" mode and its own .git directory.
+# REMOTE_SOURCE_MODE="rsync"

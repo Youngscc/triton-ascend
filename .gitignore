@@ -84,6 +84,7 @@ docs/sg_execution_times.rst
 .clangd/
 .cache
 /.codex-remote/
+/tools/remote_experiment/config.local.sh
 /extracted_stages/
 /compile_commands.json
 .vscode

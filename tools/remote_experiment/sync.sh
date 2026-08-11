@@ -4,6 +4,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/remote_experiment/config.sh
 source "$SCRIPT_DIR/config.sh"
+if [[ -z "${LOCAL_PROJECT:-}" || -z "${REMOTE_HOST:-}" ]]; then
+  printf '%s\n' \
+    'sync.sh requires LOCAL_PROJECT and REMOTE_HOST in config.local.sh.' >&2
+  exit 2
+fi
+if [[ "$REMOTE_SOURCE_MODE" != "rsync" ]]; then
+  printf '%s\n' \
+    'sync.sh is the offline fallback; set REMOTE_SOURCE_MODE="rsync" in config.local.sh first.' >&2
+  exit 2
+fi
 PROJECT_ROOT="$LOCAL_PROJECT"
 
 if [[ ! -d "$PROJECT_ROOT" ]]; then
@@ -36,6 +46,15 @@ if [[ "${RSYNC_DELETE:-0}" == "1" ]]; then
 fi
 
 rsync "${rsync_args[@]}" "$PROJECT_ROOT/" "$REMOTE_HOST:$REMOTE_PROJECT/"
+
+# setup.py restores and reapplies the repository's Triton patches with Git.
+# Mirror only the top-level metadata into the generated area; nested submodule
+# repositories are large and are not needed for those top-level operations.
+ssh "$REMOTE_HOST" "mkdir -p -- '$REMOTE_PROJECT/.codex-remote/top-git'"
+rsync -az --delete \
+  --exclude=modules/ \
+  "$PROJECT_ROOT/.git/" \
+  "$REMOTE_HOST:$REMOTE_PROJECT/.codex-remote/top-git/"
 
 # The top-level additive sync cannot remove files left by a previously checked
 # out AscendNPU-IR revision. Mirror this dependency exactly to the gitlink that

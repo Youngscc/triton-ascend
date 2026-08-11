@@ -189,6 +189,29 @@ def write_tables(rows: list[dict], result_dir: Path):
         writer.writerows(rows)
 
 
+def print_candidate_failure(
+    *,
+    key: str,
+    status: str,
+    returncode: int,
+    diagnostic: str,
+    output: str,
+    log_path: Path,
+) -> None:
+    """Make failed candidates visible in the foreground sweep output."""
+    print(
+        f"[{key}] FAILED status={status} returncode={returncode}: {diagnostic}",
+        flush=True,
+    )
+    if output.strip():
+        print(f"----- {key} subprocess output begin -----", flush=True)
+        print(output.rstrip(), flush=True)
+        print(f"----- {key} subprocess output end -----", flush=True)
+    else:
+        print(f"[{key}] subprocess produced no output", flush=True)
+    print(f"[{key}] full_log={log_path}", flush=True)
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     operator_group = parser.add_mutually_exclusive_group(required=True)
@@ -417,6 +440,16 @@ def main() -> int:
             diagnostic = "required_ub_bits missing from compiler metadata"
         else:
             status = "measured"
+
+        if status != "measured":
+            print_candidate_failure(
+                key=key,
+                status=status,
+                returncode=returncode,
+                diagnostic=diagnostic,
+                output=output,
+                log_path=log_path,
+            )
 
         row = {
             "operator": operator,

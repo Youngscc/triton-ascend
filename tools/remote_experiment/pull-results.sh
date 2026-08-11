@@ -4,6 +4,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/remote_experiment/config.sh
 source "$SCRIPT_DIR/config.sh"
+if [[ -z "${LOCAL_PROJECT:-}" || -z "${REMOTE_HOST:-}" ]]; then
+  printf '%s\n' \
+    'pull-results.sh requires LOCAL_PROJECT and REMOTE_HOST in config.local.sh.' >&2
+  exit 2
+fi
 PROJECT_ROOT="$LOCAL_PROJECT"
 
 if [[ ! -d "$PROJECT_ROOT" ]]; then

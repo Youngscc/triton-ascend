@@ -1,109 +1,113 @@
-# Local-to-server experiment loop
+# Server-native experiment workflow
 
-This uses an SSH alias, synchronizes a local checkout into a configurable
-server checkout, and runs commands inside an existing experiment container.
-Configure the two checkout paths once by editing
-`tools/remote_experiment/config.sh`:
+The server checkout is the primary working tree. Source updates normally use
+Git directly on the server. Triton-Ascend builds, BishengIR builds, experiments,
+log following, and report generation all run on the server; build and foreground
+experiment commands run inside the existing experiment container.
 
-```bash
-LOCAL_PROJECT="/local/path/to/triton-ascend"
-REMOTE_PROJECT="/server/path/to/triton-ascend"
-```
-
-The SSH alias `huawei-server-A5` and container name `yy-npu` are fixed by the
-workflow and do not need to be exported.
-
-Use `experiment_operators/EXECUTION_GUIDE.md` for the standard experiment
-procedure. Use `experiment_operators/A5_EXECUTION_GUIDE.md` for the dedicated
-A5/Ascend 950 single-card environment. The container must see
-`REMOTE_PROJECT` at the same absolute path as the server host.
-
-From the repository root:
+Create the ignored server configuration once in the server checkout:
 
 ```bash
-# 1. Sync source. Generated outputs and .git metadata are excluded.
-./tools/remote_experiment/sync.sh
-
-# 2. Rebuild the custom BishengIR compiler after changing AscendNPU-IR C++.
-./tools/remote_experiment/rebuild-compiler.sh
-
-# 3. Start a detached experiment with the current source and custom compiler.
-REMOTE_MODE=dev ./tools/remote_experiment/run.sh \
-  python -u path/to/experiment.py --arg value
-
-# 4. Follow the newest log. Ctrl-C only stops log following, not the job.
-./tools/remote_experiment/logs.sh
-
-# Follow a specific run printed by run.sh:
-./tools/remote_experiment/logs.sh 20260803-180000-12345
+cd /absolute/server/path/to/triton-ascend
+cp tools/remote_experiment/config.local.sh.example \
+  tools/remote_experiment/config.local.sh
+vi tools/remote_experiment/config.local.sh
 ```
 
-Pull generated result directories from the server back into the local checkout:
+The required values are:
 
 ```bash
-./tools/remote_experiment/pull-results.sh
+REMOTE_PROJECT="/absolute/server/path/to/triton-ascend"
+REMOTE_CONTAINER="existing-container-name"
 ```
 
-This uses `--progress` for compatibility with the older macOS rsync. Set
-`PULL_SESSION_LOGS=1` to pull `.codex-remote/logs` too. Result pulling is
-additive by default; `RSYNC_DELETE=1` makes the server result directory an exact
-local mirror and may remove local-only historical results.
+The project must be mounted at the same absolute path on the server host and
+inside the container. `LOCAL_PROJECT` and `REMOTE_HOST` are optional and are
+used only by the offline source-transfer and result-retrieval helpers.
 
-The default sync is additive. To mirror local deletions on the server, use
-`RSYNC_DELETE=1 ./tools/remote_experiment/sync.sh`; this removes remote files
-under the target that are absent locally.
+## Update source on the server
 
-`run.sh` uses the container's original preinstalled environment by default.
-The isolated development environment is selected only with
-`REMOTE_MODE=dev`:
-
-- Python environment: `.codex-remote/venv` below `REMOTE_PROJECT` by default
-- Python and Ascend backend: this repository's `python/` tree
-- BishengIR compiler: `.codex-remote/ascendnpu-ir-build-explicit/bin`
-- Triton cache: `.codex-remote/triton-cache`
-
-The container's preinstalled Torch, torch-npu, CANN, and compatible
-`libtriton.so` remain the baseline. The remote-only build, cache, and logs are
-excluded from rsync. AscendNPU-IR and its vendored LLVM are exact-mirrored from
-the local gitlinks; mixing a new AscendNPU-IR source tree with an older patched
-LLVM tree causes C++ API/ABI build failures.
-
-`rebuild-compiler.sh` configures the pinned source with the Triton and A5/NPUIR
-switches used by the upstream build, then builds `bishengir-compile`. It also
-generates the matching meta-op/host bitcode from the pinned Template sources
-using CANN's `ccec`. The current compiler looks for `meta_op.*.c220.bc`; if a
-generated file is unexpectedly absent, the script falls back to a private link
-to CANN 9.0's legacy-named `meta_op.*.bc`. No system file is renamed or
-replaced. Override `REMOTE_BISHENG_COMPILER_BIN` or
-`REMOTE_SYSTEM_COMPILER_LIB` when a container stores these tools elsewhere.
-
-There is also an explicit compatibility mode:
+Run in the server checkout:
 
 ```bash
-REMOTE_MODE=dev-compatible ./tools/remote_experiment/run.sh \
-  python -u experiment_operators/candidates/fused_attention.py
+git fetch origin
+git pull --ff-only
+git submodule sync --recursive
+git submodule update --init --recursive
 ```
 
-`dev-compatible` loads the current repository's Triton Python/core and Ascend
-backend, but uses the CANN-matched preinstalled BishengIR 1.1 and `hivmc` 0.2.
-Use it for end-to-end Python/correctness/benchmark smoke tests. It does not
-prove that options implemented only in the custom BishengIR 1.2 are available.
-The three modes use separate Triton cache subdirectories.
+Use `sync.sh` from a workstation only when the server cannot access GitHub. The
+fallback transfer excludes `.codex-remote`, virtual environments, build/cache
+directories, and generated results. It also transfers the Git metadata needed
+by the build without replacing server experiment artifacts. Set
+`REMOTE_SOURCE_MODE="rsync"` in the workstation's `config.local.sh` for this
+fallback; a normal server clone uses the default `auto` mode and its own `.git`.
 
-To run a control with the container's fully preinstalled Triton toolchain,
-either omit `REMOTE_MODE` or set it explicitly:
+## Create or repair the development environment
+
+Enter the existing container from the server host:
 
 ```bash
-REMOTE_MODE=baseline ./tools/remote_experiment/run.sh \
-  python -u third_party/ascend/tutorials/01-vector-add.py
+source tools/remote_experiment/config.sh
+docker exec -u root -it "$REMOTE_CONTAINER" bash
+cd "$REMOTE_PROJECT"
+source tools/remote_experiment/config.sh
 ```
 
-`REMOTE_MODE=dev` loads the current source tree and the custom BishengIR build.
-The default baseline mode deliberately loads neither of them.
-
-Useful overrides are available without editing files:
+Run the idempotent setup inside the container:
 
 ```bash
-REMOTE_CONTAINER=other-container ./tools/remote_experiment/run.sh bash -lc '...'
-LINES=200 ./tools/remote_experiment/logs.sh latest
+JOBS=32 ./tools/remote_experiment/setup-dev-environment.sh
+JOBS=32 ./tools/remote_experiment/rebuild-compiler.sh
 ```
+
+`setup-dev-environment.sh` creates `.codex-remote/venv` when it is absent,
+installs a private CMake 3.28+ only when required, builds this checkout's
+Triton-Ascend and `libtriton.so`, performs the editable install, and verifies
+the import paths. It uses the server clone's own `.git`; the mirrored
+`.codex-remote/top-git` is only a compatibility fallback for offline rsync.
+
+Do not copy a venv from another host, container, or project path. A Python venv
+contains interpreter and script paths and must be created inside the container
+at the final mounted project path.
+
+## Run experiments
+
+Foreground execution runs inside the container:
+
+```bash
+./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
+```
+
+Detached execution starts from the server host and calls its local Docker
+daemon:
+
+```bash
+ASCEND_RT_VISIBLE_DEVICES=<physical-device-id> REMOTE_MODE=dev \
+  ./tools/remote_experiment/run.sh \
+  ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
+
+./tools/remote_experiment/logs.sh latest
+```
+
+`run.sh` writes host-visible logs under `.codex-remote/logs`. `Ctrl-C` stops
+only log following. Failed candidates print their complete subprocess output
+in the session log and retain a separate per-configuration log.
+
+## Reports and optional result retrieval
+
+Generate the latest report inside the container:
+
+```bash
+source .codex-remote/venv/bin/activate
+python experiment_operators/summarize_latest.py
+./experiment_operators/generate_latest_report.sh
+```
+
+Results remain under `.codex-remote/results` on the server. If a workstation
+copy is needed, configure the optional `LOCAL_PROJECT` and `REMOTE_HOST` values
+there and run `./tools/remote_experiment/pull-results.sh` from the workstation.
+
+See `experiment_operators/EXECUTION_GUIDE.md` for the complete general/A3
+procedure and `experiment_operators/A5_EXECUTION_GUIDE.md` for an existing A5
+container.

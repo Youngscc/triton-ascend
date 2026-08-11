@@ -63,8 +63,12 @@ else
 fi
 
 if [[ "$DRY_RUN" != "1" ]]; then
-  if [[ ! -f "$DEV_VENV/bin/activate" ]]; then
+  # shellcheck source=tools/remote_experiment/load-cann-environment.sh
+  source "$PROJECT_ROOT/tools/remote_experiment/load-cann-environment.sh"
+  if [[ ! -f "$DEV_VENV/bin/activate" || ! -x "$DEV_VENV/bin/python" ]]; then
     printf 'development venv not found: %s\n' "$DEV_VENV" >&2
+    printf '%s\n' \
+      'Inside the experiment container, run: ./tools/remote_experiment/setup-dev-environment.sh' >&2
     exit 1
   fi
   if [[ ! -x "$DEV_COMPILER_DIR/bishengir-compile" ]]; then
