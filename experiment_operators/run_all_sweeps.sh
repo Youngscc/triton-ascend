@@ -77,6 +77,34 @@ if [[ "$DRY_RUN" != "1" ]]; then
     exit 1
   fi
 
+  experiment_soc="$("$DEV_VENV/bin/python" - <<'PY'
+import acl
+
+print(acl.get_soc_name())
+PY
+)"
+  case "$experiment_soc" in
+    *Ascend910_95*|*Ascend950*|*910_958*) experiment_bitcode_arch=c310 ;;
+    *Ascend910B*|*Ascend910_93*) experiment_bitcode_arch=c220 ;;
+    *)
+      printf 'unsupported or unknown experiment SoC: %s\n' "$experiment_soc" >&2
+      exit 1
+      ;;
+  esac
+  compiler_lib="${DEV_COMPILER_DIR%/bin}/lib"
+  for file in \
+    "meta_op.aic.$experiment_bitcode_arch.bc" \
+    "meta_op.aiv.$experiment_bitcode_arch.bc" \
+    "meta_op.mix.aic.$experiment_bitcode_arch.bc" \
+    "meta_op.mix.aiv.$experiment_bitcode_arch.bc" \
+    host.bc; do
+    if [[ ! -s "$compiler_lib/$file" ]]; then
+      printf 'missing experiment bitcode for %s: %s\n' \
+        "$experiment_soc" "$compiler_lib/$file" >&2
+      exit 1
+    fi
+  done
+
   # shellcheck disable=SC1091
   source "$DEV_VENV/bin/activate"
 fi
@@ -132,6 +160,8 @@ printf 'python=%s\n' "$PYTHON_BIN"
 if [[ "$DRY_RUN" == "1" ]]; then
   printf 'bishengir_compile=%s\n' "$DEV_COMPILER_DIR/bishengir-compile"
 else
+  printf 'bitcode_package=soc:%s arch:%s (project build; required)\n' \
+    "$experiment_soc" "$experiment_bitcode_arch"
   printf 'bishengir_opt=%s (CANN bytecode reader; expected)\n' \
     "$(realpath "$actual_bishengir_opt")"
   printf 'hivmc=%s (CANN binary backend; expected)\n' \

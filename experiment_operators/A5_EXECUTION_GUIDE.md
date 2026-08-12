@@ -227,8 +227,11 @@ TRITON_DEV_IMPORT_OK
 JOBS=32 ./tools/remote_experiment/rebuild-compiler.sh
 ```
 
-预期：CMake 配置和 Ninja 构建完成，最后返回容器提示符，退出码为 0；日志中没有
-`FAILED` 或 `ninja: build stopped`。
+预期：CMake 和 Ninja 构建成功，最后打印：
+
+```text
+BISHENGIR_PACKAGE_OK soc=<A5型号> bitcode_arch=c310
+```
 
 当前构建包含 A5/NPUIR 开关：
 
@@ -242,10 +245,10 @@ JOBS=32 ./tools/remote_experiment/rebuild-compiler.sh
 ```bash
 "$REMOTE_COMPILER_BUILD/bin/bishengir-compile" --version
 for file in \
-  meta_op.aic.c220.bc \
-  meta_op.aiv.c220.bc \
-  meta_op.mix.aic.c220.bc \
-  meta_op.mix.aiv.c220.bc \
+  meta_op.aic.c310.bc \
+  meta_op.aiv.c310.bc \
+  meta_op.mix.aic.c310.bc \
+  meta_op.mix.aiv.c310.bc \
   host.bc; do
   test -s "$REMOTE_COMPILER_BUILD/lib/$file" || exit 1
 done
@@ -315,11 +318,13 @@ SWEEP_LIMIT=1 SWEEP_WARMUP=1 SWEEP_ACTIVE=1 \
 ```text
 ascend_backend=.../triton-ascend/python/triton/backends/ascend/utils.py (project checkout; required)
 bishengir_compile=.../.codex-remote/ascendnpu-ir-build-explicit/bin/bishengir-compile (project build; required)
+bitcode_package=soc:<A5型号> arch:c310 (project build; required)
 bishengir_opt=/usr/local/Ascend/cann-9.1.0/.../bishengir-opt (CANN bytecode reader; expected)
 hivmc=/usr/local/Ascend/cann-9.1.0/.../hivmc (CANN binary backend; expected)
 ```
 
-前两条必须来自项目，后两条应来自 CANN；不符合时脚本立即退出。
+backend、编译器和 `c310` bitcode 必须来自项目，后两条应来自 CANN；不符合时
+脚本立即退出。
 
 该配置必须通过正确性检查，记录非零 UB 和 NPU latency。失败时终端会直接打印
 完整错误，独立日志仍保存在结果目录。冒烟结果必须包含一行 `measured`，且该行的

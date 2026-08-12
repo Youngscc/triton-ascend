@@ -27,7 +27,23 @@ compiler_source="$REMOTE_PROJECT/third_party/ascend/AscendNPU-IR"
 llvm_source="$compiler_source/third-party/llvm-project/llvm"
 system_bc_lib="$REMOTE_SYSTEM_COMPILER_LIB"
 build_lib="$REMOTE_COMPILER_BUILD/lib"
-toolchain_bin="$REMOTE_COMPILER_BUILD/a3-toolchain-bin"
+toolchain_bin="$REMOTE_COMPILER_BUILD/cann-toolchain-bin"
+
+soc_name="$("$REMOTE_VENV/bin/python" - <<'PY'
+import acl
+
+print(acl.get_soc_name())
+PY
+)"
+case "$soc_name" in
+  *Ascend910_95*|*Ascend950*|*910_958*) bitcode_arch=c310 ;;
+  *Ascend910B*|*Ascend910_93*) bitcode_arch=c220 ;;
+  *)
+    printf 'unsupported or unknown SoC for BishengIR bitcode: %s\n' "$soc_name" >&2
+    exit 1
+    ;;
+esac
+printf 'BishengIR target: soc=%s bitcode_arch=%s\n' "$soc_name" "$bitcode_arch"
 
 test -x "$REMOTE_HOST_CC" || {
   printf 'missing host C compiler: %s\n' "${REMOTE_HOST_CC:-not found}" >&2
@@ -50,8 +66,8 @@ mkdir -p "$build_lib" "$toolchain_bin"
 ln -sfn "$REMOTE_CCEC" "$toolchain_bin/ccec"
 ln -sfn "$REMOTE_LLVM_LINK" "$toolchain_bin/llvm-link"
 
-for name in meta_op.aic.c220.bc meta_op.aiv.c220.bc \
-  meta_op.mix.aic.c220.bc meta_op.mix.aiv.c220.bc host.bc; do
+for name in meta_op.aic.$bitcode_arch.bc meta_op.aiv.$bitcode_arch.bc \
+  meta_op.mix.aic.$bitcode_arch.bc meta_op.mix.aiv.$bitcode_arch.bc host.bc; do
   if [[ -L "$build_lib/$name" ]]; then
     unlink "$build_lib/$name"
   fi
@@ -75,18 +91,22 @@ cmake -S "$llvm_source" -B "$REMOTE_COMPILER_BUILD" -G Ninja \
 cmake --build "$REMOTE_COMPILER_BUILD" --target bishengir-compile -j "$jobs"
 
 for stem in aic aiv mix.aic mix.aiv; do
-  target_bc="$build_lib/meta_op.$stem.c220.bc"
+  target_bc="$build_lib/meta_op.$stem.$bitcode_arch.bc"
   if [[ ! -e "$target_bc" ]]; then
-    source_bc="$system_bc_lib/meta_op.$stem.c220.bc"
+    source_bc="$system_bc_lib/meta_op.$stem.$bitcode_arch.bc"
     if [[ ! -e "$source_bc" ]]; then
       source_bc="$system_bc_lib/meta_op.$stem.bc"
     fi
     if [[ ! -e "$source_bc" ]]; then
-      printf 'missing generated and CANN bitcode for meta_op.%s\n' "$stem" >&2
+      printf 'missing %s bitcode for meta_op.%s\n' "$bitcode_arch" "$stem" >&2
       exit 1
     fi
     ln -s "$source_bc" "$target_bc"
   fi
+  test -s "$target_bc" || {
+    printf 'empty %s bitcode: %s\n' "$bitcode_arch" "$target_bc" >&2
+    exit 1
+  }
 done
 
 if [[ ! -e "$build_lib/host.bc" ]]; then
@@ -96,3 +116,9 @@ if [[ ! -e "$build_lib/host.bc" ]]; then
   fi
   ln -s "$system_bc_lib/host.bc" "$build_lib/host.bc"
 fi
+test -s "$build_lib/host.bc" || {
+  printf 'empty host bitcode: %s\n' "$build_lib/host.bc" >&2
+  exit 1
+}
+
+printf 'BISHENGIR_PACKAGE_OK soc=%s bitcode_arch=%s\n' "$soc_name" "$bitcode_arch"

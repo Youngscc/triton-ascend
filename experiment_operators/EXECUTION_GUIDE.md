@@ -148,8 +148,11 @@ TRITON_DEV_IMPORT_OK
 JOBS=32 ./tools/remote_experiment/rebuild-compiler.sh
 ```
 
-预期：CMake 配置和 Ninja 构建完成，最后返回容器提示符，退出码为 0；日志中没有
-`FAILED` 或 `ninja: build stopped`。
+预期：CMake 和 Ninja 构建成功，最后打印：
+
+```text
+BISHENGIR_PACKAGE_OK soc=<A3型号> bitcode_arch=c220
+```
 
 构建源和产物：
 
@@ -277,11 +280,13 @@ dry run complete; no experiment was launched
 ```text
 ascend_backend=.../triton-ascend/python/triton/backends/ascend/utils.py (project checkout; required)
 bishengir_compile=.../.codex-remote/ascendnpu-ir-build-explicit/bin/bishengir-compile (project build; required)
+bitcode_package=soc:<A3型号> arch:c220 (project build; required)
 bishengir_opt=/usr/local/Ascend/.../bishengir-opt (CANN bytecode reader; expected)
 hivmc=/usr/local/Ascend/.../hivmc (CANN binary backend; expected)
 ```
 
-前两条必须来自项目，后两条应来自 CANN；不符合时脚本立即退出。
+backend、编译器和 `c220` bitcode 必须来自项目，后两条应来自 CANN；不符合时
+脚本立即退出。
 
 完整前台实验预期：逐项执行 48 个配置，末尾输出 `completed operator_file=...`、
 `sweep and aggregate report complete` 和 HTML 路径；`summary.json` 中

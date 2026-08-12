@@ -126,11 +126,13 @@ LLVM must match the top-level repository gitlinks in the server checkout.
   consumes the three experiment controls.
 - The custom BishengIR 1.2 compiler is built from the repository-pinned
   AscendNPU-IR and LLVM. Its executable alone is not a complete toolchain:
-  adjacent `lib/meta_op.{aic,aiv,mix.aic,mix.aiv}.c220.bc` and `host.bc` are
-  required before the external CANN `hivmc` can produce a binary. The rebuild
-  script generates version-matched bitcode from the pinned Template sources
-  with CANN's `ccec`; only if a generated file is absent does it create a
-  private fallback link to CANN's legacy-named bitcode. It never changes CANN.
+  A3 requires adjacent `lib/meta_op.{aic,aiv,mix.aic,mix.aiv}.c220.bc`, A5
+  requires the corresponding `.c310.bc` files, and both require `host.bc`
+  before the external CANN `hivmc` can produce a binary. The rebuild script
+  detects the SoC, generates version-matched bitcode from the pinned Template
+  sources with CANN's `ccec`, and only falls back to same-architecture CANN
+  bitcode. Experiment startup rejects a missing or wrong-architecture package.
+  It never changes CANN.
 - A missing bitcode bundle manifests misleadingly as `Failed to compile
   BiShengLIR to binary`. Running `hivmc` directly on an earlier
   `kernel.npuir.mlir` can additionally report an unknown intermediate op; that
