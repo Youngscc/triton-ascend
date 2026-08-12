@@ -61,13 +61,35 @@ JOBS=32 ./tools/remote_experiment/setup-dev-environment.sh
 JOBS=32 ./tools/remote_experiment/rebuild-compiler.sh
 ```
 
+When the container cannot reach the Triton LLVM artifact server, stage the
+repository-selected prebuilt LLVM under the persistent project directory and
+pass it only to the Triton build:
+
+```bash
+TRITON_OFFLINE_BUILD=1 \
+LLVM_SYSPATH="/absolute/project/path/.codex-remote/llvm/<matching-llvm-directory>" \
+TRITON_PARALLEL_LINK_JOBS=2 \
+JOBS=4 ./tools/remote_experiment/setup-dev-environment.sh
+```
+
 `setup-dev-environment.sh` creates `.codex-remote/venv` when it is absent,
 installs a private CMake 3.28+ only when required, builds this checkout's
 Triton-Ascend and `libtriton.so`, performs the editable install, and verifies
 the import paths. It uses the server clone's own `.git`; the mirrored
 `.codex-remote/top-git` is only a compatibility fallback for offline rsync.
-The host build prefers a complete Clang/Lld pair and otherwise uses GCC/G++
-with the default linker; the CANN device compiler path is unchanged.
+The host build requires Clang and automatically prefers the Ubuntu
+clang-15/clang++-15/lld-15 tools, including their version-suffixed paths. It
+does not fall back to GCC. The CANN device compiler path is unchanged.
+
+The setup exits unsuccessfully if the project MLIR 22 tool cannot emit
+bytecode version 4 containing `llvm.inttoptr` that the MLIR 19 BishengIR reader
+can consume, if its verification resolves Python
+outside the project venv, or if either `triton` or `libtriton` resolves outside
+the current checkout. A successful run prints `MLIR_BYTECODE_ROUNDTRIP_OK` and
+ends with `TRITON_DEV_IMPORT_OK`. Because the venv
+uses `--system-site-packages`, a manual development invocation must put
+`$REMOTE_PROJECT/python` first in `PYTHONPATH`; `run_all_sweeps.sh` and
+`REMOTE_MODE=dev` do this automatically.
 
 Do not copy a venv from another host, container, or project path. A Python venv
 contains interpreter and script paths and must be created inside the container

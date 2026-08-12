@@ -130,6 +130,15 @@ LLVM must match the top-level repository gitlinks in the server checkout.
   extensions (including `.mlirbc`) and forwards `mix_mode` when the backend
   metadata provides it. These compatibility fixes are required to combine the
   current Python/core with the CANN-matched compiler.
+- The top-level Triton and `triton-mlir-opt` use the repository-selected MLIR
+  22, while the standalone `bishengir-compile` uses AscendNPU-IR's pinned MLIR
+  19.1.7. The MLIR 22 writer must emit bytecode version 4, the newest tested
+  format that MLIR 19 can consume; bytecode versions 5 and 6 encode native
+  operation properties that fail on the MLIR 19 reader. CANN's
+  `bishengir-opt` decodes version 4 to textual IR before the custom
+  `bishengir-compile` runs. `setup-dev-environment.sh` verifies this boundary
+  with a fresh `llvm.inttoptr` bytecode round trip and prints
+  `MLIR_BYTECODE_ROUNDTRIP_OK`.
 - `dev-compatible` has completed Python-to-benchmark smoke tests for fused
   attention, unified attention, and HSTU forward attention. Initial 2-warmup,
   5-active means were approximately 2.839409 ms, 57.708093 ms, and 0.044769 ms

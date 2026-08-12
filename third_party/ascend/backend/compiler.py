@@ -294,6 +294,11 @@ def linalg_to_bc_by_triton_mlir_opt(linalg: str, metadata, opt):
             triton_mlir_opt_path,
             ttadapter_path,
             "--emit-bytecode",
+            # BishengIR's standalone compiler is pinned to MLIR 19. MLIR 22
+            # bytecode versions 5 and 6 encode native operation properties
+            # that its reader cannot consume; version 4 is the newest format
+            # accepted by both sides.
+            "--emit-bytecode-version=4",
             "-o",
             bc_path,
         ], check=True, capture_output=True, text=True)

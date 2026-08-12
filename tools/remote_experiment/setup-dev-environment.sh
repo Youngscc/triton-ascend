@@ -102,16 +102,67 @@ export MAX_JOBS="$jobs"
 export TRITON_BUILD_WITH_CCACHE=true
 export TRITON_BUILD_PROTON=OFF
 export TRITON_BUILD_DISTRIBUTED=OFF
+export TRITON_PARALLEL_LINK_JOBS="${TRITON_PARALLEL_LINK_JOBS:-2}"
 export TRITON_APPEND_CMAKE_ARGS=-DTRITON_BUILD_UT=OFF
 export GIT_DIR="$repo_git_dir"
 export GIT_WORK_TREE="$REMOTE_PROJECT"
 
 python -m pip install --no-build-isolation --no-deps -e .
-PYTHONPATH="$REMOTE_PROJECT/python" python - <<'PY'
+
+triton_mlir_opt="$REMOTE_PROJECT/python/triton/_C/triton-mlir-opt"
+test -x "$triton_mlir_opt" || {
+  printf 'missing project triton-mlir-opt: %s\n' "$triton_mlir_opt" >&2
+  exit 1
+}
+bishengir_opt="$(command -v bishengir-opt || true)"
+test -x "$bishengir_opt" || {
+  printf '%s\n' 'missing CANN bishengir-opt for MLIR bytecode compatibility check' >&2
+  exit 1
+}
+bytecode_check_dir="$(mktemp -d)"
+trap 'rm -rf -- "$bytecode_check_dir"' EXIT
+printf '%s\n' \
+  'module {' \
+  '  llvm.func @bytecode_roundtrip(%arg0: i64) {' \
+  '    %0 = llvm.inttoptr %arg0 : i64 to !llvm.ptr' \
+  '    llvm.return' \
+  '  }' \
+  '}' >"$bytecode_check_dir/input.mlir"
+"$triton_mlir_opt" "$bytecode_check_dir/input.mlir" --emit-bytecode \
+  --emit-bytecode-version=4 \
+  -o "$bytecode_check_dir/input.mlirbc"
+"$bishengir_opt" "$bytecode_check_dir/input.mlirbc" \
+  -o "$bytecode_check_dir/roundtrip.mlir"
+grep -q 'llvm.inttoptr' "$bytecode_check_dir/roundtrip.mlir"
+printf '%s\n' 'MLIR_BYTECODE_ROUNDTRIP_OK'
+rm -rf -- "$bytecode_check_dir"
+trap - EXIT
+
+REMOTE_PROJECT="$REMOTE_PROJECT" REMOTE_VENV="$REMOTE_VENV" \
+  PYTHONPATH="$REMOTE_PROJECT/python" python - <<'PY'
+import os
+import sys
+from pathlib import Path
+
 import triton
 from triton._C import libtriton
 
-print(triton.__version__)
-print(triton.__file__)
-print(libtriton.__file__)
+project_python = (Path(os.environ["REMOTE_PROJECT"]) / "python").resolve()
+venv = Path(os.environ["REMOTE_VENV"]).resolve()
+python_executable = Path(sys.executable).resolve()
+triton_file = Path(triton.__file__).resolve()
+libtriton_file = Path(libtriton.__file__).resolve()
+
+if not python_executable.is_relative_to(venv):
+    raise RuntimeError(f"Python is not from the project venv: {python_executable}")
+if not triton_file.is_relative_to(project_python):
+    raise RuntimeError(f"Triton Python is not from this checkout: {triton_file}")
+if not libtriton_file.is_relative_to(project_python):
+    raise RuntimeError(f"libtriton is not from this checkout: {libtriton_file}")
+
+print("triton version:", triton.__version__)
+print("python:", python_executable)
+print("triton:", triton_file)
+print("libtriton:", libtriton_file)
+print("TRITON_DEV_IMPORT_OK")
 PY

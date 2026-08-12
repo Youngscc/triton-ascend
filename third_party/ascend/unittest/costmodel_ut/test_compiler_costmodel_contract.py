@@ -3,6 +3,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 class CompilerCostmodelContractTest(unittest.TestCase):
@@ -30,6 +31,8 @@ class CompilerCostmodelContractTest(unittest.TestCase):
         libtriton_mod.passes = Dummy()
         libtriton_mod.ascend = Dummy()
         libtriton_mod.buffer_ir = Dummy()
+        libtriton_ascend_mod = types.ModuleType("triton._C.libtriton.ascend")
+        libtriton_ascend_mod.ir = Dummy()
 
         utils_mod = types.ModuleType("triton.backends.ascend.utils")
         for name in [
@@ -106,6 +109,7 @@ class CompilerCostmodelContractTest(unittest.TestCase):
             "triton": triton_mod,
             "triton._C": triton_c_mod,
             "triton._C.libtriton": libtriton_mod,
+            "triton._C.libtriton.ascend": libtriton_ascend_mod,
             "triton.backends.ascend": ascend_backend_mod,
             "triton.backends.ascend.utils": utils_mod,
             "triton.backends.ascend.driver": driver_mod,
@@ -132,6 +136,30 @@ class CompilerCostmodelContractTest(unittest.TestCase):
         opt_costmodel = backend.parse_options({"enable_costmodel_backend": True})
         self.assertTrue(opt_costmodel.enable_costmodel_backend)
         self.assertFalse(opt_costmodel.use_bytecode)
+
+    def test_bytecode_writer_targets_bishengir_compatible_version(self):
+        cmplr, _dump_mgr, _GPUTarget = self._load_compiler_module()
+
+        def fake_run(command, **_kwargs):
+            output_path = Path(command[command.index("-o") + 1])
+            output_path.write_bytes(b"MLIR-bytecode")
+
+        with mock.patch.object(
+                cmplr,
+                "_get_triton_mlir_opt_path",
+                return_value="/llvm22/bin/triton-mlir-opt",
+        ), mock.patch.object(cmplr.subprocess, "run", side_effect=fake_run) as run:
+            result = cmplr.linalg_to_bc_by_triton_mlir_opt(
+                "module {}\n",
+                {"hash": "test"},
+                types.SimpleNamespace(debug=False),
+            )
+
+        self.assertEqual(result, b"MLIR-bytecode")
+        command = run.call_args.args[0]
+        self.assertEqual(command[0], "/llvm22/bin/triton-mlir-opt")
+        self.assertIn("--emit-bytecode", command)
+        self.assertIn("--emit-bytecode-version=4", command)
 
 
 if __name__ == "__main__":

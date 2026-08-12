@@ -93,9 +93,9 @@ JOBS=32 ./tools/remote_experiment/setup-dev-environment.sh
 4. 构建当前仓库的 Triton C++/MLIR 核心和 `libtriton.so`；
 5. editable 安装当前 Triton-Ascend，并验证实际导入路径。
 
-宿主侧编译优先使用完整的 Clang/Lld 组合；缺少 Clang 或 Lld 时自动使用
-GCC/G++ 和默认 GNU linker。该选择不改变设备侧的 `ccec`、BishengIR 或
-`hivmc`。
+宿主侧编译必须使用 Clang。脚本优先自动选择版本后缀为 15 的
+`clang`、`clang++`、`lld` 和 `ld.lld`，找不到 Clang 时直接失败，不会回退
+到 GCC。宿主 Clang 不替代设备侧的 `ccec`、BishengIR 或 `hivmc`。
 
 脚本优先使用服务器 clone 自身的 `.git`。只有离线 rsync 得到的无 `.git`
 工作树才使用 `.codex-remote/top-git`。
@@ -103,15 +103,47 @@ GCC/G++ 和默认 GNU linker。该选择不改变设备侧的 `ccec`、BishengIR
 检查 venv：
 
 ```bash
-test -x .codex-remote/venv/bin/python
-.codex-remote/venv/bin/python - <<'PY'
+test -x "$REMOTE_VENV/bin/python"
+REMOTE_PROJECT="$REMOTE_PROJECT" REMOTE_VENV="$REMOTE_VENV" \
+  PYTHONPATH="$REMOTE_PROJECT/python" "$REMOTE_VENV/bin/python" - <<'PY'
+import os
+import sys
+from pathlib import Path
+
 import triton
 from triton._C import libtriton
 
-print("triton:", triton.__file__)
-print("libtriton:", libtriton.__file__)
+project_python = (Path(os.environ["REMOTE_PROJECT"]) / "python").resolve()
+venv = Path(os.environ["REMOTE_VENV"]).resolve()
+python_executable = Path(sys.executable).resolve()
+triton_file = Path(triton.__file__).resolve()
+libtriton_file = Path(libtriton.__file__).resolve()
+
+assert python_executable.is_relative_to(venv), python_executable
+assert triton_file.is_relative_to(project_python), triton_file
+assert libtriton_file.is_relative_to(project_python), libtriton_file
+
+print("python:", python_executable)
+print("triton:", triton_file)
+print("libtriton:", libtriton_file)
+print("TRITON_DEV_IMPORT_OK")
 PY
 ```
+
+命令退出码必须为 0，并打印 `MLIR_BYTECODE_ROUNDTRIP_OK` 和
+`TRITON_DEV_IMPORT_OK`。前者验证项目的 LLVM 22 `triton-mlir-opt` 能生成
+bytecode version 4，且 LLVM 19.1.7 `bishengir-opt` 能读取其中的
+`llvm.inttoptr`；后者验证 Python 必须来自
+`$REMOTE_VENV`，`triton` 和 `libtriton` 必须来自当前
+`$REMOTE_PROJECT/python/triton`；任何 `/usr/local/.../site-packages/triton`
+路径都表示混用了容器预装版本。由于 venv 使用 `--system-site-packages` 复用
+Torch 和 CANN，手动运行当前 checkout 时必须把 `$REMOTE_PROJECT/python` 放在
+`PYTHONPATH` 首位；`run_all_sweeps.sh` 和 `REMOTE_MODE=dev` 会自动设置。
+
+正常编译保持 `use_bytecode=true`：项目的 LLVM 22 `triton-mlir-opt` 固定输出
+bytecode version 4，CANN 的 LLVM 19.1.7 `bishengir-opt` 解码后，仓库固定的
+LLVM 19.1.7 `bishengir-compile` 接收文本 IR。不得输出带 native properties
+且 MLIR 19 无法读取的 bytecode version 5 或 6。
 
 不要从宿主机、其他容器或其他项目路径复制 venv。项目路径改变后，应在最终
 容器和最终挂载路径重新执行 `setup-dev-environment.sh`。
@@ -141,12 +173,22 @@ third_party/ascend/AscendNPU-IR
 确认工具链：
 
 ```bash
-.codex-remote/ascendnpu-ir-build-explicit/bin/bishengir-compile --version
+"$REMOTE_COMPILER_BUILD/bin/bishengir-compile" --version
+for file in \
+  meta_op.aic.c220.bc \
+  meta_op.aiv.c220.bc \
+  meta_op.mix.aic.c220.bc \
+  meta_op.mix.aiv.c220.bc \
+  host.bc; do
+  test -s "$REMOTE_COMPILER_BUILD/lib/$file" || exit 1
+done
 command -v hivmc
+echo BISHENGIR_PACKAGE_OK
 ```
 
 `bishengir-compile` 及相邻 bitcode 必须来自同一次构建。最终 NPU 二进制仍由
-容器内 CANN 的 `hivmc` 生成。
+容器内 CANN 的 `hivmc` 生成。以上命令必须以退出码 0 结束并打印
+`BISHENGIR_PACKAGE_OK`；任一 bitcode 缺失或为空都不算通过。
 
 ## 5. 选择设备并做基线验证
 
@@ -161,12 +203,16 @@ npu-smi info
 
 ```bash
 ASCEND_RT_VISIBLE_DEVICES=2 \
-  .codex-remote/venv/bin/python -u \
+PYTHONPATH="$REMOTE_PROJECT/python" \
+PATH="$REMOTE_COMPILER_BUILD/bin:$REMOTE_VENV/bin:$PATH" \
+TRITON_NPU_COMPILER_PATH="$REMOTE_COMPILER_BUILD/bin" \
+  "$REMOTE_VENV/bin/python" -u \
   third_party/ascend/tutorials/01-vector-add.py
 ```
 
 如果容器创建时只暴露一张物理卡，该卡通常映射为容器内逻辑 `npu:0`，不需要
-再次指定物理编号。Vector Add 必须输出最大误差 0 或容差内结果并通过测试。
+再次指定物理编号。Vector Add 必须以退出码 0 结束，输出最大误差 0 或容差内
+结果；编译错误、设备异常、超时或导入 `/usr/local` 的 Triton 都不算通过。
 
 ## 6. 运行一个算子的实验
 
