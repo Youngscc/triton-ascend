@@ -273,7 +273,6 @@ BISHENGIR_PACKAGE_OK
 PYTHONPATH="$REMOTE_PROJECT/python" \
 PATH="$REMOTE_COMPILER_BUILD/bin:$REMOTE_VENV/bin:$PATH" \
 TRITON_NPU_COMPILER_PATH="$REMOTE_COMPILER_BUILD/bin" \
-BISHENGIR_NATIVE_A5_REGBASE=1 \
   "$REMOTE_VENV/bin/python" -u \
   third_party/ascend/tutorials/01-vector-add.py
 ```
@@ -295,7 +294,6 @@ ASCEND_RT_VISIBLE_DEVICES=<物理卡编号> \
 PYTHONPATH="$REMOTE_PROJECT/python" \
 PATH="$REMOTE_COMPILER_BUILD/bin:$REMOTE_VENV/bin:$PATH" \
 TRITON_NPU_COMPILER_PATH="$REMOTE_COMPILER_BUILD/bin" \
-BISHENGIR_NATIVE_A5_REGBASE=1 \
   "$REMOTE_VENV/bin/python" -u \
   third_party/ascend/tutorials/01-vector-add.py
 ```
@@ -320,7 +318,6 @@ SWEEP_LIMIT=1 SWEEP_WARMUP=1 SWEEP_ACTIVE=1 \
 ascend_backend=.../triton-ascend/python/triton/backends/ascend/utils.py (project checkout; required)
 bishengir_compile=.../.codex-remote/ascendnpu-ir-build-explicit/bin/bishengir-compile (project build; required)
 bitcode_package=soc:<A5型号> arch:c310 (project build; required)
-a5_compile_pipeline=native project BishengIR (required)
 bishengir_opt=/usr/local/Ascend/cann-9.1.0/.../bishengir-opt (CANN bytecode reader; expected)
 hivmc=/usr/local/Ascend/cann-9.1.0/.../hivmc (CANN binary backend; expected)
 ```
