@@ -748,7 +748,10 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
 
         if opt.debug or os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
             print_cmd_list = cmd_list.copy()
-            print_cmd_list[1], print_cmd_list[-1] = _get_dump_paths(metadata["hash"], ttadapter_path, bin_file)
+            print_src_path, print_dst_path = _get_dump_paths(
+                metadata["hash"], ttadapter_path, bin_file)
+            print_cmd_list[1] = print_src_path
+            print_cmd_list[print_cmd_list.index("-o") + 1] = print_dst_path
             print(f"[DEBUG] cmd_list: {shlex.join(print_cmd_list)}")
 
         compile_started = time.perf_counter()
@@ -994,7 +997,10 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
 
         if opt.debug or os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
             print_cmd_list = cmd_list.copy()
-            print_cmd_list[1], print_cmd_list[-1] = _get_dump_paths(metadata["hash"], ttadapter_path, bin_file)
+            print_src_path, print_dst_path = _get_dump_paths(
+                metadata["hash"], ttadapter_path, bin_file)
+            print_cmd_list[1] = print_src_path
+            print_cmd_list[print_cmd_list.index("-o") + 1] = print_dst_path
             print(f"[DEBUG] cmd_list: {shlex.join(print_cmd_list)}")
 
         compile_started = time.perf_counter()

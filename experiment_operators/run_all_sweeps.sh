@@ -85,7 +85,14 @@ print(torch.npu.get_device_name(torch.npu.current_device()))
 PY
 )"
   case "$experiment_soc" in
-    *Ascend910_95*|*Ascend950*|*910_958*) experiment_bitcode_arch=c310 ;;
+    *Ascend910_95*|*Ascend950*|*910_958*)
+      experiment_bitcode_arch=c310
+      # The standalone compiler delegates RegBase targets to CANN's
+      # bishengir-compile-a5 unless this opt-in is present.  Delegation cannot
+      # consume the experiment-only compiler controls, so A5 sweeps must use
+      # the native pipeline built from this checkout.
+      export BISHENGIR_NATIVE_A5_REGBASE=1
+      ;;
     *Ascend910B*|*Ascend910_93*) experiment_bitcode_arch=c220 ;;
     *)
       printf 'unsupported or unknown experiment SoC: %s\n' "$experiment_soc" >&2
@@ -163,6 +170,9 @@ if [[ "$DRY_RUN" == "1" ]]; then
 else
   printf 'bitcode_package=soc:%s arch:%s (project build; required)\n' \
     "$experiment_soc" "$experiment_bitcode_arch"
+  if [[ "$experiment_bitcode_arch" == "c310" ]]; then
+    printf 'a5_compile_pipeline=native project BishengIR (required)\n'
+  fi
   printf 'bishengir_opt=%s (CANN bytecode reader; expected)\n' \
     "$(realpath "$actual_bishengir_opt")"
   printf 'hivmc=%s (CANN binary backend; expected)\n' \
