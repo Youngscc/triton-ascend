@@ -78,9 +78,10 @@ if [[ "$DRY_RUN" != "1" ]]; then
   fi
 
   experiment_soc="$("$DEV_VENV/bin/python" - <<'PY'
-import acl
+import torch
+import torch_npu  # noqa: F401
 
-print(acl.get_soc_name())
+print(torch.npu.get_device_name(torch.npu.current_device()))
 PY
 )"
   case "$experiment_soc" in

@@ -124,6 +124,10 @@ LLVM must match the top-level repository gitlinks in the server checkout.
   `hivmc`, and the downstream `bisheng` device backend still come from the
   installed CANN toolkit; those paths do not replace the custom compiler that
   consumes the three experiment controls.
+- A5 detection must not depend exclusively on the optional Python `acl`
+  module. The backend checks `TRITON_ASCEND_ARCH`, then ACL when available,
+  then `torch.npu.get_device_name`; otherwise an A5 can be misclassified as
+  A3, enabling FFTS and producing a launch that does not write output.
 - The custom BishengIR 1.2 compiler is built from the repository-pinned
   AscendNPU-IR and LLVM. Its executable alone is not a complete toolchain:
   A3 requires adjacent `lib/meta_op.{aic,aiv,mix.aic,mix.aiv}.c220.bc`, A5

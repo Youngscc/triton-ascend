@@ -106,11 +106,10 @@ command -v hivmc
 npu-smi info
 
 python3 - <<'PY'
-import acl
 import torch
 import torch_npu
 
-print("CANN SoC name:", acl.get_soc_name())
+print("NPU name:", torch.npu.get_device_name(torch.npu.current_device()))
 print("visible NPU count:", torch.npu.device_count())
 PY
 ```
@@ -125,7 +124,7 @@ clang version 15.x
 LLD 15.x
 /usr/local/.../ccec
 /usr/local/.../hivmc
-CANN SoC name: <A5设备型号>
+NPU name: <A5设备型号>
 visible NPU count: <大于0>
 ```
 

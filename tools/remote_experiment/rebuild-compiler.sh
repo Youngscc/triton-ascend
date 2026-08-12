@@ -30,9 +30,10 @@ build_lib="$REMOTE_COMPILER_BUILD/lib"
 toolchain_bin="$REMOTE_COMPILER_BUILD/cann-toolchain-bin"
 
 soc_name="$("$REMOTE_VENV/bin/python" - <<'PY'
-import acl
+import torch
+import torch_npu  # noqa: F401
 
-print(acl.get_soc_name())
+print(torch.npu.get_device_name(torch.npu.current_device()))
 PY
 )"
 case "$soc_name" in
