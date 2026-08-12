@@ -118,6 +118,12 @@ LLVM must match the top-level repository gitlinks in the server checkout.
   idle A3 card completed with maximum error 0, and a fresh-cache TTIR compile
   produced an NPU binary through the custom compiler. Recheck card availability
   immediately before performance measurements.
+- Experiment runs pin `TRITON_NPU_COMPILER_PATH` to the project build and
+  reject any resolved `bishengir-compile` outside
+  `.codex-remote/ascendnpu-ir-build-explicit/bin`. CANN's `bishengir-opt`,
+  `hivmc`, and the downstream `bisheng` device backend still come from the
+  installed CANN toolkit; those paths do not replace the custom compiler that
+  consumes the three experiment controls.
 - The custom BishengIR 1.2 compiler is built from the repository-pinned
   AscendNPU-IR and LLVM. Its executable alone is not a complete toolchain:
   adjacent `lib/meta_op.{aic,aiv,mix.aic,mix.aiv}.c220.bc` and `host.bc` are

@@ -20,6 +20,8 @@ git clone --recurse-submodules git@github.com:Youngscc/triton-ascend.git
 cd triton-ascend
 ```
 
+预期：显示 `Cloning into 'triton-ascend'...` 和各子模块检出信息，命令退出码为 0。
+
 更新已有服务器仓库：
 
 ```bash
@@ -29,6 +31,9 @@ git submodule sync --recursive
 git submodule update --init --recursive
 ```
 
+预期：`git pull` 显示 `Already up to date.` 或正常的 fast-forward 更新；子模块命令
+退出码为 0。
+
 进入需要实验的分支后，确认顶层仓库和子模块状态：
 
 ```bash
@@ -36,6 +41,9 @@ git branch --show-current
 git status --short
 git submodule status --recursive
 ```
+
+预期：第一行是实验分支名，`git status --short` 没有输出；每个子模块行以空格
+开头，不以 `-`、`+` 或 `U` 开头。
 
 ## 2. 配置已有容器
 
@@ -46,6 +54,9 @@ cp tools/remote_experiment/config.local.sh.example \
   tools/remote_experiment/config.local.sh
 vi tools/remote_experiment/config.local.sh
 ```
+
+预期：`cp` 无报错；保存后文件中存在实际的 `REMOTE_PROJECT` 和
+`REMOTE_CONTAINER`。
 
 设置服务器项目绝对路径和已有容器名：
 
@@ -65,6 +76,12 @@ docker inspect "$REMOTE_CONTAINER" \
   --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
 ```
 
+预期：状态输出为 `running`，两个 `test` 命令无输出且退出码为 0，挂载列表包含：
+
+```text
+/服务器绝对路径/triton-ascend -> /服务器绝对路径/triton-ascend
+```
+
 项目目录必须在宿主机和容器内保持同一个绝对路径。`.codex-remote/venv`、编译
 产物、缓存、日志和结果都位于该挂载目录，因此容器重启不会丢失。
 
@@ -78,6 +95,8 @@ docker exec -u root -it "$REMOTE_CONTAINER" bash
 cd "$REMOTE_PROJECT"
 source tools/remote_experiment/config.sh
 ```
+
+预期：进入容器 shell，`pwd` 应为 `$REMOTE_PROJECT`，三条命令均无报错。
 
 在容器内执行：
 
@@ -100,58 +119,23 @@ JOBS=32 ./tools/remote_experiment/setup-dev-environment.sh
 脚本优先使用服务器 clone 自身的 `.git`。只有离线 rsync 得到的无 `.git`
 工作树才使用 `.codex-remote/top-git`。
 
-检查 venv：
+setup 成功时必须以退出码 0 结束，并打印：
 
-```bash
-test -x "$REMOTE_VENV/bin/python"
-REMOTE_PROJECT="$REMOTE_PROJECT" REMOTE_VENV="$REMOTE_VENV" \
-  PYTHONPATH="$REMOTE_PROJECT/python" "$REMOTE_VENV/bin/python" - <<'PY'
-import os
-import sys
-from pathlib import Path
-
-import triton
-from triton._C import libtriton
-
-project_python = (Path(os.environ["REMOTE_PROJECT"]) / "python").resolve()
-venv = Path(os.environ["REMOTE_VENV"]).resolve()
-python_command = Path(sys.executable).absolute()
-python_prefix = Path(sys.prefix).resolve()
-python_base_prefix = Path(sys.base_prefix).resolve()
-triton_file = Path(triton.__file__).resolve()
-libtriton_file = Path(libtriton.__file__).resolve()
-
-assert python_prefix == venv, (python_prefix, venv)
-assert sys.prefix != sys.base_prefix, (sys.prefix, sys.base_prefix)
-assert triton_file.is_relative_to(project_python), triton_file
-assert libtriton_file.is_relative_to(project_python), libtriton_file
-
-print("python command:", python_command)
-print("python prefix:", python_prefix)
-print("python base prefix:", python_base_prefix)
-print("triton:", triton_file)
-print("libtriton:", libtriton_file)
-print("TRITON_DEV_IMPORT_OK")
-PY
+```text
+MLIR_BYTECODE_ROUNDTRIP_OK
+TRITON_DEV_IMPORT_OK
 ```
 
-命令退出码必须为 0，并打印 `MLIR_BYTECODE_ROUNDTRIP_OK` 和
-`TRITON_DEV_IMPORT_OK`。前者验证项目的 LLVM 22 `triton-mlir-opt` 能生成
-bytecode version 4，且 LLVM 19.1.7 `bishengir-opt` 能读取其中的
-`llvm.inttoptr`；后者验证 Python 必须来自
-`$REMOTE_VENV`（以 `sys.prefix` 为准），`triton` 和 `libtriton` 必须来自当前
-`$REMOTE_PROJECT/python/triton`；任何 `/usr/local/.../site-packages/triton`
-路径都表示混用了容器预装版本。`venv/bin/python` 可以是指向
-`/usr/local/bin/python` 的符号链接，解析后的解释器路径位于 `/usr/local` 属于
-正常现象，不能据此判断 venv 是否生效。由于 venv 使用
-`--system-site-packages` 复用
-Torch 和 CANN，手动运行当前 checkout 时必须把 `$REMOTE_PROJECT/python` 放在
-`PYTHONPATH` 首位；`run_all_sweeps.sh` 和 `REMOTE_MODE=dev` 会自动设置。
+- `MLIR_BYTECODE_ROUNDTRIP_OK`：MLIR 22 生成的 bytecode version 4 可由
+  MLIR 19.1.7 `bishengir-opt` 读取。
+- `TRITON_DEV_IMPORT_OK`：项目 venv、当前仓库的 Triton 和
+  `libtriton.so` 均已正确加载。
 
-正常编译保持 `use_bytecode=true`：项目的 LLVM 22 `triton-mlir-opt` 固定输出
-bytecode version 4，CANN 的 LLVM 19.1.7 `bishengir-opt` 解码后，仓库固定的
-LLVM 19.1.7 `bishengir-compile` 接收文本 IR。不得输出带 native properties
-且 MLIR 19 无法读取的 bytecode version 5 或 6。
+日志中的 `python prefix` 应为 `$REMOTE_VENV`，`triton` 和 `libtriton` 应位于
+`$REMOTE_PROJECT/python/triton`。`python` 的基础解释器位于 `/usr/local` 是正常
+的；如果 `triton` 位于 `/usr/local/.../site-packages`，则环境错误。
+
+正常编译保持 `use_bytecode=true`，脚本会使用兼容的 bytecode version 4。
 
 不要从宿主机、其他容器或其他项目路径复制 venv。项目路径改变后，应在最终
 容器和最终挂载路径重新执行 `setup-dev-environment.sh`。
@@ -163,6 +147,9 @@ LLVM 19.1.7 `bishengir-compile` 接收文本 IR。不得输出带 native propert
 ```bash
 JOBS=32 ./tools/remote_experiment/rebuild-compiler.sh
 ```
+
+预期：CMake 配置和 Ninja 构建完成，最后返回容器提示符，退出码为 0；日志中没有
+`FAILED` 或 `ninja: build stopped`。
 
 构建源和产物：
 
@@ -194,6 +181,15 @@ command -v hivmc
 echo BISHENGIR_PACKAGE_OK
 ```
 
+预期输出包含：
+
+```text
+bishengir-compile 1.2.0
+llvm 19.1.7
+/usr/local/.../hivmc
+BISHENGIR_PACKAGE_OK
+```
+
 `bishengir-compile` 及相邻 bitcode 必须来自同一次构建。最终 NPU 二进制仍由
 容器内 CANN 的 `hivmc` 生成。以上命令必须以退出码 0 结束并打印
 `BISHENGIR_PACKAGE_OK`；任一 bitcode 缺失或为空都不算通过。
@@ -206,6 +202,9 @@ echo BISHENGIR_PACKAGE_OK
 npu-smi info
 ```
 
+预期：列出 NPU、`Health`、`AICore(%)`、内存和进程；选择 `Health=OK` 且没有占用
+进程的设备。
+
 如果容器挂入多张卡，进入容器后为当前命令选择一张健康空闲的物理卡。例如
 物理卡 2：
 
@@ -216,6 +215,13 @@ PATH="$REMOTE_COMPILER_BUILD/bin:$REMOTE_VENV/bin:$PATH" \
 TRITON_NPU_COMPILER_PATH="$REMOTE_COMPILER_BUILD/bin" \
   "$REMOTE_VENV/bin/python" -u \
   third_party/ascend/tutorials/01-vector-add.py
+```
+
+预期末尾包含：
+
+```text
+The maximum difference between torch and triton is 0.0
+======Vector Add Test Passed!======
 ```
 
 如果容器创建时只暴露一张物理卡，该卡通常映射为容器内逻辑 `npu:0`，不需要
@@ -253,6 +259,34 @@ DRY_RUN=1 \
   ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
 ```
 
+入口检查预期输出包含：
+
+```text
+project=...
+operator_file=.../fused_attention.py
+bishengir_compile=.../bishengir-compile
+dry_run command=...
+dry run complete; no experiment was launched
+```
+
+冒烟测试预期：输出一个配置的 `results=...` 和汇总 JSON；汇总中
+`row_count` 为 `1`，`status_counts` 中为 `"measured": 1`。
+
+实验启动时检查以下路径：
+
+```text
+ascend_backend=.../triton-ascend/python/triton/backends/ascend/utils.py (project checkout; required)
+bishengir_compile=.../.codex-remote/ascendnpu-ir-build-explicit/bin/bishengir-compile (project build; required)
+bishengir_opt=/usr/local/Ascend/.../bishengir-opt (CANN bytecode reader; expected)
+hivmc=/usr/local/Ascend/.../hivmc (CANN binary backend; expected)
+```
+
+前两条必须来自项目，后两条应来自 CANN；不符合时脚本立即退出。
+
+完整前台实验预期：逐项执行 48 个配置，末尾输出 `completed operator_file=...`、
+`sweep and aggregate report complete` 和 HTML 路径；`summary.json` 中
+`complete=true`、`expected_row_count=48`、`row_count=48`。
+
 正式运行默认使用 5 次 warmup、30 次 active 测量和每组 120 秒超时。每个失败
 配置会直接在终端打印状态、返回码、完整子进程输出和独立日志路径；随后继续
 执行剩余配置并保留失败行。
@@ -267,12 +301,23 @@ ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> REMOTE_MODE=dev \
   ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
 ```
 
+预期立即返回：
+
+```text
+run_id=<运行编号>
+log=<服务器日志绝对路径>
+pid=<宿主机进程号>
+```
+
 单卡容器可省略 `ASCEND_RT_VISIBLE_DEVICES`。查看日志：
 
 ```bash
 ./tools/remote_experiment/logs.sh latest
 ./tools/remote_experiment/logs.sh <run-id>
 ```
+
+预期第一行是 `following <日志路径> (Ctrl-C to stop following)`，随后持续显示与
+前台实验相同的运行输出。
 
 `Ctrl-C` 只停止日志跟随，不终止后台实验。
 
@@ -308,6 +353,12 @@ python experiment_operators/summarize_latest.py
 ./experiment_operators/generate_latest_report.sh
 ```
 
+预期汇总命令退出码为 0，报告命令打印：
+
+```text
+Open the report at: .../.codex-remote/results/latest-summary/experiment-report.html
+```
+
 HTML 位于：
 
 ```text
@@ -333,9 +384,15 @@ REMOTE_SOURCE_MODE="rsync"
 ./tools/remote_experiment/sync.sh
 ```
 
+预期：rsync 显示传输文件和统计信息，末尾打印本地路径到服务器路径的同步完成
+信息，退出码为 0。
+
 该同步排除 `.codex-remote`，不会传输或删除服务器 venv、编译产物、缓存、日志
 和结果。需要把结果复制到个人电脑时，可单独执行：
 
 ```bash
 ./tools/remote_experiment/pull-results.sh
 ```
+
+预期：rsync 显示新增或更新的结果文件和统计信息，退出码为 0；本地
+`.codex-remote/results` 中出现对应运行目录。
