@@ -926,6 +926,15 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
         if multibuffer_num is not None:
             _compile_option_list += \
                 [f"--set-local-multibuffer={multibuffer_num}"]
+        # Forward the MIX multi-buffer strategy for the ordinary (Vector-side,
+        # UB) Load/Store buffers.  The 910/95 path already forwards it; the
+        # A2/A3 path previously dropped it, so an explicit multibuffer_num
+        # could only change Cube-side L1/L0C buffers and never the UB usage
+        # reported by PlanMemory.
+        auto_multi_buffer_buffer = metadata.get("limit_auto_multi_buffer_buffer")
+        if auto_multi_buffer_buffer is not None:
+            _compile_option_list += \
+                [f"--limit-auto-multi-buffer-buffer={auto_multi_buffer_buffer}"]
 
         vf_merge_level = metadata["vf_merge_level"]
         if vf_merge_level is not None:
@@ -1173,6 +1182,19 @@ class NPUOptions:
                 "multibuffer_num must be one of 1, 2, 3, or 4; "
                 f"got {self.multibuffer_num}"
             )
+
+        # An explicitly requested ordinary-local multibuffer count is only
+        # observable on mixed AIC/AIV kernels if the compiler's ordinary
+        # Load/Store marking is enabled.  AscendNPU-IR's default for
+        # `limitMixAutoMultiBufferBuffer` (--limit-auto-multi-buffer-buffer)
+        # is ONLY_CUBE, which disables the Vector-side (UB) ordinary buffers
+        # for MIX function parts, so --set-local-multibuffer alone only
+        # changes Cube-side L1/L0C buffers and never the UB usage reported by
+        # PlanMemory.  Treat an explicit `multibuffer_num` as intent to apply
+        # ordinary multibuffering and forward `no-limit` unless the user
+        # already picked a strategy.
+        if self.multibuffer_num is not None and self.limit_auto_multi_buffer_buffer is None:
+            object.__setattr__(self, "limit_auto_multi_buffer_buffer", "no-limit")
 
         if self.cv_num_buffers is not None and self.set_workspace_multibuffer is not None:
             if self.cv_num_buffers != self.set_workspace_multibuffer:
