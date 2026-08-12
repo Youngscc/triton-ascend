@@ -841,30 +841,30 @@ def bwd_q_kernel(
 
 
 @triton.autotune(
-    list(filter(keep, get_bwd_qkv_configs())), 
+    list(filter(keep, get_bwd_qkv_configs())),
     key = ["QK_DIM", "V_DIM", "MASK_FN", "SPARSE_OPT"],
     reset_to_zero = ["dq_ptr"]
 )
 @triton.jit
 def bwd_qkv_kernel(
         q_ptr, k_ptr, v_ptr,
-        dq_ptr, dk_ptr, dv_ptr, 
+        dq_ptr, dk_ptr, dv_ptr,
         do_ptr, l_ptr, d_ptr,
-        q_attn_arg_ptr, k_attn_arg_ptr, 
+        q_attn_arg_ptr, k_attn_arg_ptr,
         mask_tensor_ptr,
         cu_seqlens_q, cu_seqlens_k,
-        batch_size, 
+        batch_size,
         max_q_len, max_k_len,
-        q_head, kv_head, 
+        q_head, kv_head,
         scale,
-        QK_DIM: tl.constexpr, 
+        QK_DIM: tl.constexpr,
         V_DIM: tl.constexpr,
-        MASK_FN: tl.constexpr, 
-        SPARSE_OPT: tl.constexpr, 
+        MASK_FN: tl.constexpr,
+        SPARSE_OPT: tl.constexpr,
         DTYPE: tl.constexpr,
         NUM_CORES: tl.constexpr,
-        BLOCK_M: tl.constexpr, 
-        BLOCK_N: tl.constexpr, 
+        BLOCK_M: tl.constexpr,
+        BLOCK_N: tl.constexpr,
 ):
     dtype = k_ptr.type.element_ty
     pid = tl.program_id(0)
@@ -1185,15 +1185,15 @@ class FlashAttentionFunc(torch.autograd.Function):
         if use_fused_bwd_qkv:
             NUM_CORES = AICORE_NUM
             bwd_qkv_kernel[(NUM_CORES,)](
-                q, k, v, 
-                dq, dk, dv, 
+                q, k, v,
+                dq, dk, dv,
                 do, l, d,
-                q_attn_arg, k_attn_arg, 
+                q_attn_arg, k_attn_arg,
                 mask_tensor,
                 cu_seqlens_q, cu_seqlens_k,
-                ctx.batch_size, 
+                ctx.batch_size,
                 ctx.max_seqlen_q, ctx.max_seqlen_k,
-                ctx.q_head, ctx.kv_head, 
+                ctx.q_head, ctx.kv_head,
                 ctx.scale,
                 QK_DIM=ctx.qk_dim,
                 V_DIM=ctx.v_dim,
