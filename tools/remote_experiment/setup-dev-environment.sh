@@ -74,15 +74,32 @@ else
     "$REMOTE_HOST_CC" "$REMOTE_HOST_CXX"
 fi
 
-if [[ ! -f "$REMOTE_VENV/bin/activate" || ! -x "$REMOTE_VENV/bin/python" ]]; then
+venv_is_valid=false
+if [[ -f "$REMOTE_VENV/bin/activate" && -x "$REMOTE_VENV/bin/python" ]] \
+  && REMOTE_VENV="$REMOTE_VENV" "$REMOTE_VENV/bin/python" - <<'PY'
+import os
+import sys
+from pathlib import Path
+
+expected = Path(os.environ["REMOTE_VENV"]).resolve()
+actual = Path(sys.prefix).resolve()
+raise SystemExit(0 if actual == expected and sys.prefix != sys.base_prefix else 1)
+PY
+then
+  venv_is_valid=true
+fi
+
+if [[ "$venv_is_valid" != true ]]; then
   printf 'creating or repairing project venv: %s\n' "$REMOTE_VENV"
   python3 -m venv --system-site-packages "$REMOTE_VENV"
 fi
+unset venv_is_valid
+venv_python="$REMOTE_VENV/bin/python"
 
 # shellcheck disable=SC1091
 source "$REMOTE_VENV/bin/activate"
 
-if ! python - <<'PY'
+if ! "$venv_python" - <<'PY'
 import re
 import subprocess
 
@@ -92,7 +109,7 @@ raise SystemExit(0 if match and tuple(map(int, match.groups())) >= (3, 28) else 
 PY
 then
   # AscendNPU-IR requires CMake >= 3.28. Keep it private to the project venv.
-  python -m pip install \
+  "$venv_python" -m pip install \
     --index-url https://repo.huaweicloud.com/repository/pypi/simple \
     --timeout 300 --retries 5 \
     'cmake>=3.28,<4'
@@ -107,7 +124,7 @@ export TRITON_APPEND_CMAKE_ARGS=-DTRITON_BUILD_UT=OFF
 export GIT_DIR="$repo_git_dir"
 export GIT_WORK_TREE="$REMOTE_PROJECT"
 
-python -m pip install --no-build-isolation --no-deps -e .
+"$venv_python" -m pip install --no-build-isolation --no-deps -e .
 
 triton_mlir_opt="$REMOTE_PROJECT/python/triton/_C/triton-mlir-opt"
 test -x "$triton_mlir_opt" || {
@@ -139,7 +156,7 @@ rm -rf -- "$bytecode_check_dir"
 trap - EXIT
 
 REMOTE_PROJECT="$REMOTE_PROJECT" REMOTE_VENV="$REMOTE_VENV" \
-  PYTHONPATH="$REMOTE_PROJECT/python" python - <<'PY'
+  PYTHONPATH="$REMOTE_PROJECT/python" "$venv_python" - <<'PY'
 import os
 import sys
 from pathlib import Path
@@ -149,19 +166,27 @@ from triton._C import libtriton
 
 project_python = (Path(os.environ["REMOTE_PROJECT"]) / "python").resolve()
 venv = Path(os.environ["REMOTE_VENV"]).resolve()
-python_executable = Path(sys.executable).resolve()
+python_command = Path(sys.executable).absolute()
+python_prefix = Path(sys.prefix).resolve()
+python_base_prefix = Path(sys.base_prefix).resolve()
 triton_file = Path(triton.__file__).resolve()
 libtriton_file = Path(libtriton.__file__).resolve()
 
-if not python_executable.is_relative_to(venv):
-    raise RuntimeError(f"Python is not from the project venv: {python_executable}")
+if python_prefix != venv or sys.prefix == sys.base_prefix:
+    raise RuntimeError(
+        "Python is not running in the project venv: "
+        f"command={python_command}, prefix={python_prefix}, expected={venv}, "
+        f"base_prefix={python_base_prefix}"
+    )
 if not triton_file.is_relative_to(project_python):
     raise RuntimeError(f"Triton Python is not from this checkout: {triton_file}")
 if not libtriton_file.is_relative_to(project_python):
     raise RuntimeError(f"libtriton is not from this checkout: {libtriton_file}")
 
 print("triton version:", triton.__version__)
-print("python:", python_executable)
+print("python command:", python_command)
+print("python prefix:", python_prefix)
+print("python base prefix:", python_base_prefix)
 print("triton:", triton_file)
 print("libtriton:", libtriton_file)
 print("TRITON_DEV_IMPORT_OK")

@@ -106,15 +106,18 @@ LLVM must match the top-level repository gitlinks in the server checkout.
   `tritonsim` container is not modified by this workflow.
 - Dev-mode imports resolve to the current repository's Python and Ascend
   backend, its compatible remote-built `libtriton.so`, and the custom
-  BishengIR 1.2.0 compiler.
+  BishengIR 1.2.0 compiler. The venv interpreter may be a symlink to the
+  container's `/usr/local` Python; validate the environment with `sys.prefix`,
+  not the resolved `sys.executable` target.
 - The project venv contains CMake 3.31.10 because the image's CMake 3.22.1 is
   below AscendNPU-IR's minimum 3.28 requirement. The host/container system
   CMake is unchanged.
 - The dedicated compiler reports `bishengir-compile 1.2.0` with LLVM 19.1.7;
   CANN supplies `hivmc 0.2.0`. All four C220 `meta_op` files plus `host.bc`
-  were generated successfully. The final NPU smoke test was deliberately not
-  launched on 2026-08-10 because all 16 cards were occupied by SGLang; rerun
-  Vector Add on an idle card before accepting performance measurements.
+  were generated successfully. A development-mode Vector Add launch on an
+  idle A3 card completed with maximum error 0, and a fresh-cache TTIR compile
+  produced an NPU binary through the custom compiler. Recheck card availability
+  immediately before performance measurements.
 - The custom BishengIR 1.2 compiler is built from the repository-pinned
   AscendNPU-IR and LLVM. Its executable alone is not a complete toolchain:
   adjacent `lib/meta_op.{aic,aiv,mix.aic,mix.aiv}.c220.bc` and `host.bc` are

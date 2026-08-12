@@ -175,17 +175,22 @@ from triton._C import libtriton
 
 project_python = (Path(os.environ["REMOTE_PROJECT"]) / "python").resolve()
 venv = Path(os.environ["REMOTE_VENV"]).resolve()
-python_executable = Path(sys.executable).resolve()
+python_command = Path(sys.executable).absolute()
+python_prefix = Path(sys.prefix).resolve()
+python_base_prefix = Path(sys.base_prefix).resolve()
 triton_file = Path(triton.__file__).resolve()
 libtriton_file = Path(libtriton.__file__).resolve()
 
-assert python_executable.is_relative_to(venv), python_executable
+assert python_prefix == venv, (python_prefix, venv)
+assert sys.prefix != sys.base_prefix, (sys.prefix, sys.base_prefix)
 assert triton_file.is_relative_to(project_python), triton_file
 assert libtriton_file.is_relative_to(project_python), libtriton_file
 
 print("torch:", torch.__version__)
 print("torch_npu:", torch_npu.__version__)
-print("python:", python_executable)
+print("python command:", python_command)
+print("python prefix:", python_prefix)
+print("python base prefix:", python_base_prefix)
 print("triton:", triton_file)
 print("libtriton:", libtriton_file)
 print("TRITON_DEV_IMPORT_OK")
@@ -198,10 +203,14 @@ LLVM 22 `triton-mlir-opt` 能生成 bytecode version 4，并且 LLVM 19.1.7
 `bishengir-opt` 能读取其中的 `llvm.inttoptr`；后一个标记证明：
 
 ```text
-python     位于 $REMOTE_VENV
+sys.prefix 位于 $REMOTE_VENV
 triton     位于 $REMOTE_PROJECT/python/triton
 libtriton  位于 $REMOTE_PROJECT/python/triton/_C
 ```
+
+`venv/bin/python` 可以是指向 `/usr/local/bin/python` 的符号链接，因此解析后的
+解释器文件位于 `/usr/local` 本身不是错误；是否进入项目 venv 以 `sys.prefix`
+为准。
 
 任何路径落入 `/usr/local/.../site-packages/triton` 都表示混用了容器预装版本，
 不能继续接受编译和实验结果。`--system-site-packages` 只用于复用 Torch、

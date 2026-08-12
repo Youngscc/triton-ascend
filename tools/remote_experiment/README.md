@@ -83,13 +83,17 @@ does not fall back to GCC. The CANN device compiler path is unchanged.
 
 The setup exits unsuccessfully if the project MLIR 22 tool cannot emit
 bytecode version 4 containing `llvm.inttoptr` that the MLIR 19 BishengIR reader
-can consume, if its verification resolves Python
-outside the project venv, or if either `triton` or `libtriton` resolves outside
+can consume, if Python's `sys.prefix` is not the project venv, or if either
+`triton` or `libtriton` resolves outside
 the current checkout. A successful run prints `MLIR_BYTECODE_ROUNDTRIP_OK` and
 ends with `TRITON_DEV_IMPORT_OK`. Because the venv
 uses `--system-site-packages`, a manual development invocation must put
 `$REMOTE_PROJECT/python` first in `PYTHONPATH`; `run_all_sweeps.sh` and
 `REMOTE_MODE=dev` do this automatically.
+
+The venv interpreter may be a symlink to `/usr/local/bin/python`. That resolved
+file location is normal and is not used to decide whether the venv is active;
+the setup checks `sys.prefix` instead.
 
 Do not copy a venv from another host, container, or project path. A Python venv
 contains interpreter and script paths and must be created inside the container
