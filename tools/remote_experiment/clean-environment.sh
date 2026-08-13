@@ -9,11 +9,14 @@ source "$SCRIPT_DIR/config.sh"
 usage() {
   cat <<'EOF'
 Usage:
-  ./tools/remote_experiment/clean-environment.sh [rebuild|runtime|results|all] [--execute]
+  ./tools/remote_experiment/clean-environment.sh [rebuild|runtime|latest-results|results|all] [--execute]
 
 Scopes:
   rebuild  Remove the project venv and generated Triton/BishengIR build files.
   runtime  Remove experiment logs and Triton caches.
+  latest-results
+           Keep the latest complete sweep for each operator and latest-summary;
+           remove older or incomplete result directories.
   results  Remove all stored experiment results and generated reports.
   all      Remove rebuild, runtime, and result artifacts.
 
@@ -31,7 +34,7 @@ execute=false
 scope_seen=false
 for arg in "$@"; do
   case "$arg" in
-    rebuild|runtime|results|all)
+    rebuild|runtime|latest-results|results|all)
       if [[ "$scope_seen" == true ]]; then
         printf '%s\n' 'specify only one cleanup scope' >&2
         usage >&2
@@ -61,6 +64,7 @@ if [[ "$project" == / || "$project" == /home || "$project" == /usr \
 fi
 
 declare -a targets=()
+declare -a preserved=()
 add_target() {
   local target="$1"
   [[ -n "$target" ]] || return 0
@@ -97,12 +101,86 @@ if [[ "$scope" == runtime || "$scope" == all ]]; then
   add_target "$REMOTE_TRITON_CACHE"
 fi
 
+if [[ "$scope" == latest-results ]]; then
+  results_root="$project/.codex-remote/results"
+  if [[ ! -d "$results_root" ]]; then
+    printf 'results directory does not exist: %s\n' "$results_root"
+    exit 0
+  fi
+
+  selector_python="${REMOTE_VENV}/bin/python"
+  if [[ ! -x "$selector_python" ]]; then
+    selector_python="$(command -v python3 || true)"
+  fi
+  if [[ -z "$selector_python" || ! -x "$selector_python" ]]; then
+    printf '%s\n' 'python3 is required to select the latest complete results' >&2
+    exit 1
+  fi
+
+  declare -a latest_result_dirs=()
+  while IFS= read -r selected; do
+    [[ -n "$selected" ]] && latest_result_dirs+=("$(realpath -m -- "$selected")")
+  done < <(
+    "$selector_python" - "$project" "$results_root" <<'PY'
+import sys
+from pathlib import Path
+
+project = Path(sys.argv[1]).resolve()
+results_root = Path(sys.argv[2]).resolve()
+sys.path.insert(0, str(project / "experiment_operators"))
+
+from summarize_latest import find_latest_runs
+
+latest = find_latest_runs(results_root)
+for operator in sorted(latest):
+    print(latest[operator]["result_dir"])
+PY
+  )
+
+  if [[ ${#latest_result_dirs[@]} -eq 0 ]]; then
+    printf 'refusing cleanup: no complete full-sweep results found under %s\n' \
+      "$results_root" >&2
+    exit 1
+  fi
+
+  if [[ -d "$results_root/latest-summary" ]]; then
+    preserved+=("$results_root/latest-summary")
+  fi
+  preserved+=("${latest_result_dirs[@]}")
+
+  while IFS= read -r result_dir; do
+    result_dir="$(realpath -m -- "$result_dir")"
+    keep=false
+    for selected in "${latest_result_dirs[@]}"; do
+      if [[ "$result_dir" == "$selected" ]]; then
+        keep=true
+        break
+      fi
+    done
+    [[ "$keep" == true ]] && continue
+
+    result_name="$(basename -- "$result_dir")"
+    if [[ -f "$result_dir/manifest.json" \
+      || -f "$result_dir/measurements.jsonl" \
+      || "$result_name" =~ ^[0-9]{8}T[0-9]{6}(Z|\+0800)- ]]; then
+      add_target "$result_dir"
+    else
+      preserved+=("$result_dir")
+    fi
+  done < <(find "$results_root" -mindepth 1 -maxdepth 1 -type d \
+    ! -name latest-summary -print | sort)
+  unset result_dir result_name keep selected selector_python results_root
+fi
+
 if [[ "$scope" == results || "$scope" == all ]]; then
   add_target "$project/.codex-remote/results"
 fi
 
 printf 'cleanup scope: %s\n' "$scope"
 printf 'project: %s\n' "$project"
+for target in "${preserved[@]}"; do
+  printf 'KEEP    %s\n' "$target"
+done
 if [[ ${#targets[@]} -eq 0 ]]; then
   printf '%s\n' 'nothing to remove'
   exit 0

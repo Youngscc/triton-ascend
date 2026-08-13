@@ -87,6 +87,17 @@ docker inspect "$REMOTE_CONTAINER" \
 
 ## 3. 创建或修复项目 venv
 
+需要整理历史实验数据时，每个算子只保留最新一次完整 sweep，并保留
+`latest-summary`：
+
+```bash
+./tools/remote_experiment/clean-environment.sh latest-results
+./tools/remote_experiment/clean-environment.sh latest-results --execute
+```
+
+不带 `--execute` 时只预览。该模式使用汇总脚本相同的完整性和时间判据；找不到
+任何完整 sweep 时拒绝删除，无法识别为实验运行的目录也会保留。
+
 从服务器宿主机进入已有容器：
 
 ```bash

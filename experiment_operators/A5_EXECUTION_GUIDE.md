@@ -153,6 +153,16 @@ visible NPU count: <大于0>
 ./tools/remote_experiment/clean-environment.sh runtime --execute
 ```
 
+每个算子只保留最新一次完整 sweep，并保留 `latest-summary`：
+
+```bash
+./tools/remote_experiment/clean-environment.sh latest-results
+./tools/remote_experiment/clean-environment.sh latest-results --execute
+```
+
+该模式使用汇总脚本相同的完整性和时间判据；找不到任何完整 sweep 时拒绝删除，
+无法识别为实验运行的目录也会保留。
+
 只有在全部历史实验结果也不再需要时才使用：
 
 ```bash

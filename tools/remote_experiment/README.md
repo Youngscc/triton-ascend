@@ -68,6 +68,18 @@ listed build/runtime/result artifact. Cleanup is preview-only unless
 `--execute` is present. Source files, Git metadata, the offline LLVM directory,
 `top-git`, and `config.local.sh` are always preserved.
 
+To retain only the latest complete full sweep for each operator, together with
+the generated `latest-summary`, run:
+
+```bash
+./tools/remote_experiment/clean-environment.sh latest-results
+./tools/remote_experiment/clean-environment.sh latest-results --execute
+```
+
+This uses the same completeness and timestamp rules as `summarize_latest.py`.
+It refuses to delete anything when no complete sweep exists and preserves
+unrecognized directories.
+
 Run the idempotent setup inside the container:
 
 ```bash
