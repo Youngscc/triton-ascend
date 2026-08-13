@@ -169,6 +169,4 @@ Results remain under `.codex-remote/results` on the server. If a workstation
 copy is needed, configure the optional `LOCAL_PROJECT` and `REMOTE_HOST` values
 there and run `./tools/remote_experiment/pull-results.sh` from the workstation.
 
-See `experiment_operators/EXECUTION_GUIDE.md` for the complete general/A3
-procedure and `experiment_operators/A5_EXECUTION_GUIDE.md` for an existing A5
-container.
+See `experiment_operators/EXECUTION_GUIDE.md` for the complete A3/A5 procedure.

@@ -12,9 +12,8 @@ change-history narration such as what an older command did, what was replaced,
 or how the current procedure differs from a previous version. Git history is
 the source for that information.
 
-Keep the standard A3 experiment procedure in
-`experiment_operators/EXECUTION_GUIDE.md`. Keep the separate A5/Ascend 950
-procedure in `experiment_operators/A5_EXECUTION_GUIDE.md`.
+Keep the unified A3 and A5/Ascend 950 experiment procedure in
+`experiment_operators/EXECUTION_GUIDE.md`.
 
 ## Repositories and paths
 
@@ -205,25 +204,24 @@ usage; never keep only the fastest configuration.
   kernels. `TRITON_BENCH_METHOD=npu` selects the NPU-profiler path;
   `do_bench_npu` performs warmup, synchronization, repeated launches, and
   kernel-name-filtered timing.
-- The retained CV implementation still supports separate
-  `cv_pipeline_depth` and `cv_num_buffers` values for compatibility and
-  debugging, but the current experiment deliberately sets both to the single
-  public `depth` value. Thus CV scheduling depth and CV workspace-buffer count
-  retain the original `depth == numBuf` relationship in all new measurements.
+- CV scheduling depth and CV workspace-buffer count use BishengIR's native
+  single `set_workspace_multibuffer` value. The public experiment `depth` axis
+  maps directly to that existing option; no separate CV depth/buffer plumbing
+  remains in Triton-Ascend or AscendNPU-IR.
 - `NPUOptions.multibuffer_num` is a separate ordinary-local multibuffer
   control. The backend forwards it as `--set-local-multibuffer`; the HFusion
   pipelines use it when estimating ordinary multibuffer pressure and selecting
   tiles, and the HIVM pipelines pass the same value to
   `MarkMultiBufferOptions.localMultiBufferNum` when materializing ordinary
-  Load/Store/ND2NZ/Fixpipe local buffers. It does not replace the special
-  preload-local count of 4, the Workspace count, or either CVPipeline field.
+  Load/Store/ND2NZ/Fixpipe local buffers. It does not replace the independently
+  inferred preload-local count or the native CV workspace/depth value.
   The command-line/pass default remains 2 outside explicit experiments, while
   the internal `mark()` helper has no implicit default.
-- The earlier CV split/ring implementation remains in the source. It records
-  `cv_pipeline_depth = D` and `multibuffer_unroll_factor = N`; unequal CV values
-  are no longer part of the requested experiment space because fused-attention
-  showed correctness failures and hangs for those historical configurations.
-  Depth `1` retains the no-pipeline behavior.
+- Historical schemas contain experiments with separate CV depth and physical
+  buffer values. That split/ring implementation was removed after unequal
+  configurations showed correctness failures and hangs. New experiments use
+  only the native equal-value behavior. Depth `1` retains the no-pipeline
+  behavior.
 - VF merge is consumed in both the regbase and current memory-based HIVM
   pipelines: level 0 disables the merge pass, level 1 runs it before one-shot
   bufferization, and level 2 after bufferization.
@@ -249,9 +247,9 @@ usage; never keep only the fastest configuration.
   currently classified as dynamically insensitive rather than proof that every
   optimization changes generated code.
 - `experiment_operators/run_sweep.py` is the standalone step-4 controller. Its
-  current `cv-depth-equals-buffers+independent-local-multibuffer-v2` schema
-  enumerates `depth(1..4) x multibuffer_num(1..4) x merge(0..2)`, sets
-  `cv_pipeline_depth == cv_num_buffers == depth`, and records all 48 triples.
+  current `native-cv-depth+independent-local-multibuffer-v3` schema enumerates
+  `depth(1..4) x multibuffer_num(1..4) x merge(0..2)`, sets
+  `set_workspace_multibuffer == depth`, and records all 48 triples.
   It writes incremental JSONL/CSV rows and per-row logs, records compiler time,
   cache/artifact hashes, correctness, timing, and UB metadata, and never
   chooses a winner. A row is `measured` only when correctness, timing, and a
@@ -285,8 +283,9 @@ usage; never keep only the fastest configuration.
   latest complete runs of all other operators already present.
 - The new ordinary-local count is verified independently of the other
   multibuffer mechanisms. The `mark-multi-buffer-count.mlir` test passes for
-  ordinary values 1, 3, and 4 while the preload-local buffer remains 4, and the
-  pre-existing MarkMultiBuffer test still passes. HFusion AutoSchedule uses the
+  ordinary values 1, 3, and 4 while the preload-local buffer retains its
+  independently inferred value, and the pre-existing MarkMultiBuffer test still
+  passes. HFusion AutoSchedule uses the
   same explicit value rather than a hard-coded 2: its regression case produces
   tile-buffer sizes 39296, 21824, and 11552 bytes for counts 1, 2, and 4.
   An end-to-end unified
@@ -401,10 +400,11 @@ Use `ir_override`/`triton.compile(<file>.ttir, options=...)` where practical.
 If runtime launch metadata makes direct TTIR replay inconvenient, allow normal
 JIT compilation but assert and record the TTIR hash for every candidate.
 
-### 3. Plumb CV depth and an independent ordinary multibuffer count
+### 3. Use native CV depth and plumb an independent ordinary multibuffer count
 
-Keep the existing CV split plumbing, but have every experiment candidate set
-`cv_pipeline_depth = cv_num_buffers = depth`. Add validated
+Have every experiment candidate pass `depth` through the existing
+`NPUOptions.set_workspace_multibuffer` option. BishengIR uses that one native
+value for both CV unroll depth and physical workspace buffers. Add validated
 `NPUOptions.multibuffer_num`, propagate it through
 `third_party/ascend/backend/compiler.py` as `--set-local-multibuffer`, then into
 both `HFusionPipelineOptions` and `HIVMPipelineOptions`. HFusion must use the
@@ -417,12 +417,13 @@ The resulting controls must obey these boundaries:
 - `multibuffer_num` replaces only the ordinary local default 2 used for
   HFusion estimation and automatically marked Load/Store/ND2NZ/Fixpipe
   buffers;
-- the preload-local explicit 4 and Workspace multibuffer count remain
-  unchanged by `multibuffer_num`;
+- the independently inferred preload-local count and native CV
+  workspace/depth value remain unchanged by `multibuffer_num`;
 - neither field changes TTIR or the meaning of `vf_merge_level`.
 
 Add focused IR tests for ordinary local values 1, 3, and 4 while proving that
-the same pass invocation retains preload-local `hivm.multi_buffer = 4`, and
+the same pass invocation retains the independently inferred preload-local
+`hivm.multi_buffer` value, and
 for HFusion counts 1, 2, and 4 while proving the tiling estimate changes.
 
 ### 4. Extend autotune configuration and result capture
