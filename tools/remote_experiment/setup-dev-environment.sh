@@ -161,6 +161,10 @@ import os
 import sys
 from pathlib import Path
 
+import numpy
+import pandas
+import torch
+import torch_npu
 import triton
 from triton._C import libtriton
 

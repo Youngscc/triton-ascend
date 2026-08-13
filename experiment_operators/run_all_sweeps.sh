@@ -69,6 +69,17 @@ if [[ "$DRY_RUN" != "1" ]]; then
   source "$PROJECT_ROOT/tools/remote_experiment/activate-dev-environment.sh"
   experiment_soc="$TRITON_ASCEND_SOC_NAME"
   experiment_bitcode_arch="$TRITON_ASCEND_BITCODE_ARCH"
+  if ! "$DEV_VENV/bin/python" - <<'PY'
+import numpy
+import pandas
+import torch
+import torch_npu
+PY
+  then
+    printf '%s\n' \
+      'missing experiment Python dependencies; install numpy, pandas, torch, and torch-npu in the project venv before launching a sweep' >&2
+    exit 1
+  fi
   compiler_lib="${DEV_COMPILER_DIR%/bin}/lib"
   for file in \
     "meta_op.aic.$experiment_bitcode_arch.bc" \
