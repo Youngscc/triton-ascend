@@ -207,7 +207,10 @@ def experiment_schema(run: dict) -> str:
 
 
 def row_depth(row: dict):
-    return row.get("depth", row.get("cv_pipeline_depth"))
+    return row.get(
+        "depth",
+        row.get("set_workspace_multibuffer", row.get("cv_pipeline_depth")),
+    )
 
 
 def summarize_run(run: dict) -> dict:
@@ -266,7 +269,6 @@ def supported_rows(latest: dict[str, dict]) -> list[dict]:
             key=lambda item: (
                 row_depth(item),
                 item.get("multibuffer_num", -1),
-                item.get("cv_num_buffers", -1),
                 item["vf_merge_level"],
             ),
         ):
@@ -646,7 +648,8 @@ def main() -> int:
         },
         "notes": [
             "Supported means measured, correctness passed, latency present, and nonzero UB present.",
-            "CV schedule depth and CV buffer count are one public `depth` axis in tables.",
+            "The public `depth` axis uses BishengIR's native workspace "
+            "multibuffer control, which also supplies CV unroll depth.",
             "Effect deltas use matched controlled slices rather than confounded marginal averages.",
             "No configuration is ranked and no winner is selected.",
         ],

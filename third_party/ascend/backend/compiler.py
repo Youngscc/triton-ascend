@@ -638,13 +638,7 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
             _compile_option_list += \
                 [f"--limit-auto-multi-buffer-only-for-local-buffer={limit_auto_multi_buffer_only_for_local_buffer}"]
 
-        cv_pipeline_depth = metadata.get("cv_pipeline_depth")
-        if cv_pipeline_depth is not None:
-            _compile_option_list += \
-                [f"--set-cv-pipeline-depth={cv_pipeline_depth}"]
-        cv_num_buffers = metadata.get("cv_num_buffers")
-        set_workspace_multibuffer = (cv_num_buffers if cv_num_buffers is not None
-                                     else metadata["set_workspace_multibuffer"])
+        set_workspace_multibuffer = metadata["set_workspace_multibuffer"]
         if set_workspace_multibuffer is not None:
             _compile_option_list += \
                 [f"--set-workspace-multibuffer={set_workspace_multibuffer}"]
@@ -920,13 +914,7 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
             _compile_option_list += \
                 [f"--limit-auto-multi-buffer-only-for-local-buffer={limit_auto_multi_buffer_only_for_local_buffer}"]
 
-        cv_pipeline_depth = metadata.get("cv_pipeline_depth")
-        if cv_pipeline_depth is not None:
-            _compile_option_list += \
-                [f"--set-cv-pipeline-depth={cv_pipeline_depth}"]
-        cv_num_buffers = metadata.get("cv_num_buffers")
-        set_workspace_multibuffer = (cv_num_buffers if cv_num_buffers is not None
-                                     else metadata["set_workspace_multibuffer"])
+        set_workspace_multibuffer = metadata["set_workspace_multibuffer"]
         if set_workspace_multibuffer is not None:
             _compile_option_list += \
                 [f"--set-workspace-multibuffer={set_workspace_multibuffer}"]
@@ -1111,14 +1099,8 @@ class NPUOptions:
     limit_auto_multi_buffer_buffer: str = None
     # Number of versions used by the ordinary local-buffer path in
     # MarkMultiBuffer.  This does not control CVPipeline workspace buffers or
-    # the dedicated preload-local value (currently 4).
+    # the independently inferred preload-local value.
     multibuffer_num: int = None
-    # Explicit experiment controls.  The legacy
-    # set_workspace_multibuffer option controlled both values; keep it below
-    # as a compatibility alias, but never let it silently disagree with the
-    # independent buffer-count option.
-    cv_pipeline_depth: int = None
-    cv_num_buffers: int = None
     set_workspace_multibuffer: int = None
     tile_mix_vector_loop: int = None
     tile_mix_cube_loop: int = None
@@ -1203,33 +1185,6 @@ class NPUOptions:
         if self.multibuffer_num is not None and self.limit_auto_multi_buffer_buffer is None:
             object.__setattr__(self, "limit_auto_multi_buffer_buffer", "no-limit")
 
-        if self.cv_num_buffers is not None and self.set_workspace_multibuffer is not None:
-            if self.cv_num_buffers != self.set_workspace_multibuffer:
-                raise ValueError(
-                    "cv_num_buffers and legacy set_workspace_multibuffer "
-                    f"disagree ({self.cv_num_buffers} != {self.set_workspace_multibuffer})"
-                )
-
-        depth = self.cv_pipeline_depth
-        num_buffers = (self.cv_num_buffers if self.cv_num_buffers is not None
-                       else self.set_workspace_multibuffer)
-        if depth is not None or num_buffers is not None:
-            if depth is None:
-                depth = num_buffers
-            if num_buffers is None:
-                num_buffers = depth
-            if depth not in (1, 2, 3, 4):
-                raise ValueError(
-                    f"cv_pipeline_depth must be one of 1, 2, 3, or 4; got {depth}"
-                )
-            if not 1 <= num_buffers <= depth:
-                raise ValueError(
-                    "cv_num_buffers must satisfy 1 <= cv_num_buffers <= "
-                    f"cv_pipeline_depth; got depth={depth}, num_buffers={num_buffers}"
-                )
-            object.__setattr__(self, "cv_pipeline_depth", depth)
-            object.__setattr__(self, "cv_num_buffers", num_buffers)
-            object.__setattr__(self, "set_workspace_multibuffer", num_buffers)
         # Parse compile_mode and set related fields
         if self.compile_mode == "simd":
             object.__setattr__(self, "parallel_mode", "simd")

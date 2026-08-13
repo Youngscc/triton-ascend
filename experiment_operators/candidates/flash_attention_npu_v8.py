@@ -23,9 +23,7 @@ def _experiment_compile_options():
     options = {}
     depth = os.getenv("EXPERIMENT_DEPTH")
     if depth is not None:
-        depth = int(depth)
-        options["cv_pipeline_depth"] = depth
-        options["cv_num_buffers"] = depth
+        options["set_workspace_multibuffer"] = int(depth)
     multibuffer_num = os.getenv("EXPERIMENT_MULTIBUFFER_NUM")
     if multibuffer_num is not None:
         options["multibuffer_num"] = int(multibuffer_num)
@@ -1073,12 +1071,10 @@ class FlashAttentionFunc(torch.autograd.Function):
         BLOCK_N = 64
         NUM_CORES = AICORE_NUM
         grid = (NUM_CORES,)
-        # The sweep's cv_num_buffers (== depth) is the workspace multibuffer
-        # count.  Only fall back to the legacy set_workspace_multibuffer when
-        # the experiment does not control it, otherwise the two would disagree
-        # in the backend option validation.
+        # The native workspace multibuffer option controls both CV unroll depth
+        # and the number of physical CV workspace buffers.
         extra_kern_args = _experiment_compile_options()
-        if "cv_num_buffers" not in extra_kern_args:
+        if "set_workspace_multibuffer" not in extra_kern_args:
             extra_kern_args["set_workspace_multibuffer"] = 2
         fwd_kernel[grid](
             q, k, v, o, l,

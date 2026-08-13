@@ -46,16 +46,16 @@ controls, but they do not qualify as the main mixed-CV corpus.
 
 For every accepted operator case, enumerate all 48 requested triples:
 
-- `depth = 1..4`; each candidate resolves
-  `cv_pipeline_depth = cv_num_buffers = depth`
+- `depth = 1..4`; each candidate passes this through BishengIR's native
+  `set_workspace_multibuffer` control, which also supplies CV unroll depth
 - `multibuffer_num = 1..4`, independently of `depth`; this replaces the ordinary local
   `MarkMultiBuffer` default of 2
 - `vf_merge_level = 0, 1, 2`
 
-`multibuffer_num` does not control CVPipeline workspace buffers or the special
-preload-local value of 4. The retained CV depth/buffer split remains available
-for compiler debugging, but the experiment controller never requests unequal
-CV values. There is no ordering constraint between the independent ordinary
+`multibuffer_num` does not control CVPipeline workspace buffers or the
+independently inferred preload-local value. CV depth and physical workspace
+buffer count retain BishengIR's native single-value behavior. There is no
+ordering constraint between the independent ordinary
 `multibuffer_num` axis and CV `depth`, so the sweep includes
 `multibuffer_num > depth`.
 
@@ -107,13 +107,15 @@ stored alongside them. `--limit N` exists only for controller smoke tests and
 must not be used for a formal 48-row run.
 
 Each new row records the public axes `depth`, `multibuffer_num`, and
-`vf_merge_level`, plus the resolved audit fields `cv_pipeline_depth` and
-`cv_num_buffers`. The two resolved CV fields must both equal `depth`.
+`vf_merge_level`, plus the resolved audit field `set_workspace_multibuffer`,
+which must equal `depth`.
 Historical result directories use the `legacy-cv-split-v0` schema and must not
 be interpreted as measurements of the new ordinary-local `multibuffer_num`.
 The intermediate `cv-depth-equals-buffers+local-multibuffer-v1` schema contains
 only the older 30-row `multibuffer_num <= depth` subset. New 48-row runs use
-`cv-depth-equals-buffers+independent-local-multibuffer-v2`.
+`native-cv-depth+independent-local-multibuffer-v3`; the immediately preceding
+`cv-depth-equals-buffers+independent-local-multibuffer-v2` results remain valid
+pre-rollback comparison data.
 
 Run IDs use fixed UTC+8 time and include the numeric UTC offset. This avoids a
 runtime dependency on the container's optional IANA timezone database. For

@@ -42,7 +42,7 @@ VF_MERGE_VALUES = (0, 1, 2)
 REQUESTED_CONFIGURATION_COUNT = (
     len(DEPTH_VALUES) * len(MULTIBUFFER_VALUES) * len(VF_MERGE_VALUES)
 )
-EXPERIMENT_SCHEMA = "cv-depth-equals-buffers+independent-local-multibuffer-v2"
+EXPERIMENT_SCHEMA = "native-cv-depth+independent-local-multibuffer-v3"
 OPERATOR_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 SOURCE_BENCHMARK_OPERATOR_RE = re.compile(
     r"BENCHMARK\s+operator=([A-Za-z0-9][A-Za-z0-9_.-]*)"
@@ -94,8 +94,12 @@ def sha256(path: Path | None) -> str | None:
 
 
 def git_value(*args: str) -> str | None:
+    command = ["git"]
+    top_git = ROOT / ".codex-remote/top-git"
+    if not (ROOT / ".git").exists() and (top_git / "HEAD").is_file():
+        command.extend([f"--git-dir={top_git}", f"--work-tree={ROOT}"])
     result = subprocess.run(
-        ["git", *args], cwd=ROOT, text=True, capture_output=True, check=False
+        [*command, *args], cwd=ROOT, text=True, capture_output=True, check=False
     )
     value = result.stdout.strip()
     return value if result.returncode == 0 and value else None
@@ -120,8 +124,7 @@ def matching_metadata(
         if mtime_ns < min_mtime_ns:
             continue
         if (
-            metadata.get("cv_pipeline_depth") == depth
-            and metadata.get("cv_num_buffers") == depth
+            metadata.get("set_workspace_multibuffer") == depth
             and metadata.get("multibuffer_num") == multibuffer_num
             and metadata.get("vf_merge_level") == merge
         ):
@@ -179,9 +182,8 @@ def write_tables(rows: list[dict], result_dir: Path):
         for row in rows:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
     with csv_path.open("w", newline="") as handle:
-        # The public table treats CV schedule depth and CV buffer count as the
-        # single experiment axis `depth`.  The two resolved audit fields remain
-        # in JSONL/cache metadata, but are intentionally not duplicated here.
+        # The public `depth` axis maps to BishengIR's native
+        # set_workspace_multibuffer option and is not duplicated in the CSV.
         writer = csv.DictWriter(
             handle, fieldnames=CSV_FIELDNAMES, extrasaction="ignore"
         )
@@ -344,7 +346,10 @@ def main() -> int:
         "candidate": str(candidate),
         "correctness_evidence": correctness_evidence,
         "git_commit": git_value("rev-parse", "HEAD"),
-        "git_status": git_value("status", "--short") or "",
+        "ascend_npu_ir_commit": git_value(
+            "rev-parse", "HEAD:third_party/ascend/AscendNPU-IR"
+        ),
+        "git_status": git_value("status", "--short", "--ignore-submodules=dirty") or "",
         "python": sys.version,
         "warmup": args.warmup,
         "active": args.active,
@@ -358,7 +363,7 @@ def main() -> int:
             "multibuffer_num": list(MULTIBUFFER_VALUES),
             "vf_merge_level": list(VF_MERGE_VALUES),
         },
-        "resolved_cv_constraint": "cv_pipeline_depth == cv_num_buffers == depth",
+        "resolved_cv_constraint": "set_workspace_multibuffer == depth",
         "ordinary_multibuffer_constraint": "multibuffer_num is independent of depth",
     }
     (result_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
@@ -456,8 +461,7 @@ def main() -> int:
             "experiment_schema": manifest["experiment_schema"],
             "depth": depth,
             "multibuffer_num": multibuffer_num,
-            "cv_pipeline_depth": depth,
-            "cv_num_buffers": depth,
+            "set_workspace_multibuffer": depth,
             "vf_merge_level": merge,
             "status": status,
             "diagnostic": diagnostic,
