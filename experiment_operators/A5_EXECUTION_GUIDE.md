@@ -138,6 +138,32 @@ visible NPU count: <大于0>
 
 ## 4. 创建或修复 A5 项目 venv
 
+切换到不同 Python 或 CANN 版本的容器时，先在新容器的项目根目录预览并清理旧
+构建环境：
+
+```bash
+./tools/remote_experiment/clean-environment.sh rebuild
+./tools/remote_experiment/clean-environment.sh rebuild --execute
+```
+
+清理旧实验日志和 Triton 缓存：
+
+```bash
+./tools/remote_experiment/clean-environment.sh runtime
+./tools/remote_experiment/clean-environment.sh runtime --execute
+```
+
+只有在全部历史实验结果也不再需要时才使用：
+
+```bash
+./tools/remote_experiment/clean-environment.sh results
+./tools/remote_experiment/clean-environment.sh results --execute
+```
+
+不带 `--execute` 时只显示将删除的路径。脚本始终保留源码、Git 数据、离线
+LLVM、`top-git` 和 `config.local.sh`。执行 `results` 或 `all` 会永久删除
+`.codex-remote/results` 下的全部实验数据，应先确认预览内容。
+
 当前仓库的 Triton core 还需要仓库固定版本的预编译 LLVM。A5 无法访问制品站时，
 先把与容器架构匹配的 LLVM 解压到项目持久化目录。x86_64 A5 的目录应为：
 
@@ -265,16 +291,28 @@ BISHENGIR_PACKAGE_OK
 `bishengir-compile --version` 必须成功，五个 bitcode 必须非空，最后必须打印
 `BISHENGIR_PACKAGE_OK`。`bishengir-compile` 和相邻 bitcode 必须来自同一次构建。
 
+每次打开新的容器 shell，在构建完成后激活一次项目开发环境：
+
+```bash
+source tools/remote_experiment/activate-dev-environment.sh
+```
+
+预期输出：
+
+```text
+DEV_ENVIRONMENT_OK soc=<A5型号> bitcode_arch=c310 native_a5_regbase=1
+```
+
+该脚本统一激活项目 venv、当前仓库 Python 和项目版 `bishengir-compile`，并让
+A5 使用项目内置的 RegBase pipeline。后续命令无需重复设置 `PYTHONPATH`、
+`PATH`、`TRITON_NPU_COMPILER_PATH` 或 `BISHENGIR_NATIVE_A5_REGBASE`。
+
 ## 6. 冒烟验证
 
 容器只暴露一张卡时直接运行：
 
 ```bash
-PYTHONPATH="$REMOTE_PROJECT/python" \
-PATH="$REMOTE_COMPILER_BUILD/bin:$REMOTE_VENV/bin:$PATH" \
-TRITON_NPU_COMPILER_PATH="$REMOTE_COMPILER_BUILD/bin" \
-  "$REMOTE_VENV/bin/python" -u \
-  third_party/ascend/tutorials/01-vector-add.py
+python -u third_party/ascend/tutorials/01-vector-add.py
 ```
 
 预期末尾包含：
@@ -286,16 +324,14 @@ The maximum difference between torch and triton is 0.0
 
 Vector Add 命令必须以退出码 0 结束，打印通过信息，并且最大误差为 0 或处于脚本
 给定容差内；编译错误、设备异常、超时或路径落入 `/usr/local` 都不算通过。
+当前项目 native A5 编译器必须配套能识别其 HIVM 属性的 `hivmc-a5`；若当前
+CANN 工具不兼容，本项会在编译阶段失败，应先更换匹配工具链，不能继续实验。
 
 容器暴露多张卡时，先用 `npu-smi info` 选择健康空闲卡，再为当前命令指定：
 
 ```bash
 ASCEND_RT_VISIBLE_DEVICES=<物理卡编号> \
-PYTHONPATH="$REMOTE_PROJECT/python" \
-PATH="$REMOTE_COMPILER_BUILD/bin:$REMOTE_VENV/bin:$PATH" \
-TRITON_NPU_COMPILER_PATH="$REMOTE_COMPILER_BUILD/bin" \
-  "$REMOTE_VENV/bin/python" -u \
-  third_party/ascend/tutorials/01-vector-add.py
+  python -u third_party/ascend/tutorials/01-vector-add.py
 ```
 
 预期与单卡命令相同：最大误差为 0 或在脚本容差内，并打印
@@ -324,6 +360,11 @@ hivmc=/usr/local/Ascend/cann-9.1.0/.../hivmc (CANN binary backend; expected)
 
 backend、编译器和 `c310` bitcode 必须来自项目，后两条应来自 CANN；不符合时
 脚本立即退出。
+
+项目 native A5 pipeline 最终仍调用容器的 `hivmc-a5`。该工具必须能读取项目
+编译器生成的 HIVM 属性；若报 `unknown attribute 'aic_bitcode' in dialect
+'hivm'`，表示当前 CANN `hivmc-a5` 与项目 AscendNPU-IR 不兼容，不能将该结果
+视为算子或实验参数问题。
 
 该配置必须通过正确性检查，记录非零 UB 和 NPU latency。失败时终端会直接打印
 完整错误，独立日志仍保存在结果目录。冒烟结果必须包含一行 `measured`，且该行的

@@ -197,6 +197,21 @@ BISHENGIR_PACKAGE_OK
 容器内 CANN 的 `hivmc` 生成。以上命令必须以退出码 0 结束并打印
 `BISHENGIR_PACKAGE_OK`；任一 bitcode 缺失或为空都不算通过。
 
+每次打开新的容器 shell，在构建完成后激活一次项目开发环境：
+
+```bash
+source tools/remote_experiment/activate-dev-environment.sh
+```
+
+A3 预期输出：
+
+```text
+DEV_ENVIRONMENT_OK soc=<A3型号> bitcode_arch=c220 native_a5_regbase=0
+```
+
+后续手动 Python 命令可直接使用项目 venv 的 `python`，无需重复设置
+`PYTHONPATH`、`PATH` 和 `TRITON_NPU_COMPILER_PATH`。
+
 ## 5. 选择设备并做基线验证
 
 在服务器宿主机用以下命令查看设备，不运行会主动初始化所有卡的探测程序：
@@ -213,11 +228,7 @@ npu-smi info
 
 ```bash
 ASCEND_RT_VISIBLE_DEVICES=2 \
-PYTHONPATH="$REMOTE_PROJECT/python" \
-PATH="$REMOTE_COMPILER_BUILD/bin:$REMOTE_VENV/bin:$PATH" \
-TRITON_NPU_COMPILER_PATH="$REMOTE_COMPILER_BUILD/bin" \
-  "$REMOTE_VENV/bin/python" -u \
-  third_party/ascend/tutorials/01-vector-add.py
+  python -u third_party/ascend/tutorials/01-vector-add.py
 ```
 
 预期末尾包含：

@@ -41,11 +41,12 @@ fi
 printf -v command_q '%q ' "$@"
 printf -v project_q '%q' "$REMOTE_PROJECT"
 printf -v python_q '%q' "$REMOTE_PROJECT/python"
-printf -v compiler_bin_q '%q' "$REMOTE_COMPILER_BUILD/bin"
 printf -v venv_bin_q '%q' "$REMOTE_VENV/bin"
 printf -v cache_q '%q' "$REMOTE_TRITON_CACHE"
 printf -v cann_env_q '%q' \
   "$REMOTE_PROJECT/tools/remote_experiment/load-cann-environment.sh"
+printf -v dev_env_q '%q' \
+  "$REMOTE_PROJECT/tools/remote_experiment/activate-dev-environment.sh"
 if [[ "$REMOTE_MODE" == "baseline" ]]; then
   printf -v system_compiler_q '%q' "$REMOTE_SYSTEM_COMPILER_BIN"
   container_command="cd $project_q && mkdir -p $cache_q && unset PYTHONPATH TRITON_NPU_COMPILER_PATH && export PATH=$system_compiler_q:\$PATH && export TRITON_CACHE_DIR=$cache_q/baseline && exec $command_q"
@@ -53,7 +54,7 @@ elif [[ "$REMOTE_MODE" == "dev-compatible" ]]; then
   printf -v system_compiler_q '%q' "$REMOTE_SYSTEM_COMPILER_BIN"
   container_command="cd $project_q && mkdir -p $cache_q && export PYTHONPATH=$python_q\${PYTHONPATH:+:\$PYTHONPATH} && export PATH=$system_compiler_q:$venv_bin_q:\$PATH && export TRITON_NPU_COMPILER_PATH=$system_compiler_q && export TRITON_CACHE_DIR=$cache_q/dev-compatible && exec $command_q"
 elif [[ "$REMOTE_MODE" == "dev" ]]; then
-  container_command="cd $project_q && mkdir -p $cache_q && export PYTHONPATH=$python_q\${PYTHONPATH:+:\$PYTHONPATH} && export PATH=$compiler_bin_q:$venv_bin_q:\$PATH && export TRITON_NPU_COMPILER_PATH=$compiler_bin_q && export TRITON_CACHE_DIR=$cache_q/dev-custom && exec $command_q"
+  container_command="cd $project_q && source $dev_env_q && mkdir -p $cache_q && export TRITON_CACHE_DIR=$cache_q/dev-custom && exec $command_q"
 else
   echo "REMOTE_MODE must be 'baseline', 'dev-compatible', or 'dev', got: $REMOTE_MODE" >&2
   exit 2

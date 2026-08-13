@@ -63,35 +63,12 @@ else
 fi
 
 if [[ "$DRY_RUN" != "1" ]]; then
-  # shellcheck source=tools/remote_experiment/load-cann-environment.sh
-  source "$PROJECT_ROOT/tools/remote_experiment/load-cann-environment.sh"
-  if [[ ! -f "$DEV_VENV/bin/activate" || ! -x "$DEV_VENV/bin/python" ]]; then
-    printf 'development venv not found: %s\n' "$DEV_VENV" >&2
-    printf '%s\n' \
-      'Inside the experiment container, run: ./tools/remote_experiment/setup-dev-environment.sh' >&2
-    exit 1
-  fi
-  if [[ ! -x "$DEV_COMPILER_DIR/bishengir-compile" ]]; then
-    printf 'custom bishengir-compile not found: %s\n' \
-      "$DEV_COMPILER_DIR/bishengir-compile" >&2
-    exit 1
-  fi
-
-  experiment_soc="$("$DEV_VENV/bin/python" - <<'PY'
-import torch
-import torch_npu  # noqa: F401
-
-print(torch.npu.get_device_name(torch.npu.current_device()))
-PY
-)"
-  case "$experiment_soc" in
-    *Ascend910_95*|*Ascend950*|*910_958*) experiment_bitcode_arch=c310 ;;
-    *Ascend910B*|*Ascend910_93*) experiment_bitcode_arch=c220 ;;
-    *)
-      printf 'unsupported or unknown experiment SoC: %s\n' "$experiment_soc" >&2
-      exit 1
-      ;;
-  esac
+  REMOTE_VENV="$DEV_VENV"
+  REMOTE_COMPILER_BUILD="${DEV_COMPILER_DIR%/bin}"
+  # shellcheck source=tools/remote_experiment/activate-dev-environment.sh
+  source "$PROJECT_ROOT/tools/remote_experiment/activate-dev-environment.sh"
+  experiment_soc="$TRITON_ASCEND_SOC_NAME"
+  experiment_bitcode_arch="$TRITON_ASCEND_BITCODE_ARCH"
   compiler_lib="${DEV_COMPILER_DIR%/bin}/lib"
   for file in \
     "meta_op.aic.$experiment_bitcode_arch.bc" \
@@ -105,14 +82,13 @@ PY
       exit 1
     fi
   done
-
-  # shellcheck disable=SC1091
-  source "$DEV_VENV/bin/activate"
 fi
 
-export PYTHONPATH="$PROJECT_ROOT/python${PYTHONPATH:+:$PYTHONPATH}"
-export PATH="$DEV_COMPILER_DIR:$PATH"
-export TRITON_NPU_COMPILER_PATH="$DEV_COMPILER_DIR"
+if [[ "$DRY_RUN" == "1" ]]; then
+  export PYTHONPATH="$PROJECT_ROOT/python${PYTHONPATH:+:$PYTHONPATH}"
+  export PATH="$DEV_COMPILER_DIR:$PATH"
+  export TRITON_NPU_COMPILER_PATH="$DEV_COMPILER_DIR"
+fi
 export TRITON_BENCH_METHOD="${TRITON_BENCH_METHOD:-npu}"
 export TRITON_CACHE_DIR="${SWEEP_CACHE_DIR:-$PROJECT_ROOT/.codex-remote/triton-cache/formal-$RUN_TAG}"
 

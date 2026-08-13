@@ -54,11 +54,26 @@ cd "$REMOTE_PROJECT"
 source tools/remote_experiment/config.sh
 ```
 
+When changing to a container with a different Python or CANN toolchain, preview
+and remove the old project build environment before rebuilding:
+
+```bash
+./tools/remote_experiment/clean-environment.sh rebuild
+./tools/remote_experiment/clean-environment.sh rebuild --execute
+```
+
+Use `runtime` to remove experiment logs and Triton caches. Use `results` to
+remove all stored measurements and generated reports, or `all` to remove every
+listed build/runtime/result artifact. Cleanup is preview-only unless
+`--execute` is present. Source files, Git metadata, the offline LLVM directory,
+`top-git`, and `config.local.sh` are always preserved.
+
 Run the idempotent setup inside the container:
 
 ```bash
 JOBS=32 ./tools/remote_experiment/setup-dev-environment.sh
 JOBS=32 ./tools/remote_experiment/rebuild-compiler.sh
+source tools/remote_experiment/activate-dev-environment.sh
 ```
 
 When the container cannot reach the Triton LLVM artifact server, stage the
@@ -98,6 +113,12 @@ the setup checks `sys.prefix` instead.
 Do not copy a venv from another host, container, or project path. A Python venv
 contains interpreter and script paths and must be created inside the container
 at the final mounted project path.
+
+After both builds, source `activate-dev-environment.sh` once in each new
+container shell. It activates the project venv, places the checkout's Python
+tree and BishengIR compiler first, and detects the NPU architecture. On A5 it
+also enables the native project RegBase pipeline; on A3 it leaves that mode
+disabled. A successful activation prints `DEV_ENVIRONMENT_OK`.
 
 ## Run experiments
 
