@@ -177,17 +177,17 @@ The independent variables are:
 
 | Public experiment name | Requested values | Intended compiler control |
 | --- | --- | --- |
-| `depth` | `1, 2, 3, 4` | set both `CVPipeliningOptions.setDepthInUnrollMode` and the CVPipeline physical-buffer count to the same value |
+| A3: `depth`; A5: `intra_cache_num` | `1, 2, 3, 4` | A3 uses native static CV workspace/depth with DynamicCV disabled; A5 enables DynamicCV and varies its intra-cache count while fixing inter/load to 1 |
 | `multibuffer_num` | `1, 2, 3, 4` | independently replace the ordinary local `MarkMultiBuffer` default of 2 through `--set-local-multibuffer`, with the MIX strategy fixed to `no-limit` |
 | `vf_merge_level` | `0, 1, 2` | existing `NPUOptions.vf_merge_level` and `--enable-vf-merge-level` |
 
-This full Cartesian search space has 48 requested combinations. There is no
-ordering constraint between ordinary `multibuffer_num` and CV `depth`; include
-the `multibuffer_num > depth` cases. Do not silently
+The default search space has 32 combinations because VF merge level 2 is
+temporarily excluded; the explicit diagnostic opt-in has 48. There is no
+ordering constraint between ordinary `multibuffer_num` and the first axis. Do not silently
 coerce or drop a combination. Record it as `unsupported`, `compile_failed`,
 `ub_overflow`, `incorrect`, or `measured` with a diagnostic.
 
-Every accepted operator case must therefore produce 48 rows. A failed or
+Every default accepted operator case must therefore produce 32 rows. A failed or
 unsupported configuration is still an observation and must remain in the
 dataset. Successful rows require both latency statistics and non-missing UB
 usage; never keep only the fastest configuration.
@@ -204,12 +204,12 @@ usage; never keep only the fastest configuration.
   kernels. `TRITON_BENCH_METHOD=npu` selects the NPU-profiler path;
   `do_bench_npu` performs warmup, synchronization, repeated launches, and
   kernel-name-filtered timing.
-- CV scheduling depth and CV workspace-buffer count use BishengIR's native
-  single `set_workspace_multibuffer` value. The public experiment `depth` axis
-  maps directly to that existing option. Every formal candidate disables
-  frontend DynamicCVPipeline so the A5 path cannot replace the requested value
-  with 0; BishengIR still infers MixedCV from the Triton `mix_mode`. No separate
-  CV depth/buffer plumbing remains in Triton-Ascend or AscendNPU-IR.
+- On A3, CV scheduling depth and workspace-buffer count use BishengIR's native
+  `set_workspace_multibuffer` value and DynamicCV is disabled. On A5, DynamicCV
+  is enabled, static workspace multibuffer is zero, `intra_cache_num` is the
+  first axis, and `inter_cache_num` plus `load_cache_num` are fixed to 1.
+  DynamicCV fallback resolves the metadata switch to false and is rejected as
+  unsupported rather than mixed into measurements.
 - `NPUOptions.multibuffer_num` is a separate ordinary-local multibuffer
   control. The backend forwards it as `--set-local-multibuffer`; the HFusion
   pipelines use it when estimating ordinary multibuffer pressure and selecting
@@ -252,11 +252,11 @@ usage; never keep only the fastest configuration.
   All sampled binaries were nevertheless identical, so this operator/sample is
   currently classified as dynamically insensitive rather than proof that every
   optimization changes generated code.
-- `experiment_operators/run_sweep.py` is the standalone step-4 controller. Its
-  current `native-cv-depth+no-dynamic-cv+independent-local-multibuffer-v4` schema enumerates
-  `depth(1..4) x multibuffer_num(1..4) x merge(0..2)`, sets
-  `set_workspace_multibuffer == depth`, disables DynamicCVPipeline, fixes the
-  ordinary MIX strategy to `no-limit`, and records all 48 triples. It rejects
+- `experiment_operators/run_sweep.py` is the standalone step-4 controller. A3
+  uses schema `native-cv-depth+no-dynamic-cv+independent-local-multibuffer-v4`;
+  A5 uses `dynamic-cv-intra-cache+independent-local-multibuffer-v1`. Both
+  enumerate four first-axis values, four ordinary multibuffer values, and VF
+  levels 0/1 by default. The ordinary MIX strategy is fixed to `no-limit`. It rejects
   cache metadata that does not resolve all three fixed conditions.
   It writes incremental JSONL/CSV rows and per-row logs, records compiler time,
   cache/artifact hashes, correctness, timing, and UB metadata, and never
@@ -265,20 +265,18 @@ usage; never keep only the fastest configuration.
 - The repository-root `run_all_sweeps.sh` is the container-side entry point for
   one complete operator run: pass exactly one Python wrapper path. It activates
   the isolated development venv, selects the repository-built BishengIR,
-  creates a fresh Triton cache, and runs all 48 configurations for that
+  creates a fresh Triton cache, and runs all 32 default configurations for that
   operator. It then scans every complete result under `.codex-remote/results`,
   selects the latest run independently for each operator, and refreshes the
   aggregate tables and HTML. Use `DRY_RUN=1` to validate the command without
   launching the NPU; `SWEEP_LIMIT` is smoke-only and cannot displace a complete
   run. The full server-side operator, build, run, and reporting procedure is in
   `experiment_operators/EXECUTION_GUIDE.md`.
-- User-facing measurement CSVs expose one `depth` column for the equal CV
-  schedule-depth/buffer-count pair, followed immediately by
-  `multibuffer_num`, `vf_merge_level`, latency, and UB. The duplicated resolved
-  CV fields remain only in JSONL/cache metadata for auditing. The latest-run
+- User-facing measurement CSVs expose `depth` on A3 or `intra_cache_num` on A5,
+  followed by `multibuffer_num`, `vf_merge_level`, latency, and UB. Resolved
+  fields remain in detailed JSONL/cache metadata for auditing. The latest-run
   summarizer additionally emits `effects.{csv,json,md,svg}` using controlled
-  matched comparisons: depth at ordinary buffer 1, ordinary buffer at depth 4,
-  and VF merge across identical `(depth, multibuffer_num)` pairs. Do not replace
+  matched comparisons against the architecture-specific first axis. Do not replace
   these controlled views with marginal averages that hide factor interactions.
 - Every sweep row prints auditable `requested_parameters` and fixed
   `operator_parameters` records, the full final `resolved_npu_options`
@@ -413,14 +411,12 @@ Use `ir_override`/`triton.compile(<file>.ttir, options=...)` where practical.
 If runtime launch metadata makes direct TTIR replay inconvenient, allow normal
 JIT compilation but assert and record the TTIR hash for every candidate.
 
-### 3. Use native CV depth and plumb an independent ordinary multibuffer count
+### 3. Select the architecture-specific CV axis and retain independent ordinary multibuffering
 
-Have every experiment candidate pass `depth` through the existing
-`NPUOptions.set_workspace_multibuffer` option. BishengIR uses that one native
-value for both CV unroll depth and physical workspace buffers. Formal
-candidates must pass `enable_dynamic_cv_pipeline=false` so the A5 frontend
-cannot replace the requested value with 0; this does not disable BishengIR's
-MixedCV inference from `mix_mode`. Add validated
+On A3, pass `depth` through `NPUOptions.set_workspace_multibuffer` and disable
+DynamicCV. On A5, enable DynamicCV, vary `NPUOptions.intra_cache_num`, fix
+`inter_cache_num=1` and `load_cache_num=1`, and leave static workspace
+multibuffer at zero. Retain the validated
 `NPUOptions.multibuffer_num`, propagate it through
 `third_party/ascend/backend/compiler.py` as `--set-local-multibuffer`, then into
 both `HFusionPipelineOptions` and `HIVMPipelineOptions`. HFusion must use the
@@ -429,7 +425,8 @@ value to `MarkMultiBufferOptions.localMultiBufferNum`.
 
 The resulting controls must obey these boundaries:
 
-- `depth` controls both CV schedule/unroll depth and CV physical-buffer count;
+- on A3, `depth` controls both CV schedule/unroll depth and CV physical-buffer count;
+- on A5, `intra_cache_num` is the DynamicCV first axis and inter/load counts stay fixed at 1;
 - `multibuffer_num` replaces only the ordinary local default 2 used for
   HFusion estimation and automatically marked Load/Store/ND2NZ/Fixpipe
   buffers, and an explicit value fixes
@@ -448,14 +445,14 @@ for HFusion counts 1, 2, and 4 while proving the tiling estimate changes.
 
 ### 4. Extend autotune configuration and result capture
 
-Generate `triton.Config` candidates for the 48 requested triples and pass the
+Generate candidates for the 32 default architecture-specific triples and pass the
 three values as backend compile options, not `tl.constexpr` kernel arguments.
 Extend the Ascend autotuner (or initially a thin controller around its compile
 and benchmark primitives) to retain, for each candidate:
 
 - compile status, diagnostic, compile time, cache key, and binary path/hash;
-- resolved depth, equal CV buffer count, ordinary local multibuffer count, and
-  VF merge level;
+- resolved architecture-specific first axis, fixed DynamicCV counts where
+  applicable, ordinary local multibuffer count, and VF merge level;
 - `required_ub_bits`, plus converted bytes/KiB;
 - correctness status and maximum error;
 - warmup count, repeat count, raw/summary latency, and benchmark method.
@@ -521,7 +518,7 @@ collapse distinct experiments.
 2. **Compiler gate:** fix the current custom BishengIR-to-`hivmc` failure.
 3. **Plumbing gate:** one hand-written TTIR case proves each option reaches the
    intended pass and distinct triples create distinct cache keys/artifacts.
-4. **Compile-only gate:** enumerate all 48 triples and classify every result,
+4. **Compile-only gate:** enumerate all 32 default triples and classify every result,
    with UB captured or an explicit reason it is unavailable.
 5. **Measurement gate:** run correctness and stable NPU timing for every
    successfully compiled configuration and verify the output has exactly one
@@ -529,13 +526,13 @@ collapse distinct experiments.
 6. **Corpus gate:** dynamically classify sensitivity for each copied candidate,
    exclude wholly insensitive kernels, and retain the reason for every rejected
    or deferred source.
-7. **Generalization gate:** complete the 48-row table for multiple accepted
+7. **Generalization gate:** complete the 32-row default table for multiple accepted
    mixed Cube/Vector operators; use vector-only and Cube-only cases only as
    labeled negative controls.
 
 Do not mark this objective complete merely because ordinary Triton tiling
-autotune works. Completion requires independent control of the public `depth`,
-ordinary-local `multibuffer_num`, and `vf_merge_level` variables,
+autotune works. Completion requires independent control of the architecture-specific
+CV axis, ordinary-local `multibuffer_num`, and `vf_merge_level` variables,
 per-candidate UB and latency records, correctness filtering, and a reproducible
 complete table for every accepted operator. No winning configuration is part
 of the requested deliverable.

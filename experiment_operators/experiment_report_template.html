@@ -256,10 +256,10 @@
       const report = JSON.parse(document.getElementById("experiment-data").textContent);
       const axes = {
         depth: { label: "CV depth", short: "depth" },
+        intra_cache_num: { label: "DynamicCV intra cache 数量", short: "intra cache" },
         multibuffer_num: { label: "普通 multibuffer 数量", short: "multibuffer" },
         vf_merge_level: { label: "VF merge level", short: "merge" }
       };
-      const axisKeys = Object.keys(axes);
       const elements = {
         operator: document.getElementById("operator-select"),
         axis: document.getElementById("axis-select"),
@@ -303,6 +303,24 @@
         return report.operators.find(operator => operator.id === elements.operator.value) || report.operators[0];
       }
 
+      function operatorAxisKeys(operator) {
+        return [operator.pipeline_axis || "depth", "multibuffer_num", "vf_merge_level"];
+      }
+
+      function refreshAxisOptions() {
+        const operator = selectedOperator();
+        const keys = operatorAxisKeys(operator);
+        const previous = elements.axis.value;
+        elements.axis.replaceChildren();
+        keys.forEach(key => {
+          const option = document.createElement("option");
+          option.value = key;
+          option.textContent = axes[key].label;
+          elements.axis.appendChild(option);
+        });
+        elements.axis.value = keys.includes(previous) ? previous : keys[0];
+      }
+
       function matches(row, key, value) {
         return String(row[key]) === String(value);
       }
@@ -326,7 +344,7 @@
       function refreshFilters() {
         const operator = selectedOperator();
         const previouslyFixed = [...fixedKeys];
-        fixedKeys = axisKeys.filter(key => key !== elements.axis.value);
+        fixedKeys = operatorAxisKeys(operator).filter(key => key !== elements.axis.value);
         elements.fixedOneLabel.textContent = `固定 ${axes[fixedKeys[0]].label}`;
         elements.fixedTwoLabel.textContent = `固定 ${axes[fixedKeys[1]].label}`;
 
@@ -593,15 +611,11 @@
         option.textContent = operator.label;
         elements.operator.appendChild(option);
       });
-      axisKeys.forEach(key => {
-        const option = document.createElement("option");
-        option.value = key;
-        option.textContent = axes[key].label;
-        elements.axis.appendChild(option);
-      });
+      refreshAxisOptions();
 
       elements.operator.addEventListener("change", () => {
         rememberFixedValues();
+        refreshAxisOptions();
         refreshFilters();
       });
       elements.axis.addEventListener("change", () => {

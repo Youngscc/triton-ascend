@@ -44,11 +44,12 @@ DOMINANCE_ERROR_RE = re.compile(
     r"operand\s+#(?P<operand>\d+)\s+does(?:n't| not)\s+dominate\s+this\s+use",
     re.IGNORECASE,
 )
-DEPTH_VALUES = (1, 2, 3, 4)
+PIPELINE_VALUES = (1, 2, 3, 4)
 MULTIBUFFER_VALUES = (1, 2, 3, 4)
 VF_MERGE_VALUES = (0, 1, 2)
 DEFAULT_VF_MERGE_VALUES = (0, 1)
-EXPERIMENT_SCHEMA = "native-cv-depth+no-dynamic-cv+independent-local-multibuffer-v4"
+A3_EXPERIMENT_SCHEMA = "native-cv-depth+no-dynamic-cv+independent-local-multibuffer-v4"
+A5_EXPERIMENT_SCHEMA = "dynamic-cv-intra-cache+independent-local-multibuffer-v1"
 OPERATOR_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 SOURCE_BENCHMARK_OPERATOR_RE = re.compile(
     r"BENCHMARK\s+operator=([A-Za-z0-9][A-Za-z0-9_.-]*)"
@@ -56,7 +57,13 @@ SOURCE_BENCHMARK_OPERATOR_RE = re.compile(
 CSV_FIELDNAMES = [
     "operator",
     "depth",
+    "intra_cache_num",
+    "inter_cache_num",
+    "load_cache_num",
     "multibuffer_num",
+    "set_workspace_multibuffer",
+    "enable_dynamic_cv_pipeline",
+    "limit_auto_multi_buffer_buffer",
     "vf_merge_level",
     "latency_ms",
     "required_ub_kib",
@@ -80,9 +87,8 @@ CSV_FIELDNAMES = [
     "returncode",
     "log_path",
 ]
-SIMPLE_CSV_FIELDNAMES = [
+SIMPLE_CSV_SUFFIX_FIELDNAMES = [
     "序号",
-    "depth",
     "multibuffer_num",
     "vf_merge_level",
     "结果",
@@ -165,9 +171,17 @@ class SweepProgress:
             print(f"PROGRESS {progress}", flush=True)
             print(f"PROGRESS {details}", flush=True)
 
-    def begin(self, key: str, depth: int, multibuffer_num: int, merge: int) -> None:
+    def begin(
+        self,
+        key: str,
+        pipeline_axis: str,
+        pipeline_value: int,
+        multibuffer_num: int,
+        merge: int,
+    ) -> None:
         self.current = (
-            f"{key} depth={depth} multibuffer_num={multibuffer_num} "
+            f"{key} {pipeline_axis}={pipeline_value} "
+            f"multibuffer_num={multibuffer_num} "
             f"vf_merge_level={merge}"
         )
         self.render()
@@ -202,10 +216,10 @@ class SweepProgress:
 
 
 def requested_configs(vf_merge_values):
-    for depth in DEPTH_VALUES:
+    for pipeline_value in PIPELINE_VALUES:
         for multibuffer_num in MULTIBUFFER_VALUES:
             for merge in vf_merge_values:
-                yield depth, multibuffer_num, merge
+                yield pipeline_value, multibuffer_num, merge
 
 
 def sha256(path: Path | None) -> str | None:
@@ -232,7 +246,8 @@ def git_value(*args: str) -> str | None:
 
 def matching_metadata(
     cache_dir: Path,
-    depth: int,
+    pipeline_axis: str,
+    pipeline_value: int,
     multibuffer_num: int,
     merge: int,
     min_mtime_ns: int,
@@ -248,11 +263,23 @@ def matching_metadata(
         mtime_ns = path.stat().st_mtime_ns
         if mtime_ns < min_mtime_ns:
             continue
+        if pipeline_axis == "intra_cache_num":
+            pipeline_matches = (
+                metadata.get("enable_dynamic_cv_pipeline") is True
+                and metadata.get("intra_cache_num") == pipeline_value
+                and metadata.get("inter_cache_num") == 1
+                and metadata.get("load_cache_num") == 1
+                and metadata.get("set_workspace_multibuffer") == 0
+            )
+        else:
+            pipeline_matches = (
+                metadata.get("enable_dynamic_cv_pipeline") is False
+                and metadata.get("set_workspace_multibuffer") == pipeline_value
+            )
         if (
-            metadata.get("set_workspace_multibuffer") == depth
+            pipeline_matches
             and metadata.get("multibuffer_num") == multibuffer_num
             and metadata.get("vf_merge_level") == merge
-            and metadata.get("enable_dynamic_cv_pipeline") is False
             and metadata.get("limit_auto_multi_buffer_buffer") == "no-limit"
         ):
             matches.append((mtime_ns, path, metadata))
@@ -261,14 +288,20 @@ def matching_metadata(
 
 def artifact_row(
     cache_dir: Path,
-    depth: int,
+    pipeline_axis: str,
+    pipeline_value: int,
     multibuffer_num: int,
     merge: int,
     min_mtime_ns: int,
     include_audit: bool = True,
 ):
     metadata_path, metadata = matching_metadata(
-        cache_dir, depth, multibuffer_num, merge, min_mtime_ns
+        cache_dir,
+        pipeline_axis,
+        pipeline_value,
+        multibuffer_num,
+        merge,
+        min_mtime_ns,
     )
     if metadata_path is None:
         return {
@@ -317,8 +350,7 @@ def write_tables(rows: list[dict], result_dir: Path):
         for row in rows:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
     with csv_path.open("w", newline="") as handle:
-        # The public `depth` axis maps to BishengIR's native
-        # set_workspace_multibuffer option and is not duplicated in the CSV.
+        # A3 exposes static depth; A5 exposes DynamicCV intra cache count.
         writer = csv.DictWriter(
             handle, fieldnames=CSV_FIELDNAMES, extrasaction="ignore"
         )
@@ -371,17 +403,24 @@ def simple_reason(row: dict) -> str:
     return "当前配置不支持"
 
 
-def write_simple_table(rows: list[dict], result_dir: Path) -> Path:
+def write_simple_table(
+    rows: list[dict], result_dir: Path, pipeline_axis: str
+) -> Path:
     csv_path = result_dir / "results.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=SIMPLE_CSV_FIELDNAMES)
+        fieldnames = [
+            SIMPLE_CSV_SUFFIX_FIELDNAMES[0],
+            pipeline_axis,
+            *SIMPLE_CSV_SUFFIX_FIELDNAMES[1:],
+        ]
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for number, row in enumerate(rows, 1):
             result = simple_result(row["status"])
             writer.writerow(
                 {
                     "序号": number,
-                    "depth": row["depth"],
+                    pipeline_axis: row[pipeline_axis],
                     "multibuffer_num": row["multibuffer_num"],
                     "vf_merge_level": row["vf_merge_level"],
                     "结果": result,
@@ -531,6 +570,10 @@ def main() -> int:
     if args.warmup < 1 or args.active < 1 or args.timeout <= 0:
         raise SystemExit("--warmup, --active, and --timeout must be positive")
     operator, candidate, pass_marker, correctness_evidence = resolve_operator(args)
+    is_a5 = os.environ.get("BISHENGIR_NATIVE_A5_REGBASE") == "1"
+    pipeline_axis = "intra_cache_num" if is_a5 else "depth"
+    experiment_schema = A5_EXPERIMENT_SCHEMA if is_a5 else A3_EXPERIMENT_SCHEMA
+    dynamic_cv_pipeline = is_a5
 
     # The experiment container does not necessarily ship the IANA tzdata
     # database.  A fixed UTC+8 offset gives the desired local run ID without
@@ -556,7 +599,7 @@ def main() -> int:
     )
     configs = list(requested_configs(vf_merge_values))
     requested_configuration_count = (
-        len(DEPTH_VALUES) * len(MULTIBUFFER_VALUES) * len(vf_merge_values)
+        len(PIPELINE_VALUES) * len(MULTIBUFFER_VALUES) * len(vf_merge_values)
     )
     if args.limit is not None:
         if args.limit < 1:
@@ -566,7 +609,7 @@ def main() -> int:
     manifest = {
         "run_id": run_id,
         "timezone": "UTC+08:00",
-        "experiment_schema": EXPERIMENT_SCHEMA,
+        "experiment_schema": experiment_schema,
         "operator": operator,
         "candidate": str(candidate),
         "correctness_evidence": correctness_evidence,
@@ -584,14 +627,28 @@ def main() -> int:
         "executed_configuration_count": len(configs),
         "limited_smoke_run": args.limit is not None,
         "axes": {
-            "depth": list(DEPTH_VALUES),
+            pipeline_axis: list(PIPELINE_VALUES),
             "multibuffer_num": list(MULTIBUFFER_VALUES),
             "vf_merge_level": list(vf_merge_values),
         },
-        "resolved_cv_constraint": "set_workspace_multibuffer == depth",
-        "dynamic_cv_pipeline_constraint": "enable_dynamic_cv_pipeline == false",
-        "ordinary_multibuffer_constraint": "multibuffer_num is independent of depth",
+        "resolved_cv_constraint": (
+            "dynamic CV: intra_cache_num is explicit and "
+            "set_workspace_multibuffer == 0"
+            if is_a5
+            else "static CV: set_workspace_multibuffer == depth"
+        ),
+        "dynamic_cv_pipeline_constraint": (
+            "enable_dynamic_cv_pipeline == true"
+            if is_a5
+            else "enable_dynamic_cv_pipeline == false"
+        ),
+        "ordinary_multibuffer_constraint": (
+            f"multibuffer_num is independent of {pipeline_axis}"
+        ),
         "ordinary_multibuffer_strategy": "limit_auto_multi_buffer_buffer == no-limit",
+        "fixed_dynamic_cv_buffer_counts": (
+            {"inter_cache_num": 1, "load_cache_num": 1} if is_a5 else None
+        ),
     }
     if not args.simple_output:
         (result_dir / "manifest.json").write_text(
@@ -600,37 +657,52 @@ def main() -> int:
 
     rows = []
     progress = SweepProgress(operator, len(configs))
-    for index, (depth, multibuffer_num, merge) in enumerate(configs, 1):
-        key = f"d{depth}-b{multibuffer_num}-m{merge}"
-        progress.begin(key, depth, multibuffer_num, merge)
+    for index, (pipeline_value, multibuffer_num, merge) in enumerate(configs, 1):
+        key_prefix = "i" if is_a5 else "d"
+        key = f"{key_prefix}{pipeline_value}-b{multibuffer_num}-m{merge}"
+        progress.begin(
+            key, pipeline_axis, pipeline_value, multibuffer_num, merge
+        )
         log_path = logs_dir / f"{key}.log" if logs_dir is not None else None
         env = os.environ.copy()
+        env.pop("EXPERIMENT_DEPTH", None)
+        env.pop("EXPERIMENT_INTRA_CACHE_NUM", None)
         env.update(
             {
                 "ENABLE_PRINT_UB_BITS": "true",
                 "TRITON_ALWAYS_COMPILE": "1",
                 "TRITON_PRINT_AUTOTUNING": "1",
-                "EXPERIMENT_DEPTH": str(depth),
+                "EXPERIMENT_DYNAMIC_CV": "1" if is_a5 else "0",
                 "EXPERIMENT_MULTIBUFFER_NUM": str(multibuffer_num),
                 "EXPERIMENT_VF_MERGE_LEVEL": str(merge),
                 "EXPERIMENT_WARMUP": str(args.warmup),
                 "EXPERIMENT_ACTIVE": str(args.active),
             }
         )
+        if is_a5:
+            env["EXPERIMENT_INTRA_CACHE_NUM"] = str(pipeline_value)
+        else:
+            env["EXPERIMENT_DEPTH"] = str(pipeline_value)
         requested_parameters = {
             "operator": operator,
             "candidate": str(candidate),
-            "experiment_schema": EXPERIMENT_SCHEMA,
-            "depth": depth,
+            "experiment_schema": experiment_schema,
+            pipeline_axis: pipeline_value,
             "multibuffer_num": multibuffer_num,
             "vf_merge_level": merge,
-            "enable_dynamic_cv_pipeline": False,
+            "enable_dynamic_cv_pipeline": dynamic_cv_pipeline,
             "limit_auto_multi_buffer_buffer": "no-limit",
             "enable_print_ub_bits": True,
             "warmup": args.warmup,
             "active": args.active,
             "timeout_s": args.timeout,
         }
+        if is_a5:
+            requested_parameters.update({
+                "set_workspace_multibuffer": 0,
+                "inter_cache_num": 1,
+                "load_cache_num": 1,
+            })
         progress.log(
             f"[{index}/{len(configs)}] {key} requested_parameters="
             + json.dumps(requested_parameters, sort_keys=True)
@@ -684,7 +756,8 @@ def main() -> int:
         )
         artifacts = artifact_row(
             cache_dir,
-            depth,
+            pipeline_axis,
+            pipeline_value,
             multibuffer_num,
             merge,
             started_epoch_ns - 2_000_000_000,
@@ -735,10 +808,13 @@ def main() -> int:
         row = {
             "operator": operator,
             "experiment_schema": manifest["experiment_schema"],
-            "depth": depth,
+            "depth": None if is_a5 else pipeline_value,
+            "intra_cache_num": pipeline_value if is_a5 else None,
             "multibuffer_num": multibuffer_num,
-            "set_workspace_multibuffer": depth,
-            "enable_dynamic_cv_pipeline": False,
+            "set_workspace_multibuffer": 0 if is_a5 else pipeline_value,
+            "enable_dynamic_cv_pipeline": dynamic_cv_pipeline,
+            "inter_cache_num": 1 if is_a5 else None,
+            "load_cache_num": 1 if is_a5 else None,
             "limit_auto_multi_buffer_buffer": "no-limit",
             "vf_merge_level": merge,
             "status": status,
@@ -756,7 +832,7 @@ def main() -> int:
         }
         rows.append(row)
         if args.simple_output:
-            result_path = write_simple_table(rows, result_dir)
+            result_path = write_simple_table(rows, result_dir, pipeline_axis)
         else:
             write_tables(rows, result_dir)
         progress.finish_candidate(key, status)

@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from summarize_latest import find_latest_runs, is_supported, row_depth
+from summarize_latest import find_latest_runs, is_supported, pipeline_axis, row_depth
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +36,7 @@ def compact_row(row: dict) -> dict:
         ub_kib = float(row["required_ub_bits"]) / 8192
     return {
         "depth": row_depth(row),
+        "intra_cache_num": row.get("intra_cache_num"),
         "multibuffer_num": row.get("multibuffer_num"),
         "vf_merge_level": row.get("vf_merge_level"),
         "status": row.get("status", "missing"),
@@ -60,6 +61,7 @@ def report_data(latest: dict[str, dict]) -> dict:
                 "schema": run["manifest"].get(
                     "experiment_schema", "legacy-cv-split-v0"
                 ),
+                "pipeline_axis": pipeline_axis(run),
                 "result_dir": run["result_dir"].name,
                 "row_count": len(rows),
                 "expected_row_count": run["manifest"].get(

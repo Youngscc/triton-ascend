@@ -3,18 +3,22 @@
 服务器仓库是主工作区。构建和前台实验在已有容器内执行，服务器项目必须以相同
 绝对路径挂载进容器。
 
-当前默认实验遍历以下 32 组配置：
+当前默认实验会根据设备选择第一轴，共遍历 32 组配置：
 
 ```text
-depth(1..4) × multibuffer_num(1..4) × vf_merge_level(0..1)
+A3: depth(1..4) × multibuffer_num(1..4) × vf_merge_level(0..1)
+A5: intra_cache_num(1..4) × multibuffer_num(1..4) × vf_merge_level(0..1)
 ```
 
 `vf_merge_level=2` 因 A5 RegBase 编译器的 dominance 错误暂时排除。仅在验证
 该问题时设置 `SWEEP_INCLUDE_VF_MERGE_LEVEL_2=1`，恢复全部 48 组。
 
-正式 sweep 对每组配置固定 `enable_dynamic_cv_pipeline=false`，避免 A5 前端
-动态 CV 路径把请求的 `depth` 改写为 0。BishengIR 仍可根据 Triton kernel 的
-`mix_mode` 自动识别 MixedCV。显式的 `multibuffer_num` 同时固定
+在 A3 上，正式 sweep 固定 `enable_dynamic_cv_pipeline=false`，第一轴使用原生
+静态 `set_workspace_multibuffer=depth`。在 A5 上，正式 sweep 固定
+`enable_dynamic_cv_pipeline=true`，第一轴改为 `intra_cache_num=1..4`，同时固定
+`inter_cache_num=1`、`load_cache_num=1` 和 `set_workspace_multibuffer=0`。如果
+DynamicCV 前端回退并把元数据中的开关改为 false，该组会记为“不支持”，不会混入
+有效测量。显式的 `multibuffer_num` 同时固定
 `limit_auto_multi_buffer_buffer=no-limit`：四个 count 值在同一个策略下比较，
 并允许普通 multibuffer 作用到 MIX 函数 Vector 侧的 UB Load/Store。未显式传入
 `multibuffer_num` 时仍使用上游默认的 `only-cube`，这种默认运行不属于正式
@@ -256,22 +260,25 @@ ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> \
 5 次 warmup、30 次 active 测量和 120 秒超时；失败配置仍会记录并继续运行。
 
 每个算子显示一条总进度条，下一行显示当前
-`depth`、`multibuffer_num`、`vf_merge_level` 以及累计的 `success`、`failed`、
+当前设备的第一轴、`multibuffer_num`、`vf_merge_level` 以及累计的 `success`、`failed`、
 `unsupported`。其中 `success` 对应持久化状态 `measured`，`unsupported` 对应
 同名状态，其余编译失败和正确性失败计入 `failed`。前台终端原地刷新两行；
 后台运行输出可由 `logs.sh latest` 读取的纯文本进度快照。可用
 `SWEEP_PROGRESS_MODE=plain` 强制纯文本，或用 `SWEEP_PROGRESS_MODE=off` 关闭。
 
-默认结果目录只包含一个 `results.csv`。完整实验应有 32 行，每一行对应唯一的
-`(depth, multibuffer_num, vf_merge_level)`，`结果` 列直接显示 `成功`、
+默认结果目录只包含一个 `results.csv`。完整实验应有 32 行。A3 每行对应唯一的
+`(depth, multibuffer_num, vf_merge_level)`；A5 每行对应唯一的
+`(intra_cache_num, multibuffer_num, vf_merge_level)`。`结果` 列直接显示 `成功`、
 `失败` 或 `不支持`。其余列只保留简短原因、延迟、UB 和该轮总耗时；
 不显示缓存键、哈希或二进制路径。每组配置仍会在终端打印请求参数、解析后的
 NPU 参数和实际编译器命令，便于确认所有控制值确实传入对应 pass；这些核心
 日志不会额外写成逐配置文件。
 
 每轮缓存 metadata 还必须满足
-`set_workspace_multibuffer == depth`、
-`enable_dynamic_cv_pipeline == false` 和
+在 A3 上，元数据必须满足 `set_workspace_multibuffer == depth` 和
+`enable_dynamic_cv_pipeline == false`；在 A5 上必须满足
+`intra_cache_num` 等于请求值、`inter_cache_num == 1`、`load_cache_num == 1`、
+`set_workspace_multibuffer == 0` 和 `enable_dynamic_cv_pipeline == true`。两者都要求
 `limit_auto_multi_buffer_buffer == no-limit`；不满足时该产物不会被计为有效测量。
 
 在服务器宿主机后台运行：

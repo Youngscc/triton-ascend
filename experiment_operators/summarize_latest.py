@@ -24,6 +24,7 @@ DEFAULT_RESULTS_DIR = ROOT / ".codex-remote/results"
 SUPPORTED_FIELDS = [
     "operator",
     "depth",
+    "intra_cache_num",
     "multibuffer_num",
     "vf_merge_level",
     "latency_ms",
@@ -65,15 +66,21 @@ EFFECT_SPECS = [
         "x_label": "CV depth",
     },
     {
+        "variable": "intra_cache_num",
+        "reference": 1,
+        "controlled_slice": "multibuffer_num=1; matched across vf_merge_level",
+        "x_label": "DynamicCV intra cache count",
+    },
+    {
         "variable": "multibuffer_num",
         "reference": 1,
-        "controlled_slice": "depth=4; matched across vf_merge_level",
+        "controlled_slice": "pipeline axis=4; matched across vf_merge_level",
         "x_label": "Ordinary multibuffer count",
     },
     {
         "variable": "vf_merge_level",
         "reference": 0,
-        "controlled_slice": "matched across identical (depth, multibuffer_num)",
+        "controlled_slice": "matched across identical (pipeline axis, multibuffer_num)",
         "x_label": "VF merge level",
     },
 ]
@@ -213,6 +220,19 @@ def row_depth(row: dict):
     )
 
 
+def pipeline_axis(run: dict) -> str:
+    return (
+        "intra_cache_num"
+        if "intra_cache_num" in run["manifest"].get("axes", {})
+        else "depth"
+    )
+
+
+def row_pipeline_value(row: dict):
+    intra = row.get("intra_cache_num")
+    return intra if intra is not None else row_depth(row)
+
+
 def summarize_run(run: dict) -> dict:
     rows = run["rows"]
     supported = [row for row in rows if is_supported(row)]
@@ -267,7 +287,7 @@ def supported_rows(latest: dict[str, dict]) -> list[dict]:
         for row in sorted(
             (row for row in run["rows"] if is_supported(row)),
             key=lambda item: (
-                row_depth(item),
+                row_pipeline_value(item),
                 item.get("multibuffer_num", -1),
                 item["vf_merge_level"],
             ),
@@ -308,17 +328,17 @@ def effect_value(row: dict, variable: str):
 
 
 def effect_control_key(row: dict, variable: str):
-    depth = row_depth(row)
+    pipeline_value = row_pipeline_value(row)
     multibuffer_num = row.get("multibuffer_num")
     merge = row.get("vf_merge_level")
-    if variable == "depth":
+    if variable in ("depth", "intra_cache_num"):
         return merge if multibuffer_num == 1 else None
     if variable == "multibuffer_num":
-        return merge if depth == 4 else None
+        return merge if pipeline_value == 4 else None
     if variable == "vf_merge_level":
-        if depth is None or multibuffer_num is None:
+        if pipeline_value is None or multibuffer_num is None:
             return None
-        return depth, multibuffer_num
+        return pipeline_value, multibuffer_num
     raise ValueError(f"unknown effect variable: {variable}")
 
 
@@ -342,6 +362,8 @@ def effect_rows(latest: dict[str, dict]) -> list[dict]:
         supported = [row for row in run["rows"] if is_supported(row)]
         for spec in EFFECT_SPECS:
             variable = spec["variable"]
+            if variable in ("depth", "intra_cache_num") and variable != pipeline_axis(run):
+                continue
             grouped: dict[int, dict[object, dict]] = {}
             for row in supported:
                 value = effect_value(row, variable)
@@ -402,6 +424,7 @@ def write_supported_markdown(path: Path, rows: list[dict]) -> None:
     columns = [
         "operator",
         "depth",
+        "intra_cache_num",
         "multibuffer_num",
         "vf_merge_level",
         "latency_ms",
@@ -411,6 +434,7 @@ def write_supported_markdown(path: Path, rows: list[dict]) -> None:
     labels = [
         "operator",
         "CV depth",
+        "DynamicCV intra cache",
         "ordinary buffers",
         "VF merge",
         "latency_ms",
@@ -422,7 +446,7 @@ def write_supported_markdown(path: Path, rows: list[dict]) -> None:
         values = [row.get(column) for column in columns]
         lines.append("| " + " | ".join("" if value is None else str(value) for value in values) + " |")
     if not rows:
-        lines.append("| _no supported configurations_ |  |  |  |  |  |  |")
+        lines.append("| _no supported configurations_ |  |  |  |  |  |  |  |")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -448,8 +472,11 @@ def write_effects_markdown(path: Path, rows: list[dict]) -> None:
         "Every delta uses matched configurations and the lowest value of that "
         "variable as its reference. No configuration is ranked or selected.",
     ]
+    active_variables = {row["variable"] for row in rows}
     for spec in EFFECT_SPECS:
         variable = spec["variable"]
+        if variable not in active_variables:
+            continue
         selected = [row for row in rows if row["variable"] == variable]
         lines.extend(
             [
@@ -488,7 +515,11 @@ def write_effects_svg(path: Path, rows: list[dict]) -> None:
     legend_rows = max(1, (len(operators) + legend_columns - 1) // legend_columns)
     legend_row_height = 21
     top = 84 + legend_rows * legend_row_height
-    height = top + len(EFFECT_SPECS) * 245 + 30
+    active_variables = {row["variable"] for row in rows}
+    active_specs = [
+        spec for spec in EFFECT_SPECS if spec["variable"] in active_variables
+    ]
+    height = top + len(active_specs) * 245 + 30
     outer_x = 45
     row_height = 245
     column_gap = 40
@@ -524,7 +555,7 @@ def write_effects_svg(path: Path, rows: list[dict]) -> None:
             ]
         )
 
-    for row_index, spec in enumerate(EFFECT_SPECS):
+    for row_index, spec in enumerate(active_specs):
         variable = spec["variable"]
         variable_rows = [row for row in rows if row["variable"] == variable]
         x_values = sorted({int(row["value"]) for row in variable_rows})
@@ -648,8 +679,8 @@ def main() -> int:
         },
         "notes": [
             "Supported means measured, correctness passed, latency present, and nonzero UB present.",
-            "The public `depth` axis uses BishengIR's native workspace "
-            "multibuffer control, which also supplies CV unroll depth.",
+            "A3 varies static CV `depth` with DynamicCV disabled; A5 enables "
+            "DynamicCV and varies `intra_cache_num` while fixing inter/load cache counts to 1.",
             "Effect deltas use matched controlled slices rather than confounded marginal averages.",
             "No configuration is ranked and no winner is selected.",
         ],

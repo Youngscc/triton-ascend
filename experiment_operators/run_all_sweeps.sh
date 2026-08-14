@@ -20,6 +20,8 @@ usage() {
 Usage: ./run_all_sweeps.sh /path/to/operator.py
 
 Runs 32 compiler configurations for exactly one Python operator wrapper.
+A3 varies static CV depth; A5 enables DynamicCV and varies intra_cache_num.
+Both environments vary ordinary multibuffer_num and vf_merge_level.
 vf_merge_level=2 is temporarily excluded unless explicitly enabled.
 By default, the only result record is one readable results.csv file.
 

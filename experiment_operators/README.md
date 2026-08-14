@@ -44,11 +44,14 @@ controls, but they do not qualify as the main mixed-CV corpus.
 
 ## Required output semantics
 
-The current default sweep enumerates 32 requested triples:
+The current default sweep enumerates 32 architecture-specific triples:
 
-- `depth = 1..4`; each candidate passes this through BishengIR's native
-  `set_workspace_multibuffer` control, which also supplies CV unroll depth
-- `multibuffer_num = 1..4`, independently of `depth`; this replaces the ordinary local
+- A3 uses `depth = 1..4`, disables DynamicCV, and passes depth through
+  BishengIR's native `set_workspace_multibuffer` control
+- A5 enables DynamicCV and uses `intra_cache_num = 1..4`, with
+  `inter_cache_num = 1`, `load_cache_num = 1`, and
+  `set_workspace_multibuffer = 0`
+- `multibuffer_num = 1..4`, independently of the architecture-specific first axis; this replaces the ordinary local
   `MarkMultiBuffer` default of 2
 - `vf_merge_level = 0, 1`
 
@@ -56,18 +59,16 @@ The current default sweep enumerates 32 requested triples:
 produce an SSA dominance error after bufferization. Set
 `SWEEP_INCLUDE_VF_MERGE_LEVEL_2=1` only to restore and diagnose all 48 triples.
 
-Every formal candidate explicitly sets `enable_dynamic_cv_pipeline=false`.
-This prevents the A5 frontend's dynamic-CV path from replacing the requested
-`set_workspace_multibuffer` value with 0. BishengIR may still infer MixedCV for
-a Triton mixed Cube/Vector kernel from its `mix_mode`; disabling the frontend
-dynamic path does not disable that native MixedCV inference.
+A3 candidates explicitly set `enable_dynamic_cv_pipeline=false`. A5 candidates
+explicitly set it to true and vary the DynamicCV intra-cache count. If the
+frontend records a DynamicCV fallback by resolving the option to false, the
+controller rejects that artifact as unsupported.
 
 `multibuffer_num` does not control CVPipeline workspace buffers or the
 independently inferred preload-local value. CV depth and physical workspace
 buffer count retain BishengIR's native single-value behavior. There is no
 ordering constraint between the independent ordinary
-`multibuffer_num` axis and CV `depth`, so the sweep includes
-`multibuffer_num > depth`.
+`multibuffer_num` axis and the architecture-specific first axis.
 
 An explicit `multibuffer_num` also resolves
 `limit_auto_multi_buffer_buffer=no-limit`. The upstream default is
@@ -111,8 +112,9 @@ and 30.
 
 ## Three-axis sweep controller
 
-`run_sweep.py` defaults to
-`depth(1..4) x multibuffer_num(1..4) x merge(0..1)` (32 rows), launches the selected
+`run_sweep.py` defaults to either A3
+`depth(1..4) x multibuffer_num(1..4) x merge(0..1)` or A5
+`intra_cache_num(1..4) x multibuffer_num(1..4) x merge(0..1)` (32 rows), launches the selected
 correctness/benchmark wrapper once per configuration, and retains failures
 instead of selecting a best result. Run it only in development mode:
 
@@ -130,17 +132,18 @@ the server checkout. The default repository entry point writes only
 or compiler commands. `--limit N` exists only for controller smoke tests and
 must not be used for a formal 32-row run.
 
-Each new row records the public axes `depth`, `multibuffer_num`, and
-`vf_merge_level`, plus the resolved audit field `set_workspace_multibuffer`,
-which must equal `depth`. Cache metadata must also resolve
-`enable_dynamic_cv_pipeline=false` and
-`limit_auto_multi_buffer_buffer=no-limit`; otherwise the controller rejects
-the artifact for that requested row.
+Each new row records the architecture-specific first axis, `multibuffer_num`,
+and `vf_merge_level`. A3 metadata must resolve static depth with DynamicCV
+disabled. A5 metadata must resolve the requested `intra_cache_num`, fixed
+`inter/load=1`, zero static workspace multibuffer, and DynamicCV enabled. Both
+require `limit_auto_multi_buffer_buffer=no-limit`; otherwise the controller
+rejects the artifact for that requested row.
 Historical result directories use the `legacy-cv-split-v0` schema and must not
 be interpreted as measurements of the new ordinary-local `multibuffer_num`.
 The intermediate `cv-depth-equals-buffers+local-multibuffer-v1` schema contains
-only the older 30-row `multibuffer_num <= depth` subset. New 48-row runs use
-`native-cv-depth+no-dynamic-cv+independent-local-multibuffer-v4`; the preceding
+only the older 30-row `multibuffer_num <= depth` subset. New A3 runs use
+`native-cv-depth+no-dynamic-cv+independent-local-multibuffer-v4`; new A5 runs
+use `dynamic-cv-intra-cache+independent-local-multibuffer-v1`. The preceding
 `native-cv-depth+independent-local-multibuffer-v3` and
 `cv-depth-equals-buffers+independent-local-multibuffer-v2` results remain valid
 pre-rollback comparison data.
@@ -213,19 +216,18 @@ python3 experiment_operators/summarize_latest.py
 
 The script writes `.codex-remote/results/latest-summary/supported.csv` and
 `supported.md`, containing every configuration that is `measured`, passes
-correctness, and has both latency and UB. The public tables show the single CV
-`depth` axis instead of duplicating its resolved schedule-depth and buffer-count
-fields; those audit fields remain available in JSONL and cache metadata. Table
-columns start with `depth`, `multibuffer_num`, and `vf_merge_level`, immediately
-followed by latency and UB, while hashes and provenance are placed later.
+correctness, and has both latency and UB. The public tables use `depth` for A3
+and `intra_cache_num` for A5; resolved audit fields remain available in JSONL
+and cache metadata. The architecture-specific first axis is followed by
+`multibuffer_num`, `vf_merge_level`, latency, and UB.
 
 The same command also writes `effects.csv`, `effects.json`, `effects.md`, and
 `effects.svg`. These compare each variable on matched controlled slices rather
 than using confounded marginal averages:
 
-- depth varies with `multibuffer_num=1` and matches VF merge levels;
-- ordinary multibuffer count varies at `depth=4` and matches VF merge levels;
-- VF merge level varies across identical `(depth, multibuffer_num)` pairs.
+- the architecture-specific pipeline axis varies with `multibuffer_num=1` and matches VF merge levels;
+- ordinary multibuffer count varies at pipeline-axis value 4 and matches VF merge levels;
+- VF merge level varies across identical `(pipeline axis, multibuffer_num)` pairs.
 
 The chart and tables report median latency/UB plus percentage change from the
 lowest value of the selected variable. Negative latency change means faster;
