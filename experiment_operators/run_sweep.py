@@ -47,9 +47,7 @@ DOMINANCE_ERROR_RE = re.compile(
 DEPTH_VALUES = (1, 2, 3, 4)
 MULTIBUFFER_VALUES = (1, 2, 3, 4)
 VF_MERGE_VALUES = (0, 1, 2)
-REQUESTED_CONFIGURATION_COUNT = (
-    len(DEPTH_VALUES) * len(MULTIBUFFER_VALUES) * len(VF_MERGE_VALUES)
-)
+DEFAULT_VF_MERGE_VALUES = (0, 1)
 EXPERIMENT_SCHEMA = "native-cv-depth+no-dynamic-cv+independent-local-multibuffer-v4"
 OPERATOR_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 SOURCE_BENCHMARK_OPERATOR_RE = re.compile(
@@ -203,10 +201,10 @@ class SweepProgress:
             self.stream.close()
 
 
-def requested_configs():
+def requested_configs(vf_merge_values):
     for depth in DEPTH_VALUES:
         for multibuffer_num in MULTIBUFFER_VALUES:
-            for merge in VF_MERGE_VALUES:
+            for merge in vf_merge_values:
                 yield depth, multibuffer_num, merge
 
 
@@ -459,6 +457,11 @@ def parse_args():
         action="store_true",
         help="write one readable results.csv without audit artifacts",
     )
+    parser.add_argument(
+        "--include-vf-merge-level-2",
+        action="store_true",
+        help="include the currently disabled vf_merge_level=2 configurations",
+    )
     return parser.parse_args()
 
 
@@ -546,7 +549,15 @@ def main() -> int:
         logs_dir.mkdir(parents=True, exist_ok=False)
     cache_dir = Path(os.environ.get("TRITON_CACHE_DIR", Path.home() / ".triton/cache"))
 
-    configs = list(requested_configs())
+    vf_merge_values = (
+        VF_MERGE_VALUES
+        if args.include_vf_merge_level_2
+        else DEFAULT_VF_MERGE_VALUES
+    )
+    configs = list(requested_configs(vf_merge_values))
+    requested_configuration_count = (
+        len(DEPTH_VALUES) * len(MULTIBUFFER_VALUES) * len(vf_merge_values)
+    )
     if args.limit is not None:
         if args.limit < 1:
             raise SystemExit("--limit must be positive")
@@ -569,13 +580,13 @@ def main() -> int:
         "active": args.active,
         "timeout_s": args.timeout,
         "benchmark_method": os.environ.get("TRITON_BENCH_METHOD", "npu/default"),
-        "requested_configuration_count": REQUESTED_CONFIGURATION_COUNT,
+        "requested_configuration_count": requested_configuration_count,
         "executed_configuration_count": len(configs),
         "limited_smoke_run": args.limit is not None,
         "axes": {
             "depth": list(DEPTH_VALUES),
             "multibuffer_num": list(MULTIBUFFER_VALUES),
-            "vf_merge_level": list(VF_MERGE_VALUES),
+            "vf_merge_level": list(vf_merge_values),
         },
         "resolved_cv_constraint": "set_workspace_multibuffer == depth",
         "dynamic_cv_pipeline_constraint": "enable_dynamic_cv_pipeline == false",
@@ -770,8 +781,8 @@ def main() -> int:
     binary_hashes = sorted({row["binary_hash"] for row in rows if row["binary_hash"]})
     summary = {
         "row_count": len(rows),
-        "expected_row_count": REQUESTED_CONFIGURATION_COUNT,
-        "complete": len(rows) == REQUESTED_CONFIGURATION_COUNT,
+        "expected_row_count": requested_configuration_count,
+        "complete": len(rows) == requested_configuration_count,
         "status_counts": dict(sorted(status_counts.items())),
         "distinct_ttir_hashes": len(ttir_hashes),
         "distinct_binary_hashes": len(binary_hashes),

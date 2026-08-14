@@ -13,12 +13,14 @@ RUN_TAG="${SWEEP_RUN_TAG:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 DRY_RUN="${DRY_RUN:-0}"
 LIMIT="${SWEEP_LIMIT:-}"
 DETAILED_OUTPUT="${SWEEP_DETAILED_OUTPUT:-0}"
+INCLUDE_VF_MERGE_LEVEL_2="${SWEEP_INCLUDE_VF_MERGE_LEVEL_2:-0}"
 
 usage() {
   cat >&2 <<'EOF'
 Usage: ./run_all_sweeps.sh /path/to/operator.py
 
-Runs all 48 compiler configurations for exactly one Python operator wrapper.
+Runs 32 compiler configurations for exactly one Python operator wrapper.
+vf_merge_level=2 is temporarily excluded unless explicitly enabled.
 By default, the only result record is one readable results.csv file.
 
 Useful overrides:
@@ -29,8 +31,15 @@ Useful overrides:
   SWEEP_LIMIT=N       # smoke test only; incomplete runs are ignored by summary
   SWEEP_PROGRESS_MODE=auto  # auto, terminal, plain, or off
   SWEEP_DETAILED_OUTPUT=0   # set to 1 only for compiler debugging artifacts
+  SWEEP_INCLUDE_VF_MERGE_LEVEL_2=0  # set to 1 to restore all 48 configurations
 EOF
 }
+
+if [[ "$INCLUDE_VF_MERGE_LEVEL_2" != "0" \
+  && "$INCLUDE_VF_MERGE_LEVEL_2" != "1" ]]; then
+  printf '%s\n' 'SWEEP_INCLUDE_VF_MERGE_LEVEL_2 must be 0 or 1' >&2
+  exit 2
+fi
 
 if [[ $# -ne 1 ]]; then
   usage
@@ -175,6 +184,9 @@ if [[ -n "$LIMIT" ]]; then
 fi
 if [[ "$DETAILED_OUTPUT" != "1" ]]; then
   command+=(--simple-output)
+fi
+if [[ "$INCLUDE_VF_MERGE_LEVEL_2" == "1" ]]; then
+  command+=(--include-vf-merge-level-2)
 fi
 
 if [[ "$DRY_RUN" == "1" ]]; then

@@ -3,11 +3,14 @@
 服务器仓库是主工作区。构建和前台实验在已有容器内执行，服务器项目必须以相同
 绝对路径挂载进容器。
 
-实验遍历以下 48 组配置：
+当前默认实验遍历以下 32 组配置：
 
 ```text
-depth(1..4) × multibuffer_num(1..4) × vf_merge_level(0..2)
+depth(1..4) × multibuffer_num(1..4) × vf_merge_level(0..1)
 ```
+
+`vf_merge_level=2` 因 A5 RegBase 编译器的 dominance 错误暂时排除。仅在验证
+该问题时设置 `SWEEP_INCLUDE_VF_MERGE_LEVEL_2=1`，恢复全部 48 组。
 
 正式 sweep 对每组配置固定 `enable_dynamic_cv_pipeline=false`，避免 A5 前端
 动态 CV 路径把请求的 `depth` 改写为 0。BishengIR 仍可根据 Triton kernel 的
@@ -219,7 +222,7 @@ ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> \
 后台运行输出可由 `logs.sh latest` 读取的纯文本进度快照。可用
 `SWEEP_PROGRESS_MODE=plain` 强制纯文本，或用 `SWEEP_PROGRESS_MODE=off` 关闭。
 
-默认结果目录只包含一个 `results.csv`。完整实验应有 48 行，每一行对应唯一的
+默认结果目录只包含一个 `results.csv`。完整实验应有 32 行，每一行对应唯一的
 `(depth, multibuffer_num, vf_merge_level)`，`结果` 列直接显示 `成功`、
 `失败` 或 `不支持`。其余列只保留简短原因、延迟、UB 和该轮总耗时；
 不显示缓存键、哈希、二进制路径或完整编译命令。
@@ -249,7 +252,7 @@ SWEEP_DETAILED_OUTPUT=1 \
 ```
 
 该模式才会额外记录完整参数、编译命令、每轮日志、哈希和聚合报告；正式查看
-48 种配置结果时不要启用。
+32 种默认配置结果时不要启用。
 
 ## 6. 结果和报告
 

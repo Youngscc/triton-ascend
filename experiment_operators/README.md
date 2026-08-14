@@ -44,13 +44,17 @@ controls, but they do not qualify as the main mixed-CV corpus.
 
 ## Required output semantics
 
-For every accepted operator case, enumerate all 48 requested triples:
+The current default sweep enumerates 32 requested triples:
 
 - `depth = 1..4`; each candidate passes this through BishengIR's native
   `set_workspace_multibuffer` control, which also supplies CV unroll depth
 - `multibuffer_num = 1..4`, independently of `depth`; this replaces the ordinary local
   `MarkMultiBuffer` default of 2
-- `vf_merge_level = 0, 1, 2`
+- `vf_merge_level = 0, 1`
+
+`vf_merge_level=2` is temporarily excluded because the A5 RegBase pipeline can
+produce an SSA dominance error after bufferization. Set
+`SWEEP_INCLUDE_VF_MERGE_LEVEL_2=1` only to restore and diagnose all 48 triples.
 
 Every formal candidate explicitly sets `enable_dynamic_cv_pipeline=false`.
 This prevents the A5 frontend's dynamic-CV path from replacing the requested
@@ -107,8 +111,8 @@ and 30.
 
 ## Three-axis sweep controller
 
-`run_sweep.py` enumerates the full Cartesian space
-`depth(1..4) x multibuffer_num(1..4) x merge(0..2)` (48 rows), launches the selected
+`run_sweep.py` defaults to
+`depth(1..4) x multibuffer_num(1..4) x merge(0..1)` (32 rows), launches the selected
 correctness/benchmark wrapper once per configuration, and retains failures
 instead of selecting a best result. Run it only in development mode:
 
@@ -124,7 +128,7 @@ the server checkout. The default repository entry point writes only
 `results.csv`, with one readable row per requested triple. Its result column is
 `成功`, `失败`, or `不支持`; it does not expose hashes, cache keys, binary paths,
 or compiler commands. `--limit N` exists only for controller smoke tests and
-must not be used for a formal 48-row run.
+must not be used for a formal 32-row run.
 
 Each new row records the public axes `depth`, `multibuffer_num`, and
 `vf_merge_level`, plus the resolved audit field `set_workspace_multibuffer`,
@@ -166,7 +170,7 @@ metadata, and aggregate report used by the historical analysis tools.
 When already attached to the `yy-npu` container, pass exactly one Python
 operator wrapper to the repository-root entry point. It activates the
 development venv, selects the repository-built BishengIR compiler, creates a
-fresh Triton cache, and runs all 48 configurations for that operator:
+fresh Triton cache, and runs all 32 default configurations for that operator:
 
 ```bash
 # The container-entry command in EXECUTION_GUIDE.md starts in the project root.
@@ -229,8 +233,8 @@ positive UB change means more memory. `summary.json` retains per-operator
 row/status counts, correctness/latency/UB coverage, timeout counts, distinct
 cache/TTIR/binary counts, and range/mean/median statistics. No output ranks
 configurations or chooses a winner. Incomplete and `--limit` smoke runs are
-ignored, so they cannot displace the latest complete sweep. New-schema formal
-runs contain 48 rows per operator.
+ignored, so they cannot displace the latest complete sweep. Current default
+formal runs contain 32 rows per operator.
 
 ## Generate the interactive latest-results report
 
