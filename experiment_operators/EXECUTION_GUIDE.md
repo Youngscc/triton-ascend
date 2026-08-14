@@ -215,18 +215,21 @@ ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> \
   python -u experiment_operators/diagnose_a5_mismatch.py --operator fused
 ```
 
-单卡容器可省略设备变量。该命令只跑 `F-DYN`、`F-D4`、`F-D3`、`F-D1`
-四例，使用各自独立的临时缓存，结束后自动删除。终端不会输出 IR，只显示：
+单卡容器可省略设备变量。该命令只跑 dynamic、A5 静态默认值以及静态
+depth 1--4 六例，使用各自独立的临时缓存，结束后自动删除。终端不会输出
+IR，只显示：
 
 ```text
 CASE F-DYN result=PASS
+CASE F-DEF result=PASS
 CASE F-D4 result=PASS
 CASE F-D3 result=MISMATCH count=... total=... max_abs=... lhs_zero=... rhs_zero=... chunks=...,...,...,...
+CASE F-D2 result=PASS
 CASE F-D1 result=...
 CONCLUSION ...
 ```
 
-手工反馈时只需提供这四个 `CASE` 和最后的 `CONCLUSION`。其中 `chunks` 是将
+手工反馈时只需提供这六个 `CASE` 和最后的 `CONCLUSION`。其中 `chunks` 是将
 输出连续等分为四段后的 mismatch 数，可以快速判断错误是否集中在某个流水
 区间。继续诊断 HSTU 或 Unified 时分别执行：
 
