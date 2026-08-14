@@ -37,6 +37,13 @@ BENCHMARK_RE = re.compile(
     r"BENCHMARK operator=(?P<operator>\S+) latency_ms=(?P<latency>[0-9.]+) "
     r"warmup=(?P<warmup>\d+) active=(?P<active>\d+)"
 )
+MISMATCHED_ELEMENTS_RE = re.compile(
+    r"Mismatched elements:\s*(?P<count>[0-9,]+)\s*/", re.IGNORECASE
+)
+DOMINANCE_ERROR_RE = re.compile(
+    r"operand\s+#(?P<operand>\d+)\s+does(?:n't| not)\s+dominate\s+this\s+use",
+    re.IGNORECASE,
+)
 DEPTH_VALUES = (1, 2, 3, 4)
 MULTIBUFFER_VALUES = (1, 2, 3, 4)
 VF_MERGE_VALUES = (0, 1, 2)
@@ -329,6 +336,21 @@ def simple_result(status: str) -> str:
     return "失败"
 
 
+def compact_diagnostic(status: str, output: str, default: str) -> str:
+    if status == "incorrect":
+        mismatch = MISMATCHED_ELEMENTS_RE.search(output)
+        if mismatch:
+            return f"mismatch={mismatch.group('count').replace(',', '')}"
+    if status == "compile_failed":
+        dominance = DOMINANCE_ERROR_RE.search(output)
+        if dominance:
+            return (
+                "BuildFinalHIVMPipelines dominance error: "
+                f"operand #{dominance.group('operand')}"
+            )
+    return default
+
+
 def simple_reason(row: dict) -> str:
     status = row["status"]
     if status == "measured":
@@ -336,8 +358,13 @@ def simple_reason(row: dict) -> str:
     if row["timed_out"]:
         return "执行超时"
     if status == "incorrect":
+        if row["diagnostic"].startswith("mismatch="):
+            return f"正确性验证失败（{row['diagnostic']}）"
         return "正确性验证失败"
     if status == "compile_failed":
+        if row["diagnostic"].startswith("BuildFinalHIVMPipelines dominance error"):
+            operand = row["diagnostic"].rsplit(" ", 1)[-1]
+            return f"BuildFinalHIVMPipelines产生非法IR（{operand}不支配使用位置）"
         return "编译失败"
     if row["diagnostic"] == "required_ub_bits missing from compiler metadata":
         return "未得到UB使用量"
@@ -679,6 +706,8 @@ def main() -> int:
             diagnostic = "required_ub_bits missing from compiler metadata"
         else:
             status = "measured"
+
+        diagnostic = compact_diagnostic(status, output, diagnostic)
 
         if status != "measured":
             if args.simple_output:
