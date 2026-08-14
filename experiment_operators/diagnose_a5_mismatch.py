@@ -29,6 +29,7 @@ MODULES = {
 }
 MISMATCH_RE = re.compile(r"DIAG_MISMATCH\s+(.*)")
 DOMINANCE_RE = re.compile(r"DIAG_DOMINANCE\s+operand=(\d+)")
+IMPORT_ERROR_RE = re.compile(r"DIAG_IMPORT\s+message=(.*)")
 
 
 class DiagnosticMismatch(Exception):
@@ -121,6 +122,10 @@ def child_main(operator: str) -> int:
         return 20
     except BaseException as error:
         message = str(error)
+        if isinstance(error, ImportError):
+            compact = " ".join(message.split())[:300]
+            print(f"DIAG_IMPORT message={compact}", flush=True)
+            return 22
         dominance = re.search(
             r"operand\s+#(\d+)\s+does(?:n't| not)\s+dominate\s+this\s+use",
             message,
@@ -146,6 +151,9 @@ def classify(output: str, returncode: int, timed_out: bool) -> str:
     dominance = DOMINANCE_RE.search(output)
     if dominance:
         return f"COMPILE_DOMINANCE operand={dominance.group(1)}"
+    import_error = IMPORT_ERROR_RE.search(output)
+    if import_error:
+        return f"IMPORT_ERROR message={import_error.group(1).strip()}"
     if "DIAG_COMPILE stage=" in output:
         return output[output.index("DIAG_COMPILE stage="):].splitlines()[0]
     error = re.search(r"DIAG_ERROR\s+type=(\w+)", output)
@@ -236,7 +244,9 @@ def main() -> int:
 
     dynamic_results = [value for key, value in results.items() if key.endswith("DYN")]
     static_results = [value for key, value in results.items() if not key.endswith("DYN")]
-    if dynamic_results and all(value == "PASS" for value in dynamic_results) \
+    if any(value.startswith("IMPORT_ERROR") for value in results.values()):
+        conclusion = "ENVIRONMENT_IMPORT_ERROR"
+    elif dynamic_results and all(value == "PASS" for value in dynamic_results) \
             and any(value.startswith("MISMATCH") for value in static_results):
         conclusion = "STATIC_CV_REGBASE_TRIGGER"
     elif any(value.startswith("MISMATCH") for value in dynamic_results):
