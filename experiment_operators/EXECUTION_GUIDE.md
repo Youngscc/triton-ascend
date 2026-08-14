@@ -215,7 +215,10 @@ ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> \
   python -u experiment_operators/diagnose_a5_mismatch.py --operator fused
 ```
 
-单卡容器可省略设备变量。该命令只跑 dynamic、A5 静态默认值以及静态
+单卡容器可省略设备变量。诊断入口会先通过
+`activate-dev-environment.sh` 自动切换到与正式 sweep 相同的项目 venv、
+自编译 BishengIR 和设备 bitcode，然后重新启动诊断。该命令只跑 dynamic、
+A5 静态默认值以及静态
 depth 1--4 六例，使用各自独立的临时缓存，结束后自动删除。终端不会输出
 IR，只显示：
 

@@ -31,10 +31,45 @@ MODULES = {
 MISMATCH_RE = re.compile(r"DIAG_MISMATCH\s+(.*)")
 DOMINANCE_RE = re.compile(r"DIAG_DOMINANCE\s+operand=(\d+)")
 IMPORT_ERROR_RE = re.compile(r"DIAG_IMPORT\s+message=(.*)")
+MLIR_ERROR_RE = re.compile(r"DIAG_MLIR\s+message=(.*)")
+DEV_ENV_READY = "TRITON_ASCEND_DIAG_DEV_ENV_READY"
 
 
 class DiagnosticMismatch(Exception):
     pass
+
+
+def activate_and_reexec() -> int:
+    activate = ROOT / "tools/remote_experiment/activate-dev-environment.sh"
+    command = (
+        'source "$1"; '
+        f'export {DEV_ENV_READY}=1; '
+        'exec python -u "$2" "${@:3}"'
+    )
+    completed = subprocess.run(
+        ["bash", "-c", command, "diagnose-a5", str(activate),
+         str(Path(__file__).resolve()), *sys.argv[1:]],
+        cwd=ROOT,
+        env=os.environ.copy(),
+        check=False,
+    )
+    return completed.returncode
+
+
+def compact_mlir_error(message: str) -> str:
+    markers = (
+        "error:",
+        "failed",
+        "doesn't dominate",
+        "does not dominate",
+        "unknown operation",
+        "llvm error",
+    )
+    lines = [" ".join(line.split()) for line in message.splitlines()]
+    useful = [line for line in lines if any(marker in line.lower()
+                                              for marker in markers)]
+    compact = useful[-1] if useful else " ".join(message.split())
+    return compact[-300:]
 
 
 def install_assert_probe(torch):
@@ -127,6 +162,10 @@ def child_main(operator: str) -> int:
             compact = " ".join(message.split())[:300]
             print(f"DIAG_IMPORT message={compact}", flush=True)
             return 22
+        if type(error).__name__ == "MLIRCompilationError":
+            print(f"DIAG_MLIR message={compact_mlir_error(message)}",
+                  flush=True)
+            return 23
         dominance = re.search(
             r"operand\s+#(\d+)\s+does(?:n't| not)\s+dominate\s+this\s+use",
             message,
@@ -155,6 +194,9 @@ def classify(output: str, returncode: int, timed_out: bool) -> str:
     import_error = IMPORT_ERROR_RE.search(output)
     if import_error:
         return f"IMPORT_ERROR message={import_error.group(1).strip()}"
+    mlir_error = MLIR_ERROR_RE.search(output)
+    if mlir_error:
+        return f"MLIR_ERROR message={mlir_error.group(1).strip()}"
     if "DIAG_COMPILE stage=" in output:
         return output[output.index("DIAG_COMPILE stage="):].splitlines()[0]
     error = re.search(r"DIAG_ERROR\s+type=(\w+)", output)
@@ -178,6 +220,8 @@ def main() -> int:
     args = parse_args()
     if args.child:
         return child_main(args.operator)
+    if not args.dry_run and os.environ.get(DEV_ENV_READY) != "1":
+        return activate_and_reexec()
     if args.timeout <= 0:
         raise SystemExit("--timeout must be positive")
 
