@@ -262,7 +262,9 @@ ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> \
 默认结果目录只包含一个 `results.csv`。完整实验应有 32 行，每一行对应唯一的
 `(depth, multibuffer_num, vf_merge_level)`，`结果` 列直接显示 `成功`、
 `失败` 或 `不支持`。其余列只保留简短原因、延迟、UB 和该轮总耗时；
-不显示缓存键、哈希、二进制路径或完整编译命令。
+不显示缓存键、哈希或二进制路径。每组配置仍会在终端打印请求参数、解析后的
+NPU 参数和实际编译器命令，便于确认所有控制值确实传入对应 pass；这些核心
+日志不会额外写成逐配置文件。
 
 每轮缓存 metadata 还必须满足
 `set_workspace_multibuffer == depth`、

@@ -631,11 +631,10 @@ def main() -> int:
             "active": args.active,
             "timeout_s": args.timeout,
         }
-        if not args.simple_output:
-            progress.log(
-                f"[{index}/{len(configs)}] {key} requested_parameters="
-                + json.dumps(requested_parameters, sort_keys=True)
-            )
+        progress.log(
+            f"[{index}/{len(configs)}] {key} requested_parameters="
+            + json.dumps(requested_parameters, sort_keys=True)
+        )
         started_epoch_ns = time.time_ns()
         started = time.monotonic()
         timed_out = False
@@ -675,9 +674,8 @@ def main() -> int:
                 or line.startswith("[DEBUG] cmd_list:")
             )
         )
-        if not args.simple_output:
-            for line in audit_lines:
-                progress.log(f"[{key}] {line}")
+        for line in audit_lines:
+            progress.log(f"[{key}] {line}")
         benchmark = BENCHMARK_RE.search(output)
         correctness = (
             pass_marker in output
