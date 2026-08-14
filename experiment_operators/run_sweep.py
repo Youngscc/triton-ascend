@@ -19,6 +19,7 @@ import sys
 import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from typing import TextIO
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -74,6 +75,111 @@ CSV_FIELDNAMES = [
     "returncode",
     "log_path",
 ]
+
+
+class SweepProgress:
+    """Render a compact sweep dashboard without adding a dependency."""
+
+    BAR_WIDTH = 32
+
+    def __init__(self, operator: str, total: int) -> None:
+        self.operator = operator
+        self.total = total
+        self.completed = 0
+        self.current = "waiting"
+        self.success = 0
+        self.failed = 0
+        self.unsupported = 0
+        self._rendered = False
+        self._owns_stream = False
+        self.mode = os.environ.get("SWEEP_PROGRESS_MODE", "auto").lower()
+        if self.mode not in {"auto", "terminal", "plain", "off"}:
+            raise SystemExit(
+                "SWEEP_PROGRESS_MODE must be auto, terminal, plain, or off"
+            )
+        self.stream, self.interactive = self._select_stream()
+
+    def _select_stream(self) -> tuple[TextIO, bool]:
+        if self.mode in {"off", "plain"}:
+            return sys.stdout, False
+        if sys.stdout.isatty():
+            return sys.stdout, True
+        try:
+            terminal = open("/dev/tty", "w", encoding="utf-8")
+        except OSError:
+            if self.mode == "terminal":
+                raise SystemExit(
+                    "SWEEP_PROGRESS_MODE=terminal requires a controlling terminal"
+                )
+            return sys.stdout, False
+        self._owns_stream = True
+        return terminal, True
+
+    def _lines(self) -> tuple[str, str]:
+        ratio = self.completed / self.total if self.total else 1.0
+        filled = min(self.BAR_WIDTH, round(ratio * self.BAR_WIDTH))
+        bar = "#" * filled + "-" * (self.BAR_WIDTH - filled)
+        progress = (
+            f"[{self.operator}] [{bar}] {self.completed}/{self.total} "
+            f"({ratio * 100:5.1f}%)"
+        )
+        details = (
+            f"current: {self.current} | success={self.success} "
+            f"failed={self.failed} unsupported={self.unsupported}"
+        )
+        return progress, details
+
+    def _clear_interactive(self) -> None:
+        if not self.interactive or not self._rendered:
+            return
+        self.stream.write("\r\033[2K\033[1A\r\033[2K")
+        self.stream.flush()
+        self._rendered = False
+
+    def render(self) -> None:
+        if self.mode == "off":
+            return
+        progress, details = self._lines()
+        if self.interactive:
+            self._clear_interactive()
+            self.stream.write(f"{progress}\n{details}")
+            self.stream.flush()
+            self._rendered = True
+        else:
+            print(f"PROGRESS {progress}", flush=True)
+            print(f"PROGRESS {details}", flush=True)
+
+    def begin(self, key: str, depth: int, multibuffer_num: int, merge: int) -> None:
+        self.current = (
+            f"{key} depth={depth} multibuffer_num={multibuffer_num} "
+            f"vf_merge_level={merge}"
+        )
+        self.render()
+
+    def finish_candidate(self, key: str, status: str) -> None:
+        self.completed += 1
+        if status == "measured":
+            self.success += 1
+        elif status == "unsupported":
+            self.unsupported += 1
+        else:
+            self.failed += 1
+        self.current = f"completed {key} status={status}"
+        self.render()
+
+    def log(self, message: str) -> None:
+        self._clear_interactive()
+        print(message, flush=True)
+        if self.interactive:
+            self.render()
+
+    def close(self) -> None:
+        if self.interactive and self._rendered:
+            self.stream.write("\n")
+            self.stream.flush()
+            self._rendered = False
+        if self._owns_stream:
+            self.stream.close()
 
 
 def requested_configs():
@@ -203,19 +309,19 @@ def print_candidate_failure(
     diagnostic: str,
     output: str,
     log_path: Path,
+    emit=print,
 ) -> None:
     """Make failed candidates visible in the foreground sweep output."""
-    print(
-        f"[{key}] FAILED status={status} returncode={returncode}: {diagnostic}",
-        flush=True,
-    )
+    emit(f"[{key}] FAILED status={status} returncode={returncode}: {diagnostic}")
     if output.strip():
-        print(f"----- {key} subprocess output begin -----", flush=True)
-        print(output.rstrip(), flush=True)
-        print(f"----- {key} subprocess output end -----", flush=True)
+        emit(
+            f"----- {key} subprocess output begin -----\n"
+            f"{output.rstrip()}\n"
+            f"----- {key} subprocess output end -----"
+        )
     else:
-        print(f"[{key}] subprocess produced no output", flush=True)
-    print(f"[{key}] full_log={log_path}", flush=True)
+        emit(f"[{key}] subprocess produced no output")
+    emit(f"[{key}] full_log={log_path}")
 
 
 def parse_args():
@@ -375,8 +481,10 @@ def main() -> int:
     (result_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
     rows = []
+    progress = SweepProgress(operator, len(configs))
     for index, (depth, multibuffer_num, merge) in enumerate(configs, 1):
         key = f"d{depth}-b{multibuffer_num}-m{merge}"
+        progress.begin(key, depth, multibuffer_num, merge)
         log_path = logs_dir / f"{key}.log"
         env = os.environ.copy()
         env.update(
@@ -405,10 +513,9 @@ def main() -> int:
             "active": args.active,
             "timeout_s": args.timeout,
         }
-        print(
+        progress.log(
             f"[{index}/{len(configs)}] {key} requested_parameters="
-            + json.dumps(requested_parameters, sort_keys=True),
-            flush=True,
+            + json.dumps(requested_parameters, sort_keys=True)
         )
         started_epoch_ns = time.time_ns()
         started = time.monotonic()
@@ -449,7 +556,7 @@ def main() -> int:
             )
         )
         for line in audit_lines:
-            print(f"[{key}] {line}", flush=True)
+            progress.log(f"[{key}] {line}")
         benchmark = BENCHMARK_RE.search(output)
         correctness = (
             pass_marker in output
@@ -497,6 +604,7 @@ def main() -> int:
                 diagnostic=diagnostic,
                 output=output,
                 log_path=log_path,
+                emit=progress.log,
             )
 
         row = {
@@ -523,6 +631,9 @@ def main() -> int:
         }
         rows.append(row)
         write_tables(rows, result_dir)
+        progress.finish_candidate(key, status)
+
+    progress.close()
 
     status_counts = Counter(row["status"] for row in rows)
     ttir_hashes = sorted({row["ttir_hash"] for row in rows if row["ttir_hash"]})

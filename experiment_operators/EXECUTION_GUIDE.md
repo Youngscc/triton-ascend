@@ -105,6 +105,26 @@ JOBS=32 ./tools/remote_experiment/setup-dev-environment.sh
 JOBS=32 ./tools/remote_experiment/rebuild-compiler.sh
 ```
 
+无法访问 Triton LLVM 下载地址的环境（包括当前 A5 离线环境）必须先定位已解压
+的 LLVM，并为 Triton 构建显式启用离线模式：
+
+```bash
+FILECHECK=$(find "$PWD/.codex-remote/llvm" -type f -name FileCheck | head -1)
+LLVM_ROOT=$(dirname "$(dirname "$FILECHECK")")
+test -x "$LLVM_ROOT/bin/FileCheck" && echo LLVM_OK
+
+TRITON_OFFLINE_BUILD=1 \
+LLVM_SYSPATH="$LLVM_ROOT" \
+TRITON_PARALLEL_LINK_JOBS=2 \
+JOBS=16 \
+  ./tools/remote_experiment/setup-dev-environment.sh
+
+JOBS=16 ./tools/remote_experiment/rebuild-compiler.sh
+```
+
+`LLVM_ROOT` 必须是直接包含 `bin/`、`include/` 和 `lib/` 的目录。离线构建
+检查应先输出 `LLVM_OK`，并且构建期间不应再尝试下载 LLVM。
+
 成功输出包含：
 
 ```text
@@ -191,6 +211,13 @@ ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> \
 
 命令只接收一个算子 Python 文件。单卡容器可省略设备变量。正式实验默认每组
 5 次 warmup、30 次 active 测量和 120 秒超时；失败配置仍会记录并继续运行。
+
+每个算子显示一条总进度条，下一行显示当前
+`depth`、`multibuffer_num`、`vf_merge_level` 以及累计的 `success`、`failed`、
+`unsupported`。其中 `success` 对应持久化状态 `measured`，`unsupported` 对应
+同名状态，其余编译失败和正确性失败计入 `failed`。前台终端原地刷新两行；
+后台运行输出可由 `logs.sh latest` 读取的纯文本进度快照。可用
+`SWEEP_PROGRESS_MODE=plain` 强制纯文本，或用 `SWEEP_PROGRESS_MODE=off` 关闭。
 
 完整结果应满足：
 

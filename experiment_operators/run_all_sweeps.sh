@@ -27,6 +27,7 @@ Useful overrides:
   SWEEP_ACTIVE=30
   SWEEP_TIMEOUT=120
   SWEEP_LIMIT=N       # smoke test only; incomplete runs are ignored by summary
+  SWEEP_PROGRESS_MODE=auto  # auto, terminal, plain, or off
 EOF
 }
 
