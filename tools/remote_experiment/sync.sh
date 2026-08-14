@@ -21,6 +21,46 @@ if [[ ! -d "$PROJECT_ROOT" ]]; then
   exit 2
 fi
 
+# Never transfer host-specific caches or generated directories. Keep this
+# common list on every source rsync below so a nested dependency cannot
+# reintroduce a file excluded by the top-level transfer. Binary exclusions are
+# scoped below because LLVM source contains tracked binary test fixtures.
+generated_excludes=(
+  '--exclude=__pycache__/'
+  '--exclude=*.py[cod]'
+  '--exclude=.pytest_cache/'
+  '--exclude=.mypy_cache/'
+  '--exclude=.ruff_cache/'
+  '--exclude=.hypothesis/'
+  '--exclude=.tox/'
+  '--exclude=.nox/'
+  '--exclude=.cache/'
+  '--exclude=.clangd/'
+  '--exclude=.vscode/'
+  '--exclude=.vs/'
+  '--exclude=.idea/'
+  '--exclude=.cursor/'
+  '--exclude=.coverage'
+  '--exclude=.coverage.*'
+  '--exclude=htmlcov/'
+  '--exclude=*.egg-info/'
+  '--exclude=.eggs/'
+  '--exclude=.venv/'
+  '--exclude=venv/'
+  '--exclude=venv.bak/'
+  '--exclude=build/'
+  '--exclude=build-*/'
+  '--exclude=cmake-build-*/'
+  '--exclude=dist/'
+  '--exclude=output/'
+  '--exclude=CMakeFiles/'
+  '--exclude=.ninja_deps'
+  '--exclude=.ninja_log'
+  '--exclude=compile_commands.json'
+  '--exclude=.DS_Store'
+  '--exclude=*.swp'
+)
+
 ssh "$REMOTE_HOST" "mkdir -p -- '$REMOTE_PROJECT'"
 
 rsync_args=(
@@ -31,11 +71,25 @@ rsync_args=(
   --stats
   --exclude=.git
   --exclude=.codex-remote/
-  --exclude=.venv/
-  --exclude=__pycache__/
-  --exclude='*.py[cod]'
-  --exclude=build/
-  --exclude=output/
+  "${generated_excludes[@]}"
+  --exclude=/llvm-project/
+  --exclude=/llvm-project-*/
+  --exclude=/.llvm-project/
+  --exclude=/python/triton/_C/*.so
+  --exclude=/python/triton/_C/*.dylib
+  --exclude=/python/triton/_C/*.pyd
+  --exclude=/python/triton/_C/*.pdb
+  --exclude=/python/triton/_C/*.exe
+  --exclude=/python/triton/_C/*.ilk
+  --exclude=/python/triton/_C/triton-mlir-opt
+  --exclude=/python/triton/_C/triton-opt
+  --exclude=/python/triton/_C/FileCheck
+  --exclude=/python/triton/FileCheck
+  --exclude=/python/triton/backends/*/
+  --exclude=/python/triton/language/extra/*/
+  --exclude=/python/triton/tools/extra/
+  --exclude=/python/triton/profiler/
+  --exclude=/python/triton/instrumentation/
 #   --exclude=extracted_stages/
   --exclude=ub_overflow_kernel_candidates/
 )
@@ -63,9 +117,7 @@ rsync -az --delete \
 # server-side LLVM/MLIR tree produces an ABI/API-incompatible compiler build.
 rsync -az --delete \
   --exclude=.git \
-  --exclude=__pycache__/ \
-  --exclude='*.py[cod]' \
-  --exclude=build/ \
+  "${generated_excludes[@]}" \
   --exclude=third-party/torch-mlir/externals/llvm-project/ \
   "$PROJECT_ROOT/third_party/ascend/AscendNPU-IR/" \
   "$REMOTE_HOST:$REMOTE_PROJECT/third_party/ascend/AscendNPU-IR/"
@@ -75,8 +127,7 @@ rsync -az --delete \
 # backend source into that generated package. Deletion is scoped to this one
 # generated directory and cannot affect builds, caches, results, or other code.
 rsync -az --delete \
-  --exclude=__pycache__/ \
-  --exclude='*.py[cod]' \
+  "${generated_excludes[@]}" \
   "$PROJECT_ROOT/third_party/ascend/backend/" \
   "$REMOTE_HOST:$REMOTE_PROJECT/python/triton/backends/ascend/"
 
