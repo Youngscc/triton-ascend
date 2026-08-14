@@ -201,7 +201,41 @@ SWEEP_LIMIT=1 SWEEP_WARMUP=1 SWEEP_ACTIVE=1 \
   ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
 ```
 
-预期汇总包含 `"row_count": 1` 和 `"measured": 1`。
+预期终端显示 `实验完成：成功=1 失败=0 不支持=0`，生成的 `results.csv`
+包含一行结果。
+
+### A5 mismatch 快速诊断
+
+当静态 CV depth 出现大规模 correctness mismatch 时，先固定
+`multibuffer_num=1` 和默认的 `vf_merge_level=1`，只比较 dynamic CV 与少量
+静态 depth。容器内执行：
+
+```bash
+ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> \
+  python -u experiment_operators/diagnose_a5_mismatch.py --operator fused
+```
+
+单卡容器可省略设备变量。该命令只跑 `F-DYN`、`F-D4`、`F-D3`、`F-D1`
+四例，使用各自独立的临时缓存，结束后自动删除。终端不会输出 IR，只显示：
+
+```text
+CASE F-DYN result=PASS
+CASE F-D4 result=PASS
+CASE F-D3 result=MISMATCH count=... total=... max_abs=... lhs_zero=... rhs_zero=... chunks=...,...,...,...
+CASE F-D1 result=...
+CONCLUSION ...
+```
+
+手工反馈时只需提供这四个 `CASE` 和最后的 `CONCLUSION`。其中 `chunks` 是将
+输出连续等分为四段后的 mismatch 数，可以快速判断错误是否集中在某个流水
+区间。继续诊断 HSTU 或 Unified 时分别执行：
+
+```bash
+python -u experiment_operators/diagnose_a5_mismatch.py --operator hstu
+python -u experiment_operators/diagnose_a5_mismatch.py --operator unified
+```
+
+`--operator all` 会串行运行全部十例，仅在单算子结论不足时使用。
 
 ## 5. 运行完整实验
 
