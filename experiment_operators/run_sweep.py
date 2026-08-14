@@ -75,6 +75,17 @@ CSV_FIELDNAMES = [
     "returncode",
     "log_path",
 ]
+SIMPLE_CSV_FIELDNAMES = [
+    "序号",
+    "depth",
+    "multibuffer_num",
+    "vf_merge_level",
+    "结果",
+    "原因",
+    "运行延迟_ms",
+    "UB使用_KiB",
+    "本轮总耗时_s",
+]
 
 
 class SweepProgress:
@@ -160,11 +171,14 @@ class SweepProgress:
         self.completed += 1
         if status == "measured":
             self.success += 1
+            result = "success"
         elif status == "unsupported":
             self.unsupported += 1
+            result = "unsupported"
         else:
             self.failed += 1
-        self.current = f"completed {key} status={status}"
+            result = "failed"
+        self.current = f"completed {key} result={result}"
         self.render()
 
     def log(self, message: str) -> None:
@@ -246,6 +260,7 @@ def artifact_row(
     multibuffer_num: int,
     merge: int,
     min_mtime_ns: int,
+    include_audit: bool = True,
 ):
     metadata_path, metadata = matching_metadata(
         cache_dir, depth, multibuffer_num, merge, min_mtime_ns
@@ -270,11 +285,16 @@ def artifact_row(
     ttir_path = artifact_dir / f"{stem}.ttir"
     binary_path = artifact_dir / f"{stem}.npubin"
     required_ub_bits = metadata.get("required_ub_bits") or None
-    return {
+    result = {
         "metadata_constraints_matched": True,
         "required_ub_bits": required_ub_bits,
         "required_ub_bytes": required_ub_bits / 8 if required_ub_bits else None,
         "required_ub_kib": required_ub_bits / 8192 if required_ub_bits else None,
+    }
+    if not include_audit:
+        return result
+    return {
+        **result,
         "cache_key": artifact_dir.name,
         "compiler_hash": metadata.get("hash"),
         "compile_time_ms": metadata.get("compile_time_ms"),
@@ -299,6 +319,54 @@ def write_tables(rows: list[dict], result_dir: Path):
         )
         writer.writeheader()
         writer.writerows(rows)
+
+
+def simple_result(status: str) -> str:
+    if status == "measured":
+        return "成功"
+    if status == "unsupported":
+        return "不支持"
+    return "失败"
+
+
+def simple_reason(row: dict) -> str:
+    status = row["status"]
+    if status == "measured":
+        return "编译成功、结果正确，且已记录性能和UB"
+    if row["timed_out"]:
+        return "执行超时"
+    if status == "incorrect":
+        return "正确性验证失败"
+    if status == "compile_failed":
+        return "编译失败"
+    if row["diagnostic"] == "required_ub_bits missing from compiler metadata":
+        return "未得到UB使用量"
+    if row["diagnostic"] == "compiler metadata missing or does not match fixed experiment options":
+        return "未找到与参数匹配的编译结果"
+    return "当前配置不支持"
+
+
+def write_simple_table(rows: list[dict], result_dir: Path) -> Path:
+    csv_path = result_dir / "results.csv"
+    with csv_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=SIMPLE_CSV_FIELDNAMES)
+        writer.writeheader()
+        for number, row in enumerate(rows, 1):
+            result = simple_result(row["status"])
+            writer.writerow(
+                {
+                    "序号": number,
+                    "depth": row["depth"],
+                    "multibuffer_num": row["multibuffer_num"],
+                    "vf_merge_level": row["vf_merge_level"],
+                    "结果": result,
+                    "原因": simple_reason(row),
+                    "运行延迟_ms": row["latency_ms"],
+                    "UB使用_KiB": row["required_ub_kib"],
+                    "本轮总耗时_s": row["wall_time_s"],
+                }
+            )
+    return csv_path
 
 
 def print_candidate_failure(
@@ -358,6 +426,11 @@ def parse_args():
         "--limit",
         type=int,
         help="development smoke-test only; a formal sweep must omit this option",
+    )
+    parser.add_argument(
+        "--simple-output",
+        action="store_true",
+        help="write one readable results.csv without audit artifacts",
     )
     return parser.parse_args()
 
@@ -438,8 +511,12 @@ def main() -> int:
         args.output_dir
         or ROOT / ".codex-remote/results" / f"{run_id}-{operator}"
     ).resolve()
-    logs_dir = result_dir / "logs"
-    logs_dir.mkdir(parents=True, exist_ok=False)
+    if args.simple_output:
+        result_dir.mkdir(parents=True, exist_ok=False)
+        logs_dir = None
+    else:
+        logs_dir = result_dir / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=False)
     cache_dir = Path(os.environ.get("TRITON_CACHE_DIR", Path.home() / ".triton/cache"))
 
     configs = list(requested_configs())
@@ -478,14 +555,17 @@ def main() -> int:
         "ordinary_multibuffer_constraint": "multibuffer_num is independent of depth",
         "ordinary_multibuffer_strategy": "limit_auto_multi_buffer_buffer == no-limit",
     }
-    (result_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    if not args.simple_output:
+        (result_dir / "manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n"
+        )
 
     rows = []
     progress = SweepProgress(operator, len(configs))
     for index, (depth, multibuffer_num, merge) in enumerate(configs, 1):
         key = f"d{depth}-b{multibuffer_num}-m{merge}"
         progress.begin(key, depth, multibuffer_num, merge)
-        log_path = logs_dir / f"{key}.log"
+        log_path = logs_dir / f"{key}.log" if logs_dir is not None else None
         env = os.environ.copy()
         env.update(
             {
@@ -513,10 +593,11 @@ def main() -> int:
             "active": args.active,
             "timeout_s": args.timeout,
         }
-        progress.log(
-            f"[{index}/{len(configs)}] {key} requested_parameters="
-            + json.dumps(requested_parameters, sort_keys=True)
-        )
+        if not args.simple_output:
+            progress.log(
+                f"[{index}/{len(configs)}] {key} requested_parameters="
+                + json.dumps(requested_parameters, sort_keys=True)
+            )
         started_epoch_ns = time.time_ns()
         started = time.monotonic()
         timed_out = False
@@ -540,12 +621,13 @@ def main() -> int:
                 output = output.decode("utf-8", errors="replace")
             returncode = 124
         wall_time = time.monotonic() - started
-        log_header = (
-            "[EXPERIMENT] requested_parameters="
-            + json.dumps(requested_parameters, sort_keys=True)
-            + "\n"
-        )
-        log_path.write_text(log_header + output)
+        if log_path is not None:
+            log_header = (
+                "[EXPERIMENT] requested_parameters="
+                + json.dumps(requested_parameters, sort_keys=True)
+                + "\n"
+            )
+            log_path.write_text(log_header + output)
         audit_lines = tuple(
             dict.fromkeys(
                 line
@@ -555,8 +637,9 @@ def main() -> int:
                 or line.startswith("[DEBUG] cmd_list:")
             )
         )
-        for line in audit_lines:
-            progress.log(f"[{key}] {line}")
+        if not args.simple_output:
+            for line in audit_lines:
+                progress.log(f"[{key}] {line}")
         benchmark = BENCHMARK_RE.search(output)
         correctness = (
             pass_marker in output
@@ -569,6 +652,7 @@ def main() -> int:
             multibuffer_num,
             merge,
             started_epoch_ns - 2_000_000_000,
+            include_audit=not args.simple_output,
         )
 
         diagnostic = ""
@@ -597,15 +681,18 @@ def main() -> int:
             status = "measured"
 
         if status != "measured":
-            print_candidate_failure(
-                key=key,
-                status=status,
-                returncode=returncode,
-                diagnostic=diagnostic,
-                output=output,
-                log_path=log_path,
-                emit=progress.log,
-            )
+            if args.simple_output:
+                progress.log(f"{key} 结果={simple_result(status)}")
+            else:
+                print_candidate_failure(
+                    key=key,
+                    status=status,
+                    returncode=returncode,
+                    diagnostic=diagnostic,
+                    output=output,
+                    log_path=log_path,
+                    emit=progress.log,
+                )
 
         row = {
             "operator": operator,
@@ -627,13 +714,27 @@ def main() -> int:
             "wall_time_s": round(wall_time, 6),
             "timed_out": timed_out,
             "returncode": returncode,
-            "log_path": str(log_path),
+            "log_path": str(log_path) if log_path is not None else None,
         }
         rows.append(row)
-        write_tables(rows, result_dir)
+        if args.simple_output:
+            result_path = write_simple_table(rows, result_dir)
+        else:
+            write_tables(rows, result_dir)
         progress.finish_candidate(key, status)
 
     progress.close()
+
+    if args.simple_output:
+        result_counts = Counter(simple_result(row["status"]) for row in rows)
+        print(
+            "实验完成："
+            f"成功={result_counts['成功']} "
+            f"失败={result_counts['失败']} "
+            f"不支持={result_counts['不支持']}"
+        )
+        print(f"result_file={result_path}")
+        return 0 if len(rows) == len(configs) else 1
 
     status_counts = Counter(row["status"] for row in rows)
     ttir_hashes = sorted({row["ttir_hash"] for row in rows if row["ttir_hash"]})

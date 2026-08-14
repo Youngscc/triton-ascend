@@ -12,14 +12,14 @@ CANDIDATE_TIMEOUT="${SWEEP_TIMEOUT:-120}"
 RUN_TAG="${SWEEP_RUN_TAG:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 DRY_RUN="${DRY_RUN:-0}"
 LIMIT="${SWEEP_LIMIT:-}"
+DETAILED_OUTPUT="${SWEEP_DETAILED_OUTPUT:-0}"
 
 usage() {
   cat >&2 <<'EOF'
 Usage: ./run_all_sweeps.sh /path/to/operator.py
 
-Runs all 48 compiler configurations for exactly one Python operator wrapper,
-then rebuilds the latest-result summary and HTML across every operator already
-present in .codex-remote/results.
+Runs all 48 compiler configurations for exactly one Python operator wrapper.
+By default, the only result record is one readable results.csv file.
 
 Useful overrides:
   DRY_RUN=1
@@ -28,6 +28,7 @@ Useful overrides:
   SWEEP_TIMEOUT=120
   SWEEP_LIMIT=N       # smoke test only; incomplete runs are ignored by summary
   SWEEP_PROGRESS_MODE=auto  # auto, terminal, plain, or off
+  SWEEP_DETAILED_OUTPUT=0   # set to 1 only for compiler debugging artifacts
 EOF
 }
 
@@ -56,11 +57,11 @@ LOG_DIR="$PROJECT_ROOT/.codex-remote/logs"
 RESULTS_DIR="$PROJECT_ROOT/.codex-remote/results"
 SESSION_LOG="$LOG_DIR/$RUN_TAG-$OPERATOR_TAG-sweep.log"
 
-if [[ "$DRY_RUN" != "1" ]]; then
+if [[ "$DRY_RUN" != "1" && "$DETAILED_OUTPUT" == "1" ]]; then
   mkdir -p "$LOG_DIR" "$RESULTS_DIR"
   exec > >(tee -a "$SESSION_LOG") 2>&1
 else
-  SESSION_LOG="(dry run; no log created)"
+  SESSION_LOG="(disabled)"
 fi
 
 if [[ "$DRY_RUN" != "1" ]]; then
@@ -125,8 +126,6 @@ if not utils_file.is_relative_to(project_root):
 if selected != expected:
     raise RuntimeError(f"wrong bishengir-compile: {selected}; expected: {expected}")
 
-print(f"ascend_backend={utils_file} (project checkout; required)")
-print(f"bishengir_compile={selected} (project build; required)")
 PY
 
   actual_bishengir_opt="$(command -v bishengir-opt || true)"
@@ -143,22 +142,24 @@ if [[ "$DRY_RUN" != "1" ]]; then
   PYTHON_BIN="$(command -v python)"
 fi
 
-printf 'project=%s\n' "$PROJECT_ROOT"
 printf 'operator_file=%s\n' "$OPERATOR_FILE"
-printf 'python=%s\n' "$PYTHON_BIN"
-if [[ "$DRY_RUN" == "1" ]]; then
-  printf 'bishengir_compile=%s\n' "$DEV_COMPILER_DIR/bishengir-compile"
-else
-  printf 'bitcode_package=soc:%s arch:%s (project build; required)\n' \
-    "$experiment_soc" "$experiment_bitcode_arch"
-  printf 'bishengir_opt=%s (CANN bytecode reader; expected)\n' \
-    "$(realpath "$actual_bishengir_opt")"
-  printf 'hivmc=%s (CANN binary backend; expected)\n' \
-    "$(realpath "$actual_hivmc")"
+if [[ "$DETAILED_OUTPUT" == "1" ]]; then
+  printf 'project=%s\n' "$PROJECT_ROOT"
+  printf 'python=%s\n' "$PYTHON_BIN"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    printf 'bishengir_compile=%s\n' "$DEV_COMPILER_DIR/bishengir-compile"
+  else
+    printf 'bitcode_package=soc:%s arch:%s (project build; required)\n' \
+      "$experiment_soc" "$experiment_bitcode_arch"
+    printf 'bishengir_opt=%s (CANN bytecode reader; expected)\n' \
+      "$(realpath "$actual_bishengir_opt")"
+    printf 'hivmc=%s (CANN binary backend; expected)\n' \
+      "$(realpath "$actual_hivmc")"
+  fi
+  printf 'triton_cache=%s\n' "$TRITON_CACHE_DIR"
+  printf 'results_root=%s\n' "$RESULTS_DIR"
+  printf 'session_log=%s\n' "$SESSION_LOG"
 fi
-printf 'triton_cache=%s\n' "$TRITON_CACHE_DIR"
-printf 'results_root=%s\n' "$RESULTS_DIR"
-printf 'session_log=%s\n' "$SESSION_LOG"
 printf 'benchmark_policy=warmup:%s active:%s timeout:%s\n' \
   "$WARMUP" "$ACTIVE" "$CANDIDATE_TIMEOUT"
 
@@ -172,6 +173,9 @@ command=(
 if [[ -n "$LIMIT" ]]; then
   command+=(--limit "$LIMIT")
 fi
+if [[ "$DETAILED_OUTPUT" != "1" ]]; then
+  command+=(--simple-output)
+fi
 
 if [[ "$DRY_RUN" == "1" ]]; then
   printf 'dry_run command='
@@ -184,6 +188,11 @@ fi
 printf '\nstarting single-operator sweep\n'
 "${command[@]}"
 printf 'completed operator_file=%s\n' "$OPERATOR_FILE"
+
+if [[ "$DETAILED_OUTPUT" != "1" ]]; then
+  printf '%s\n' 'sweep complete; results.csv is the only result record'
+  exit 0
+fi
 
 printf '\nselecting the latest complete result for every operator\n'
 if "$PYTHON_BIN" -u "$SCRIPT_DIR/summarize_latest.py"; then

@@ -115,13 +115,15 @@ instead of selecting a best result. Run it only in development mode:
 ```bash
 REMOTE_MODE=dev ./tools/remote_experiment/run.sh \
   python -u experiment_operators/run_sweep.py \
-  --operator unified_attention --warmup 5 --active 30 --timeout 120
+  --operator unified_attention --warmup 5 --active 30 --timeout 120 \
+  --simple-output
 ```
 
 Results are written under `.codex-remote/results/<run-id>-<operator>/` inside
-the server checkout. `measurements.jsonl` and `measurements.csv` contain one
-row per requested triple; `manifest.json`, `summary.json`, and per-row logs are
-stored alongside them. `--limit N` exists only for controller smoke tests and
+the server checkout. The default repository entry point writes only
+`results.csv`, with one readable row per requested triple. Its result column is
+`成功`, `失败`, or `不支持`; it does not expose hashes, cache keys, binary paths,
+or compiler commands. `--limit N` exists only for controller smoke tests and
 must not be used for a formal 48-row run.
 
 Each new row records the public axes `depth`, `multibuffer_num`, and
@@ -155,15 +157,9 @@ Each candidate also has a subprocess timeout. A kernel that does not return is
 retained as an `unsupported` row with `timed_out=true`; it cannot block the
 remaining configurations indefinitely.
 
-The foreground/server run log prints four auditable records for every row:
-`requested_parameters` contains the operator, three public axes, fixed
-experiment policies, and benchmark controls; `operator_parameters` describes
-the fixed input shape, dtype, mode, and launch tile; `resolved_npu_options`
-contains every final `NPUOptions` value after defaults and frontend
-adjustments; and `cmd_list` is the exact `bishengir-compile` command. The same
-records are kept in
-`logs/d<depth>-b<multibuffer_num>-m<vf_merge_level>.log`, together with the
-candidate's complete stdout and stderr.
+Set `SWEEP_DETAILED_OUTPUT=1` only when debugging the compiler. That optional
+mode writes the full parameter audit, per-row stdout/stderr, hashes, cache
+metadata, and aggregate report used by the historical analysis tools.
 
 ### Run one complete operator sweep inside the container
 
@@ -180,11 +176,10 @@ fresh Triton cache, and runs all 48 configurations for that operator:
 `REMOTE_PROJECT` is the server checkout path configured before following
 `EXECUTION_GUIDE.md`; no username-specific project path is required.
 
-Do not run multiple sweeps concurrently on the same NPU. The wrapper writes a
-session log under `.codex-remote/logs/`; per-configuration logs and tables
-remain under `.codex-remote/results/`. After the selected operator finishes,
-it scans every operator already present in that results directory, selects the
-latest complete run for each, and regenerates `latest-summary/` and its HTML.
+Do not run multiple sweeps concurrently on the same NPU. The default wrapper
+updates the same `results.csv` after every configuration, so completed rows
+survive an interrupted run. Detailed logs and aggregate HTML are generated
+only with `SWEEP_DETAILED_OUTPUT=1`.
 Useful overrides are environment variables rather than source edits:
 
 ```bash

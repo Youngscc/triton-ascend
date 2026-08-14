@@ -219,15 +219,10 @@ ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> \
 后台运行输出可由 `logs.sh latest` 读取的纯文本进度快照。可用
 `SWEEP_PROGRESS_MODE=plain` 强制纯文本，或用 `SWEEP_PROGRESS_MODE=off` 关闭。
 
-完整结果应满足：
-
-```json
-{
-  "complete": true,
-  "expected_row_count": 48,
-  "row_count": 48
-}
-```
+默认结果目录只包含一个 `results.csv`。完整实验应有 48 行，每一行对应唯一的
+`(depth, multibuffer_num, vf_merge_level)`，`结果` 列直接显示 `成功`、
+`失败` 或 `不支持`。其余列只保留简短原因、延迟、UB 和该轮总耗时；
+不显示缓存键、哈希、二进制路径或完整编译命令。
 
 每轮缓存 metadata 还必须满足
 `set_workspace_multibuffer == depth`、
@@ -246,12 +241,15 @@ ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> REMOTE_MODE=dev \
 
 `Ctrl-C` 只停止日志跟随，不终止后台实验。
 
-总日志会为每轮打印四类参数记录：`requested_parameters` 是实验请求值和测量
-设置，`operator_parameters` 是固定输入 shape、dtype、模式和 launch tile，
-`resolved_npu_options` 是补齐默认值并完成前端调整后的全部 NPU 编译选项，
-`cmd_list` 是实际执行的 `bishengir-compile` 命令。相同内容及该轮完整
-stdout/stderr 保存在结果目录的
-`logs/d<depth>-b<multibuffer_num>-m<vf_merge_level>.log`。
+只有排查编译器问题时才启用详细审计模式：
+
+```bash
+SWEEP_DETAILED_OUTPUT=1 \
+  ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
+```
+
+该模式才会额外记录完整参数、编译命令、每轮日志、哈希和聚合报告；正式查看
+48 种配置结果时不要启用。
 
 ## 6. 结果和报告
 
