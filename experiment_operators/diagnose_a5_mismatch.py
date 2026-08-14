@@ -291,13 +291,15 @@ def main() -> int:
     static_results = [value for key, value in results.items() if not key.endswith("DYN")]
     if any(value.startswith("IMPORT_ERROR") for value in results.values()):
         conclusion = "ENVIRONMENT_IMPORT_ERROR"
+    elif (results.get("F-DEF") == "PASS"
+          and results.get("F-D2", "").startswith("MISMATCH")):
+        conclusion = "STATIC_DEFAULT_DIFFERS_FROM_EXPLICIT_DEPTH_2"
     elif (results.get("F-DYN") == "PASS"
-          and results.get("F-DEF") == "PASS"
-          and results.get("F-D2") == "PASS"
           and results.get("F-D4") == "PASS"
           and results.get("F-D1", "").startswith("MISMATCH")
+          and results.get("F-D2", "").startswith("MISMATCH")
           and results.get("F-D3", "").startswith("MISMATCH")):
-        conclusion = "STATIC_DEPTH_1_3_UNSUPPORTED"
+        conclusion = "STATIC_DEPTH_BELOW_4_MISMATCH"
     elif dynamic_results and all(value == "PASS" for value in dynamic_results) \
             and any(value.startswith("MISMATCH") for value in static_results):
         conclusion = "STATIC_CV_REGBASE_TRIGGER"
