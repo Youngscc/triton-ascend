@@ -178,7 +178,7 @@ The independent variables are:
 | Public experiment name | Requested values | Intended compiler control |
 | --- | --- | --- |
 | `depth` | `1, 2, 3, 4` | set both `CVPipeliningOptions.setDepthInUnrollMode` and the CVPipeline physical-buffer count to the same value |
-| `multibuffer_num` | `1, 2, 3, 4` | independently replace the ordinary local `MarkMultiBuffer` default of 2 through `--set-local-multibuffer` |
+| `multibuffer_num` | `1, 2, 3, 4` | independently replace the ordinary local `MarkMultiBuffer` default of 2 through `--set-local-multibuffer`, with the MIX strategy fixed to `no-limit` |
 | `vf_merge_level` | `0, 1, 2` | existing `NPUOptions.vf_merge_level` and `--enable-vf-merge-level` |
 
 This full Cartesian search space has 48 requested combinations. There is no
@@ -206,8 +206,10 @@ usage; never keep only the fastest configuration.
   kernel-name-filtered timing.
 - CV scheduling depth and CV workspace-buffer count use BishengIR's native
   single `set_workspace_multibuffer` value. The public experiment `depth` axis
-  maps directly to that existing option; no separate CV depth/buffer plumbing
-  remains in Triton-Ascend or AscendNPU-IR.
+  maps directly to that existing option. Every formal candidate disables
+  frontend DynamicCVPipeline so the A5 path cannot replace the requested value
+  with 0; BishengIR still infers MixedCV from the Triton `mix_mode`. No separate
+  CV depth/buffer plumbing remains in Triton-Ascend or AscendNPU-IR.
 - `NPUOptions.multibuffer_num` is a separate ordinary-local multibuffer
   control. The backend forwards it as `--set-local-multibuffer`; the HFusion
   pipelines use it when estimating ordinary multibuffer pressure and selecting
@@ -215,8 +217,12 @@ usage; never keep only the fastest configuration.
   `MarkMultiBufferOptions.localMultiBufferNum` when materializing ordinary
   Load/Store/ND2NZ/Fixpipe local buffers. It does not replace the independently
   inferred preload-local count or the native CV workspace/depth value.
-  The command-line/pass default remains 2 outside explicit experiments, while
-  the internal `mark()` helper has no implicit default.
+  An explicit count also resolves `limit_auto_multi_buffer_buffer` to
+  `no-limit`, enabling ordinary multibuffering for the Vector-side UB buffers
+  of MIX functions as well as Cube-side L1/L0C buffers. When the count is
+  omitted, the upstream `only-cube` strategy and command-line/pass count
+  default 2 remain unchanged. The internal `mark()` helper has no implicit
+  default.
 - Historical schemas contain experiments with separate CV depth and physical
   buffer values. That split/ring implementation was removed after unequal
   configurations showed correctness failures and hangs. New experiments use
@@ -247,9 +253,11 @@ usage; never keep only the fastest configuration.
   currently classified as dynamically insensitive rather than proof that every
   optimization changes generated code.
 - `experiment_operators/run_sweep.py` is the standalone step-4 controller. Its
-  current `native-cv-depth+independent-local-multibuffer-v3` schema enumerates
+  current `native-cv-depth+no-dynamic-cv+independent-local-multibuffer-v4` schema enumerates
   `depth(1..4) x multibuffer_num(1..4) x merge(0..2)`, sets
-  `set_workspace_multibuffer == depth`, and records all 48 triples.
+  `set_workspace_multibuffer == depth`, disables DynamicCVPipeline, fixes the
+  ordinary MIX strategy to `no-limit`, and records all 48 triples. It rejects
+  cache metadata that does not resolve all three fixed conditions.
   It writes incremental JSONL/CSV rows and per-row logs, records compiler time,
   cache/artifact hashes, correctness, timing, and UB metadata, and never
   chooses a winner. A row is `measured` only when correctness, timing, and a
@@ -272,6 +280,11 @@ usage; never keep only the fastest configuration.
   matched comparisons: depth at ordinary buffer 1, ordinary buffer at depth 4,
   and VF merge across identical `(depth, multibuffer_num)` pairs. Do not replace
   these controlled views with marginal averages that hide factor interactions.
+- Every sweep row prints auditable `requested_parameters` and fixed
+  `operator_parameters` records, the full final `resolved_npu_options`
+  snapshot after defaults/frontend adjustments, and the exact BishengIR
+  `cmd_list` to both the aggregate run log and the row-specific log. The latter
+  also retains complete candidate stdout/stderr.
 - `experiment_operators/generate_latest_report.sh` selects each operator's
   latest complete result and generates the self-contained offline report at
   `.codex-remote/results/latest-summary/experiment-report.html` from
@@ -404,7 +417,10 @@ JIT compilation but assert and record the TTIR hash for every candidate.
 
 Have every experiment candidate pass `depth` through the existing
 `NPUOptions.set_workspace_multibuffer` option. BishengIR uses that one native
-value for both CV unroll depth and physical workspace buffers. Add validated
+value for both CV unroll depth and physical workspace buffers. Formal
+candidates must pass `enable_dynamic_cv_pipeline=false` so the A5 frontend
+cannot replace the requested value with 0; this does not disable BishengIR's
+MixedCV inference from `mix_mode`. Add validated
 `NPUOptions.multibuffer_num`, propagate it through
 `third_party/ascend/backend/compiler.py` as `--set-local-multibuffer`, then into
 both `HFusionPipelineOptions` and `HIVMPipelineOptions`. HFusion must use the
@@ -416,7 +432,11 @@ The resulting controls must obey these boundaries:
 - `depth` controls both CV schedule/unroll depth and CV physical-buffer count;
 - `multibuffer_num` replaces only the ordinary local default 2 used for
   HFusion estimation and automatically marked Load/Store/ND2NZ/Fixpipe
-  buffers;
+  buffers, and an explicit value fixes
+  `limit_auto_multi_buffer_buffer=no-limit` so MIX Vector-side UB buffers are
+  included;
+- omitting `multibuffer_num` retains the upstream `only-cube` strategy, so an
+  omitted/default run is not a count-only comparison with an explicit value;
 - the independently inferred preload-local count and native CV
   workspace/depth value remain unchanged by `multibuffer_num`;
 - neither field changes TTIR or the meaning of `vf_merge_level`.

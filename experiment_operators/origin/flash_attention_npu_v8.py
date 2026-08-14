@@ -1,37 +1,11 @@
-import json
 import os
 import torch
 import torch_npu
 import triton
 import triton.language as tl
 import triton.language.extra.cann.extension as extension
-from triton.backends.ascend.testing import do_bench_npu
-
-
-def is_hopper():
-    """Ascend has no CUDA capability; the Hopper branch never applies."""
-    return False
-
-
-def is_ampere():
-    """Ascend has no CUDA capability; the Ampere branch never applies."""
-    return False
-
-
-def _experiment_compile_options():
-    """Translate the sweep's EXPERIMENT_* environment variables into backend
-    compile options (standard candidate contract consumed by run_sweep.py)."""
-    options = {"enable_dynamic_cv_pipeline": False}
-    depth = os.getenv("EXPERIMENT_DEPTH")
-    if depth is not None:
-        options["set_workspace_multibuffer"] = int(depth)
-    multibuffer_num = os.getenv("EXPERIMENT_MULTIBUFFER_NUM")
-    if multibuffer_num is not None:
-        options["multibuffer_num"] = int(multibuffer_num)
-    merge = os.getenv("EXPERIMENT_VF_MERGE_LEVEL")
-    if merge is not None:
-        options["vf_merge_level"] = int(merge)
-    return options
+# from maybe_triton_jit import maybe_triton_jit
+from utils import is_hopper, is_ampere
 
 
 # configs = [
@@ -179,8 +153,10 @@ def mask_fn(q_attn_arg, k_attn_arg, q_offset, k_offset, TYPE: tl.constexpr):
                     q_offset[:, None] == k_offset[None, :]))
 
 
-# Autotune removed for the sweep: BLOCK_M/BLOCK_N are passed explicitly by the
-# launcher so the experiment owns the exact configuration.
+@triton.autotune(
+    configs=get_fwd_configs(),
+    key=["QK_DIM", "V_DIM", "MASK_FN", "SPARSE_OPT"],
+)
 @triton.jit
 def fwd_kernel(
         q_ptr, k_ptr, v_ptr, o_ptr, l_ptr,
@@ -358,10 +334,7 @@ def fwd_kernel(
                         # 1.2 128 * 128, 不带nan, mask.to(int32) 精度问题 -->未复现
                         # 1.3 128 * 128, 不带nan, 不带mask.to(int32) 2330 --> 1350(使用membar新包)
                         # 2. 64* 128: 2500 ->1375(带nan) -> 1242.143（mask.to(int32)
-                        # This Triton build's tl.max reduction does not accept
-                        # propagate_nan; inputs are NaN-free so default NONE
-                        # semantics are equivalent for this experiment.
-                        m_new = tl.maximum(m, tl.max(s, 1))
+                        m_new = tl.maximum(m, tl.max(s, 1, propagate_nan=True), propagate_nan=tl.PropagateNan.ALL)
                         p = tl.math.exp(s - m_new[:, None])
                         v = load_if(v_block_ptr, False, True)
                         # acc *= alpha[:, None]
@@ -1068,15 +1041,8 @@ class FlashAttentionFunc(torch.autograd.Function):
         o = q.new_empty(q_len, q_head, v_dim)
         l = q.new_empty(q_len, q_head, dtype=torch.float32)
 
-        BLOCK_M = 64
-        BLOCK_N = 64
         NUM_CORES = AICORE_NUM
         grid = (NUM_CORES,)
-        # The native workspace multibuffer option controls both CV unroll depth
-        # and the number of physical CV workspace buffers.
-        extra_kern_args = _experiment_compile_options()
-        if "set_workspace_multibuffer" not in extra_kern_args:
-            extra_kern_args["set_workspace_multibuffer"] = 2
         fwd_kernel[grid](
             q, k, v, o, l,
             q_attn_arg, k_attn_arg, mask_tensor,
@@ -1091,15 +1057,13 @@ class FlashAttentionFunc(torch.autograd.Function):
             MAX_Q_LEN=max_seqlen_q,
             MAX_K_LEN=max_seqlen_k,
             BATCH_SIZE=batch_size,
-            BLOCK_M=BLOCK_M,
-            BLOCK_N=BLOCK_N,
             multibuffer=True,
             enable_mixed_cv=True,
             enable_auto_bind_sub_block=True,
             sync_solver=True,
             limit_auto_multi_buffer_of_local_buffer="no-limit",
             enable_flatten=False,
-            **extra_kern_args,
+            set_workspace_multibuffer=2,
         )
         ctx.save_for_backward(q, k, v, o, l, q_attn_arg, k_attn_arg, mask_tensor, cu_seqlens_q, cu_seqlens_k)
         ctx.use_fused_bwd_qkv = use_fused_bwd_qkv
@@ -1348,139 +1312,133 @@ def generate_mask_fn_vectorized(q_seq_list, k_seq_list, bs, max_q_len, max_k_len
     return mask_fn
 
 
-def flash_attention_forward(q, k, v, q_attn_arg, k_attn_arg, mask_tensor,
-                            cu_seqlens_q, cu_seqlens_k, max_seqlen_q,
-                            max_seqlen_k, scale):
-    """Forward-only entry point used by the correctness check and benchmark."""
-    return FlashAttentionFunc.apply(
-        q, k, v, q_attn_arg, k_attn_arg, mask_tensor,
-        cu_seqlens_q, cu_seqlens_k, max_seqlen_q, max_seqlen_k, scale,
-        1,      # mask_fn (triu causal, driven entirely by mask_tensor)
-        False,  # sparse_opt
-    )
-
-
-def reference_attention(q, k, v, mask_tensor, cu_seqlens_q, cu_seqlens_k, bs, scale):
-    """Deterministic fp32 reference for the forward kernel.
-
-    q/k/v are flattened varlen tensors [total_seq, num_heads, head_dim] with
-    q_head == kv_head.  The kernel applies softmax only over unmasked key
-    positions read from the precomputed [bs, MAX_Q_LEN, MAX_K_LEN] boolean
-    mask, so the reference mirrors exactly that.
-    """
-    out = torch.empty_like(q)
-    for b in range(bs):
-        qs, qe = int(cu_seqlens_q[b]), int(cu_seqlens_q[b + 1])
-        ks, ke = int(cu_seqlens_k[b]), int(cu_seqlens_k[b + 1])
-        qb = q[qs:qe].float()
-        kb = k[ks:ke].float()
-        vb = v[ks:ke].float()
-        mb = mask_tensor[b, : qe - qs, : ke - ks]
-        # q_head == kv_head here, so query head h reads key/value head h.
-        s = torch.einsum("qhd,khd->qhk", qb, kb) * scale
-        s = s.masked_fill(~mb.unsqueeze(1), float("-inf"))
-        p = torch.softmax(s, dim=-1)
-        out[qs:qe] = torch.einsum("qhk,khd->qhd", p, vb).to(out.dtype)
-    return out
-
-
-def _make_flash_attention_inputs(seed=0):
-    """Deterministic input factory shared by the correctness check and the
-    benchmark.  Replaces the original hard-coded .pt dump loading."""
-    torch.manual_seed(seed)
-    bs, q_head, head_dim = 2, 4, 64
-    kv_head = q_head
-    q_seq_list = [1024, 1024]
-    k_seq_list = [1024, 1024]
+if __name__ == "__main__":
+    # input params
     dtype = torch.bfloat16
+    DEVICE = torch.device("npu")
+
+    num_head = 8
+    head_dim = 64
+    q_seq_list = [0] + [320] * 8  # 0 for cumsum
+    k_seq_list = [0] + [320] * 8  # 0 for cumsum
+
+    bs = len(q_seq_list) - 1
     q_len = sum(q_seq_list)
     k_len = sum(k_seq_list)
     max_seqlen_q = max(q_seq_list)
     max_seqlen_k = max(k_seq_list)
-    scale = 1.0 / (head_dim ** 0.5)
-
-    q = torch.randn(q_len, q_head, head_dim, dtype=dtype, device="npu")
-    k = torch.randn(k_len, kv_head, head_dim, dtype=dtype, device="npu")
-    v = torch.randn(k_len, kv_head, head_dim, dtype=dtype, device="npu")
+    root_dir = "/home/l00567229/ZJ_poc/new/dump1_case2"
+    print(f"load {root_dir=}")
+    # qkv
+    q = torch.load(f"{root_dir}/q.pt", map_location=torch.device('cpu')).to(dtype).to(DEVICE).detach().requires_grad_()
+    # print(f"xxxxxxxxxxxxxxxx {q.sum()=}")
+    k = torch.load(f"{root_dir}/k.pt", map_location=torch.device('cpu')).to(dtype).to(DEVICE).detach().requires_grad_()
+    # print(f"xxxxxxxxxxxxxxxx {k.sum()=}")
+    v = torch.load(f"{root_dir}/v.pt", map_location=torch.device('cpu')).to(dtype).to(DEVICE).detach().requires_grad_()
+    # print(f"xxxxxxxxxxxxxxxx {v.sum()=}")
 
     q_attn_arg = torch.zeros(q_len, dtype=torch.int32, device="cpu")
     k_attn_arg = torch.zeros(k_len, dtype=torch.int32, device="cpu")
-    cu_seqlens_q = torch.tensor([0] + q_seq_list, dtype=torch.int32).cumsum(0).to(torch.int32)
-    cu_seqlens_k = torch.tensor([0] + k_seq_list, dtype=torch.int32).cumsum(0).to(torch.int32)
-    mask_tensor = generate_mask_fn_vectorized(
-        q_seq_list, k_seq_list, bs, max_seqlen_q, max_seqlen_k,
-        q_attn_arg, k_attn_arg,
-    )
-    return {
-        "q": q,
-        "k": k,
-        "v": v,
-        "q_attn_arg": q_attn_arg.npu(),
-        "k_attn_arg": k_attn_arg.npu(),
-        "mask_tensor": mask_tensor.npu(),
-        "cu_seqlens_q": cu_seqlens_q.npu(),
-        "cu_seqlens_k": cu_seqlens_k.npu(),
-        "max_seqlen_q": max_seqlen_q,
-        "max_seqlen_k": max_seqlen_k,
-        "scale": scale,
-        "bs": bs,
-    }
 
+    cu_seqlens_q = np.cumsum(q_seq_list).tolist()
+    cu_seqlens_k = np.cumsum(k_seq_list).tolist()
+    print(f"{cu_seqlens_q=}")
+    cu_seqlens_q = torch.tensor(cu_seqlens_q, dtype=torch.int32, device="cpu")
+    cu_seqlens_k = torch.tensor(cu_seqlens_k, dtype=torch.int32, device="cpu")
 
-def test_flash_attention_fwd():
-    data = _make_flash_attention_inputs(seed=0)
-    out = flash_attention_forward(
-        data["q"], data["k"], data["v"],
-        data["q_attn_arg"], data["k_attn_arg"], data["mask_tensor"],
-        data["cu_seqlens_q"], data["cu_seqlens_k"],
-        data["max_seqlen_q"], data["max_seqlen_k"], data["scale"],
-    )
-    ref = reference_attention(
-        data["q"], data["k"], data["v"], data["mask_tensor"],
-        data["cu_seqlens_q"], data["cu_seqlens_k"], data["bs"], data["scale"],
-    )
-    torch.testing.assert_close(out, ref, atol=1e-2, rtol=1e-2, equal_nan=True)
-    print(f"forward max abs diff: {torch.max(torch.abs(out - ref)).item():.6f}")
+    # BLOCK_M, BLOCK_N = 128, 128
+    mask_tensor = generate_mask_fn_vectorized(q_seq_list[1:], k_seq_list[1:], bs, max_seqlen_q, max_seqlen_k, q_attn_arg, k_attn_arg)
+    print(f"{mask_tensor.shape=}")
 
+    q_attn_arg = q_attn_arg.npu()
+    k_attn_arg = k_attn_arg.npu()
+    cu_seqlens_q = cu_seqlens_q.npu()
+    cu_seqlens_k = cu_seqlens_k.npu()
+    mask_tensor = mask_tensor.npu()
+    scale = 1.0 / (head_dim ** 0.5)
 
-def benchmark_flash_attention(warmup=5, active=30):
-    data = _make_flash_attention_inputs(seed=0)
-    fn = lambda: flash_attention_forward(
-        data["q"], data["k"], data["v"],
-        data["q_attn_arg"], data["k_attn_arg"], data["mask_tensor"],
-        data["cu_seqlens_q"], data["cu_seqlens_k"],
-        data["max_seqlen_q"], data["max_seqlen_k"], data["scale"],
+    rtol, atol = 5e-3, 5e-3
+    print(f"\n======================== fwd acc begin ====================")
+    result = FlashAttentionFunc.apply(
+        q,
+        k,
+        v,
+        q_attn_arg,
+        k_attn_arg,
+        mask_tensor,
+        cu_seqlens_q,
+        cu_seqlens_k,
+        max_seqlen_q,
+        max_seqlen_k,
+        scale,
+        1,
+        False,
     )
-    fn()
-    torch.npu.synchronize()
-    latency_ms = do_bench_npu(
-        fn,
-        warmup=warmup,
-        active=active,
-        target_kernel_name="fwd_kernel",
-    )
-    print(f"BENCHMARK operator=flash_attention_npu_v8 latency_ms={latency_ms:.6f} warmup={warmup} active={active}")
-    return latency_ms
+    res_gpu = torch.load(f"{root_dir}/res.pt", map_location=torch.device('cpu')).to(dtype).to(DEVICE)
+    print(f"xxxxxxxxxxxxxxxx {res_gpu.sum()=}, {result.sum()=} {result.shape=}")
+    print("forward diff: ", torch.testing.assert_close(result, res_gpu, rtol=rtol, atol=rtol))
+    print(f"======================== fwd acc end ====================")
 
+    print(f"\n======================== bwd acc begin ====================")
+    do = torch.load(f"{root_dir}/do.pt", map_location=torch.device('cpu')).to(dtype).to(DEVICE)
+    # print(f"xxxxxxxxxxxxxxxx {do.sum()=}")
+    result.backward(do)
+    dq, dk, dv = q.grad, k.grad, v.grad
 
-if __name__ == "__main__":
-    print("[EXPERIMENT] operator_parameters=" + json.dumps({
-        "batch_size": 2,
-        "q_heads": 4,
-        "kv_heads": 4,
-        "q_sequence_lengths": [1024, 1024],
-        "k_sequence_lengths": [1024, 1024],
-        "head_dim": 64,
-        "dtype": "bfloat16",
-        "block_m": 64,
-        "block_n": 64,
-        "mask_fn": 1,
-        "sparse_opt": False,
-        "direction": "forward",
-    }, sort_keys=True))
-    test_flash_attention_fwd()
-    print("======Flash Attention NPU V8 Test Passed!======")
-    benchmark_flash_attention(
-        warmup=int(os.getenv("EXPERIMENT_WARMUP", "5")),
-        active=int(os.getenv("EXPERIMENT_ACTIVE", "30")),
+    dq_gpu = torch.load(f"{root_dir}/dq.pt", map_location=torch.device('cpu')).to(dtype).to(DEVICE)
+    # print(f"xxxxxxxxxxxxxxxx {dq_gpu.sum()=}")
+    dk_gpu = torch.load(f"{root_dir}/dk.pt", map_location=torch.device('cpu')).to(dtype).to(DEVICE)
+    # print(f"xxxxxxxxxxxxxxxx {dk_gpu.sum()=}")
+    dv_gpu = torch.load(f"{root_dir}/dv.pt", map_location=torch.device('cpu')).to(dtype).to(DEVICE)
+    # print(f"xxxxxxxxxxxxxxxx {dv_gpu.sum()=}")
+    print(f"xxxxxxxxxxxxxxxx {dv_gpu.sum()=}, {dv.sum()=} {dv.shape=}")
+    print("backward dv diff: ", torch.testing.assert_close(dv, dv_gpu, rtol=rtol, atol=atol))
+    print(f"xxxxxxxxxxxxxxxx {dk_gpu.sum()=}, {dk.sum()=} {dk.shape=}")
+    print("backward dk diff: ", torch.testing.assert_close(dk, dk_gpu, rtol=rtol, atol=atol))
+    print(f"xxxxxxxxxxxxxxxx {dq_gpu.sum()=}, {dq.sum()=} {dq.shape=}")
+    print("backward dq diff: ", torch.testing.assert_close(dq, dq_gpu, rtol=rtol, atol=atol))
+    print(f"======================== bwd acc end ====================")
+
+    print(f"\n======================== prof begin ====================")
+    experimental_config = torch_npu.profiler._ExperimentalConfig(
+        aic_metrics=torch_npu.profiler.AiCMetrics.PipeUtilization,
+        profiler_level=torch_npu.profiler.ProfilerLevel.Level1, l2_cache=False
     )
+
+    with torch_npu.profiler.profile(
+            activities=[  # torch_npu.profiler.ProfilerActivity.CPU,
+                torch_npu.profiler.ProfilerActivity.NPU],
+            with_stack=False,  # 采集torch 算子的函数调用栈的开关，该参数选填，默认关闭
+            record_shapes=False,  # 采集torch 算子的input shape和input type的开关，该参数选填，默认关闭
+            profile_memory=False,  # 采集memory相关数据的开关，该参数选填，默认关闭
+            schedule=torch_npu.profiler.schedule(wait=1,
+                                                 warmup=1,
+                                                 active=30,
+                                                 repeat=1,
+                                                 skip_first=1),
+            # warmup默认为0，老版本torch_npu包该参数为必填项
+            experimental_config=experimental_config,  # 该参数选填，默认为Level0
+            # 产生的profling文件的位置
+            on_trace_ready=torch_npu.profiler.tensorboard_trace_handler("./prof_dir")
+    ) as prof:
+        # prof.start()
+        for i in range(10):
+            result = FlashAttentionFunc.apply(
+                q,
+                k,
+                v,
+                q_attn_arg,
+                k_attn_arg,
+                mask_tensor,
+                cu_seqlens_q,
+                cu_seqlens_k,
+                max_seqlen_q,
+                max_seqlen_k,
+                scale,
+                1,
+                False,
+            )
+            result.backward(do)
+            torch.npu.synchronize()  # 确保 kernel 真正执行完
+            prof.step()
+    print(f"======================== prof end ====================")

@@ -74,6 +74,19 @@ from triton.backends.compiler import (
 from triton.runtime.cache import get_dump_manager
 
 
+def _print_resolved_npu_options(metadata, opt):
+    if os.getenv("TRITON_PRINT_AUTOTUNING") != "1" and not opt.debug:
+        return
+    resolved = {
+        name: metadata.get(name, getattr(opt, name))
+        for name in opt.__dataclass_fields__
+    }
+    print(
+        "[EXPERIMENT] resolved_npu_options="
+        + json.dumps(resolved, default=str, sort_keys=True)
+    )
+
+
 # TODO: materialize the concrete min shape
 def min_dot_size(target: GPUTarget):
     return lambda lhsType, rhsType: (1, 1, 1)
@@ -749,6 +762,7 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
             cmd_list += [f"--hfusion-enable-cross-if-fusion={enable_cross_if_fusion}"]
 
         if opt.debug or os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
+            _print_resolved_npu_options(metadata, opt)
             print_cmd_list = cmd_list.copy()
             print_cmd_list[1], print_cmd_list[-1] = _get_dump_paths(metadata["hash"], ttadapter_path, bin_file)
             print(f"[DEBUG] cmd_list: {shlex.join(print_cmd_list)}")
@@ -989,6 +1003,7 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
         cmd_list = ([npu_compiler_path, ttadapter_path] + _compile_option_list + ["-o", bin_file])
 
         if opt.debug or os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
+            _print_resolved_npu_options(metadata, opt)
             print_cmd_list = cmd_list.copy()
             print_cmd_list[1], print_cmd_list[-1] = _get_dump_paths(metadata["hash"], ttadapter_path, bin_file)
             print(f"[DEBUG] cmd_list: {shlex.join(print_cmd_list)}")

@@ -22,8 +22,6 @@ HSTU Attention
 ===============
 """
 
-import json
-import os
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 import pytest
@@ -34,21 +32,6 @@ import triton.language as tl
 import triton.runtime.driver as driver
 import numpy as np
 import torch.nn.functional as F
-
-
-def _experiment_compile_options():
-    options = {"enable_dynamic_cv_pipeline": False}
-    depth = os.getenv("EXPERIMENT_DEPTH")
-    if depth is not None:
-        options["set_workspace_multibuffer"] = int(depth)
-    multibuffer_num = os.getenv("EXPERIMENT_MULTIBUFFER_NUM")
-    if multibuffer_num is not None:
-        options["multibuffer_num"] = int(multibuffer_num)
-    merge = os.getenv("EXPERIMENT_VF_MERGE_LEVEL")
-    if merge is not None:
-        options["vf_merge_level"] = int(merge)
-    return options
-from triton.backends.ascend.testing import do_bench_npu
 
 DEVICE = "npu"
 BLOCK_FWD = 64
@@ -628,7 +611,6 @@ def triton_hstu_attention_fwd(
         BLOCK_N,
         mask,
         bias,
-        **_experiment_compile_options(),
     )
     return out
 
@@ -949,58 +931,3 @@ def test_hstu_attention_bwd(batch_size, max_seq_len, num_heads, attention_dim, d
     np.random.seed(0)
     torch.manual_seed(0)
     run_bwd_case(batch_size, max_seq_len, num_heads, attention_dim, data_type)
-
-
-@torch.inference_mode()
-def benchmark_hstu_attention_fwd(warmup=5, active=30):
-    batch_size, max_seq_len, num_heads, attention_dim = 2, 1024, 2, 32
-    data_type, alpha = torch.float32, 1
-    np.random.seed(0)
-    torch.manual_seed(0)
-    jagged_data = jagged_data_gen(batch_size, max_seq_len, num_heads, attention_dim, data_type)
-    q = jagged_data.q.npu()
-    k = jagged_data.k.npu()
-    v = jagged_data.v.npu()
-    mask = jagged_data.mask.npu()
-    seq_offsets = torch.tensor(jagged_data.seq_offset, dtype=torch.int64, device=DEVICE)
-    fn = lambda: triton_hstu_attention_fwd(
-        q=q,
-        k=k,
-        v=v,
-        seq_offsets=seq_offsets,
-        max_seq_len=int(jagged_data.max_seq_len),
-        alpha=alpha,
-        causal=True,
-        mask=mask,
-    )
-    fn()
-    torch.npu.synchronize()
-    latency_ms = do_bench_npu(
-        fn,
-        warmup=warmup,
-        active=active,
-        target_kernel_name="_hstu_attn_fwd",
-    )
-    print(f"BENCHMARK operator=hstu_attention_fwd latency_ms={latency_ms:.6f} warmup={warmup} active={active}")
-    return latency_ms
-
-
-if __name__ == "__main__":
-    print("[EXPERIMENT] operator_parameters=" + json.dumps({
-        "batch_size": 2,
-        "max_seq_len": 1024,
-        "num_heads": 2,
-        "attention_dim": 32,
-        "dtype": "float32",
-        "alpha": 1,
-        "causal": True,
-        "direction": "forward",
-    }, sort_keys=True))
-    # Forward is the initial CVPipeline screening case. Backward remains
-    # available through pytest but is intentionally outside this smoke test.
-    test_hstu_attention_fwd(2, 1024, 2, 32, torch.float32)
-    print("======HSTU Attention Forward Test Passed!======")
-    benchmark_hstu_attention_fwd(
-        warmup=int(os.getenv("EXPERIMENT_WARMUP", "5")),
-        active=int(os.getenv("EXPERIMENT_ACTIVE", "30")),
-    )

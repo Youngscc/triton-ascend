@@ -9,6 +9,14 @@
 depth(1..4) × multibuffer_num(1..4) × vf_merge_level(0..2)
 ```
 
+正式 sweep 对每组配置固定 `enable_dynamic_cv_pipeline=false`，避免 A5 前端
+动态 CV 路径把请求的 `depth` 改写为 0。BishengIR 仍可根据 Triton kernel 的
+`mix_mode` 自动识别 MixedCV。显式的 `multibuffer_num` 同时固定
+`limit_auto_multi_buffer_buffer=no-limit`：四个 count 值在同一个策略下比较，
+并允许普通 multibuffer 作用到 MIX 函数 Vector 侧的 UB Load/Store。未显式传入
+`multibuffer_num` 时仍使用上游默认的 `only-cube`，这种默认运行不属于正式
+count 轴的对照数据。
+
 | 环境 | Python/CANN | bitcode | A5 RegBase |
 | --- | --- | --- | --- |
 | A3 | Python 3.11 / CANN 9.0 | `c220` | 关闭 |
@@ -194,6 +202,11 @@ ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> \
 }
 ```
 
+每轮缓存 metadata 还必须满足
+`set_workspace_multibuffer == depth`、
+`enable_dynamic_cv_pipeline == false` 和
+`limit_auto_multi_buffer_buffer == no-limit`；不满足时该产物不会被计为有效测量。
+
 在服务器宿主机后台运行：
 
 ```bash
@@ -205,6 +218,13 @@ ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> REMOTE_MODE=dev \
 ```
 
 `Ctrl-C` 只停止日志跟随，不终止后台实验。
+
+总日志会为每轮打印四类参数记录：`requested_parameters` 是实验请求值和测量
+设置，`operator_parameters` 是固定输入 shape、dtype、模式和 launch tile，
+`resolved_npu_options` 是补齐默认值并完成前端调整后的全部 NPU 编译选项，
+`cmd_list` 是实际执行的 `bishengir-compile` 命令。相同内容及该轮完整
+stdout/stderr 保存在结果目录的
+`logs/d<depth>-b<multibuffer_num>-m<vf_merge_level>.log`。
 
 ## 6. 结果和报告
 

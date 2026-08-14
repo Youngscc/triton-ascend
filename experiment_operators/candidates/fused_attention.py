@@ -32,11 +32,12 @@ Extra Credits:
 
 """
 
+import json
 import os
 
 
 def _experiment_compile_options():
-    options = {}
+    options = {"enable_dynamic_cv_pipeline": False}
     depth = os.getenv("EXPERIMENT_DEPTH")
     if depth is not None:
         options["set_workspace_multibuffer"] = int(depth)
@@ -352,6 +353,18 @@ def benchmark_attention_fused(warmup=5, active=30):
 
 
 if __name__ == "__main__":
+    print("[EXPERIMENT] operator_parameters=" + json.dumps({
+        "batch": 4,
+        "num_heads": 32,
+        "sequence_length": 1024,
+        "head_dim": 64,
+        "causal": False,
+        "dtype": "bfloat16",
+        "block_m": 64,
+        "block_n": 128,
+        "sm_scale": 0.5,
+        "program_count": 20,
+    }, sort_keys=True))
     test_attention_fused()
     print("======Fused Attention Test Passed!======")
     benchmark_attention_fused(

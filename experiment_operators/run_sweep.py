@@ -42,7 +42,7 @@ VF_MERGE_VALUES = (0, 1, 2)
 REQUESTED_CONFIGURATION_COUNT = (
     len(DEPTH_VALUES) * len(MULTIBUFFER_VALUES) * len(VF_MERGE_VALUES)
 )
-EXPERIMENT_SCHEMA = "native-cv-depth+independent-local-multibuffer-v3"
+EXPERIMENT_SCHEMA = "native-cv-depth+no-dynamic-cv+independent-local-multibuffer-v4"
 OPERATOR_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 SOURCE_BENCHMARK_OPERATOR_RE = re.compile(
     r"BENCHMARK\s+operator=([A-Za-z0-9][A-Za-z0-9_.-]*)"
@@ -127,6 +127,8 @@ def matching_metadata(
             metadata.get("set_workspace_multibuffer") == depth
             and metadata.get("multibuffer_num") == multibuffer_num
             and metadata.get("vf_merge_level") == merge
+            and metadata.get("enable_dynamic_cv_pipeline") is False
+            and metadata.get("limit_auto_multi_buffer_buffer") == "no-limit"
         ):
             matches.append((mtime_ns, path, metadata))
     return max(matches, default=(None, None, None), key=lambda item: item[0] or -1)[1:]
@@ -144,6 +146,7 @@ def artifact_row(
     )
     if metadata_path is None:
         return {
+            "metadata_constraints_matched": False,
             "required_ub_bits": None,
             "required_ub_bytes": None,
             "required_ub_kib": None,
@@ -162,6 +165,7 @@ def artifact_row(
     binary_path = artifact_dir / f"{stem}.npubin"
     required_ub_bits = metadata.get("required_ub_bits") or None
     return {
+        "metadata_constraints_matched": True,
         "required_ub_bits": required_ub_bits,
         "required_ub_bytes": required_ub_bits / 8 if required_ub_bits else None,
         "required_ub_kib": required_ub_bits / 8192 if required_ub_bits else None,
@@ -364,7 +368,9 @@ def main() -> int:
             "vf_merge_level": list(VF_MERGE_VALUES),
         },
         "resolved_cv_constraint": "set_workspace_multibuffer == depth",
+        "dynamic_cv_pipeline_constraint": "enable_dynamic_cv_pipeline == false",
         "ordinary_multibuffer_constraint": "multibuffer_num is independent of depth",
+        "ordinary_multibuffer_strategy": "limit_auto_multi_buffer_buffer == no-limit",
     }
     (result_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
@@ -385,7 +391,25 @@ def main() -> int:
                 "EXPERIMENT_ACTIVE": str(args.active),
             }
         )
-        print(f"[{index}/{len(configs)}] {key}", flush=True)
+        requested_parameters = {
+            "operator": operator,
+            "candidate": str(candidate),
+            "experiment_schema": EXPERIMENT_SCHEMA,
+            "depth": depth,
+            "multibuffer_num": multibuffer_num,
+            "vf_merge_level": merge,
+            "enable_dynamic_cv_pipeline": False,
+            "limit_auto_multi_buffer_buffer": "no-limit",
+            "enable_print_ub_bits": True,
+            "warmup": args.warmup,
+            "active": args.active,
+            "timeout_s": args.timeout,
+        }
+        print(
+            f"[{index}/{len(configs)}] {key} requested_parameters="
+            + json.dumps(requested_parameters, sort_keys=True),
+            flush=True,
+        )
         started_epoch_ns = time.time_ns()
         started = time.monotonic()
         timed_out = False
@@ -409,7 +433,23 @@ def main() -> int:
                 output = output.decode("utf-8", errors="replace")
             returncode = 124
         wall_time = time.monotonic() - started
-        log_path.write_text(output)
+        log_header = (
+            "[EXPERIMENT] requested_parameters="
+            + json.dumps(requested_parameters, sort_keys=True)
+            + "\n"
+        )
+        log_path.write_text(log_header + output)
+        audit_lines = tuple(
+            dict.fromkeys(
+                line
+                for line in output.splitlines()
+                if line.startswith("[EXPERIMENT] operator_parameters=")
+                or line.startswith("[EXPERIMENT] resolved_npu_options=")
+                or line.startswith("[DEBUG] cmd_list:")
+            )
+        )
+        for line in audit_lines:
+            print(f"[{key}] {line}", flush=True)
         benchmark = BENCHMARK_RE.search(output)
         correctness = (
             pass_marker in output
@@ -440,6 +480,9 @@ def main() -> int:
         elif not correctness:
             status = "incorrect"
             diagnostic = "successful exit and benchmark output required"
+        elif not artifacts["metadata_constraints_matched"]:
+            status = "unsupported"
+            diagnostic = "compiler metadata missing or does not match fixed experiment options"
         elif artifacts["required_ub_bits"] is None:
             status = "unsupported"
             diagnostic = "required_ub_bits missing from compiler metadata"
@@ -462,6 +505,8 @@ def main() -> int:
             "depth": depth,
             "multibuffer_num": multibuffer_num,
             "set_workspace_multibuffer": depth,
+            "enable_dynamic_cv_pipeline": False,
+            "limit_auto_multi_buffer_buffer": "no-limit",
             "vf_merge_level": merge,
             "status": status,
             "diagnostic": diagnostic,

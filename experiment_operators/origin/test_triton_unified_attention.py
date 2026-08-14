@@ -1,15 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-import json
-import os
 from typing import Optional
 
 import pytest
 import torch
 import triton
 import triton.language as tl
-from triton.backends.ascend.testing import do_bench_npu
 
 NUM_HEADS = [(8, 2), (16, 2)]
 HEAD_SIZES = [128]
@@ -21,20 +18,6 @@ QDTYPES = [None]
 # one value large enough to test overflow in index calculation.
 # one value small enough to test the schema op check
 NUM_BLOCKS = [32768, 2048]
-
-
-def _experiment_compile_options():
-    options = {"enable_dynamic_cv_pipeline": False}
-    depth = os.getenv("EXPERIMENT_DEPTH")
-    if depth is not None:
-        options["set_workspace_multibuffer"] = int(depth)
-    multibuffer_num = os.getenv("EXPERIMENT_MULTIBUFFER_NUM")
-    if multibuffer_num is not None:
-        options["multibuffer_num"] = int(multibuffer_num)
-    merge = os.getenv("EXPERIMENT_VF_MERGE_LEVEL")
-    if merge is not None:
-        options["vf_merge_level"] = int(merge)
-    return options
 
 
 @triton.jit
@@ -62,6 +45,7 @@ def kernel_unified_attention_2d(output_ptr,  # [num_tokens, num_query_heads, hea
                                 k_scale,  # float32
                                 v_scale,  # float32
                                 softcap,  # float32
+                                num_query_heads: tl.constexpr,  # int
                                 num_queries_per_kv: tl.constexpr,  # int
                                 block_table_stride: tl.int64,  # int
                                 query_stride_0: tl.int64,  # int
@@ -83,25 +67,25 @@ def kernel_unified_attention_2d(output_ptr,  # [num_tokens, num_query_heads, hea
                                 stride_v_cache_2: tl.int64,  # int
                                 stride_v_cache_3: tl.constexpr,  # int
                                 query_start_len_ptr,  # [num_seqs+1]
+                                BLOCK_Q: tl.constexpr,  # int
                                 num_seqs: tl.int32, BLOCK_M: tl.constexpr,  # int
                                 ):
 
     q_block_global_idx = tl.program_id(0)
-    query_head_idx = tl.program_id(1)
-    kv_head_idx = query_head_idx // num_queries_per_kv
+    kv_head_idx = tl.program_id(1)
 
     left: tl.int32 = 0
     right = num_seqs
     while left < right:
         mid = (left + right) // 2
-        mid_val = tl.load(query_start_len_ptr + mid) // BLOCK_M + mid
+        mid_val = tl.load(query_start_len_ptr + mid) // BLOCK_Q + mid
         if mid_val <= q_block_global_idx:
             left = mid + 1
         else:
             right = mid
 
     seq_idx = left - 1
-    q_block_start_idx = tl.load(query_start_len_ptr + seq_idx) // BLOCK_M + seq_idx
+    q_block_start_idx = tl.load(query_start_len_ptr + seq_idx) // BLOCK_Q + seq_idx
 
     q_block_local_idx = q_block_global_idx - q_block_start_idx
 
@@ -111,23 +95,28 @@ def kernel_unified_attention_2d(output_ptr,  # [num_tokens, num_query_heads, hea
     cur_batch_query_len = cur_batch_in_all_stop_index \
         - cur_batch_in_all_start_index
 
-    if q_block_local_idx * BLOCK_M >= cur_batch_query_len:
+    if q_block_local_idx * BLOCK_Q >= cur_batch_query_len:
         return
 
     offs_m = tl.arange(0, BLOCK_M)
-    query_pos = q_block_local_idx * BLOCK_M + offs_m
+    offs_d = tl.arange(0, HEAD_SIZE_PADDED)
+    query_pos = q_block_local_idx * BLOCK_Q + offs_m // num_queries_per_kv
 
+    query_offset_0 = cur_batch_in_all_start_index + query_pos
+    query_offset_1 = kv_head_idx * num_queries_per_kv + \
+        offs_m % num_queries_per_kv
+    query_offset = (query_offset_0[:, None] * query_stride_0 + query_offset_1[:, None] * query_stride_1 +
+                    offs_d[None, :])
+
+    dim_mask = tl.where(offs_d < HEAD_SIZE, 1, 0).to(tl.int1)
     query_mask_0 = tl.where(query_pos < cur_batch_query_len, 1, 0).to(tl.int1)
+    query_mask_1 = tl.where(query_offset_1 < num_query_heads, 1, 0).to(tl.int1)
 
-    Q_block_ptr = tl.make_block_ptr(
-        base=query_ptr + cur_batch_in_all_start_index * query_stride_0 + query_head_idx * query_stride_1,
-        shape=(cur_batch_query_len, HEAD_SIZE),
-        strides=(query_stride_0, 1),
-        offsets=(q_block_local_idx * BLOCK_M, 0),
-        block_shape=(BLOCK_M, HEAD_SIZE_PADDED),
-        order=(1, 0),
+    Q = tl.load(
+        query_ptr + query_offset,
+        mask=dim_mask[None, :] & query_mask_0[:, None] & query_mask_1[:, None],
+        other=0.0,
     )
-    Q = tl.load(Q_block_ptr, boundary_check=(0, 1), padding_option="zero")
 
     block_table_offset = seq_idx * block_table_stride
 
@@ -143,7 +132,7 @@ def kernel_unified_attention_2d(output_ptr,  # [num_tokens, num_query_heads, hea
 
     # alibi slope for this head
     if USE_ALIBI_SLOPES:
-        alibi_slope = tl.load(alibi_slopes_ptr + query_head_idx)
+        alibi_slope = tl.load(alibi_slopes_ptr + query_offset_1, mask=query_mask_1, other=0.0)
 
     num_blocks = cdiv_fn(seq_len, BLOCK_SIZE)
 
@@ -154,25 +143,13 @@ def kernel_unified_attention_2d(output_ptr,  # [num_tokens, num_query_heads, hea
 
         offs_n = tl.arange(0, BLOCK_SIZE)
 
-        K_block_ptr = tl.make_block_ptr(
-            base=key_cache_ptr + physical_block_idx * stride_k_cache_0 + kv_head_idx * stride_k_cache_2,
-            shape=(BLOCK_SIZE, HEAD_SIZE),
-            strides=(stride_k_cache_1, stride_k_cache_3),
-            offsets=(0, 0),
-            block_shape=(BLOCK_SIZE, HEAD_SIZE_PADDED),
-            order=(1, 0),
-        )
+        v_offset = (physical_block_idx * stride_v_cache_0 + kv_head_idx * stride_v_cache_2 +
+                    offs_d[None, :] * stride_v_cache_3 + offs_n[:, None] * stride_v_cache_1)
 
-        K_load = tl.load(K_block_ptr, boundary_check=(1,), padding_option="zero")
+        k_offset = (physical_block_idx * stride_k_cache_0 + kv_head_idx * stride_k_cache_2 +
+                    offs_d[:, None] * stride_k_cache_3 + offs_n[None, :] * stride_k_cache_1)
 
-        V_block_ptr = tl.make_block_ptr(
-            base=value_cache_ptr + physical_block_idx * stride_v_cache_0 + kv_head_idx * stride_v_cache_2,
-            shape=(BLOCK_SIZE, HEAD_SIZE),
-            strides=(stride_v_cache_1, stride_v_cache_3),
-            offsets=(0, 0),
-            block_shape=(BLOCK_SIZE, HEAD_SIZE_PADDED),
-            order=(1, 0),
-        )
+        K_load = tl.load(key_cache_ptr + k_offset, mask=dim_mask[:, None], other=0.0)
 
         if K_load.dtype.is_fp8():
             if Q.dtype.is_fp8():
@@ -182,7 +159,7 @@ def kernel_unified_attention_2d(output_ptr,  # [num_tokens, num_query_heads, hea
         else:
             K = K_load
 
-        V_load = tl.load(V_block_ptr, boundary_check=(1,), padding_option="zero")
+        V_load = tl.load(value_cache_ptr + v_offset, mask=dim_mask[None, :], other=0.0)
 
         if V_load.dtype.is_fp8():
             if Q.dtype.is_fp8():
@@ -198,22 +175,18 @@ def kernel_unified_attention_2d(output_ptr,  # [num_tokens, num_query_heads, hea
 
         S = tl.zeros(shape=(BLOCK_M, BLOCK_SIZE), dtype=tl.float32)
 
-        # Load K in its physical [token, head_size] layout and transpose it
-        # explicitly for Q @ K^T. The Ascend lowering recognizes this layout;
-        # constructing a transposed tensor through pointer offsets can produce
-        # a non-terminating kernel with the custom compiler.
-        S += scale * tl.dot(Q, tl.trans(K))
+        S += scale * tl.dot(Q, K)
 
         if USE_SOFTCAP:
             S = apply_softcap(S, softcap)
 
-        S = tl.where(query_mask_0[:, None] & seq_mask, S, float("-inf"))
+        S = tl.where(query_mask_1[:, None] & query_mask_0[:, None] & seq_mask, S, float("-inf"))
 
         if SLIDING_WINDOW > 0:
             S = tl.where((context_len + query_pos[:, None] - seq_offset) < SLIDING_WINDOW, S, float("-inf"))
 
         if USE_ALIBI_SLOPES:
-            S += alibi_slope * (seq_offset - context_len)
+            S += alibi_slope[:, None] * (seq_offset - context_len)
 
         # compute running maximum
         m_j = tl.maximum(M, tl.max(S, axis=1))
@@ -238,15 +211,14 @@ def kernel_unified_attention_2d(output_ptr,  # [num_tokens, num_query_heads, hea
     # epilogue
     acc = acc / L[:, None]
 
-    output_block_ptr = tl.make_block_ptr(
-        base=output_ptr + cur_batch_in_all_start_index * output_stride_0 + query_head_idx * output_stride_1,
-        shape=(cur_batch_query_len, HEAD_SIZE),
-        strides=(output_stride_0, 1),
-        offsets=(q_block_local_idx * BLOCK_M, 0),
-        block_shape=(BLOCK_M, HEAD_SIZE_PADDED),
-        order=(1, 0),
+    output_offset = (query_offset_0[:, None] * output_stride_0 + query_offset_1[:, None] * output_stride_1 +
+                     offs_d[None, :])
+
+    tl.store(
+        output_ptr + output_offset,
+        acc,
+        mask=dim_mask[None, :] & query_mask_0[:, None] & query_mask_1[:, None],
     )
-    tl.store(output_block_ptr, acc.to(output_ptr.dtype.element_ty), boundary_check=(0, 1))
 
 
 def unified_attention(
@@ -285,21 +257,22 @@ def unified_attention(
     head_size = q.shape[2]
 
     BLOCK_M = 16
+    BLOCK_Q = BLOCK_M // num_queries_per_kv
 
     # Ideally we would launch with kernel with:
-    # \sum_i[ceil(query_len[i] / BLOCK_M)] blocks.
+    # \sum_i[ceil(query_len[i] / BLOCK_Q)] blocks.
     # However, it is slow to realize the query_lens on cpu.
     # Instead we use upper-bound:
-    # \sum_i[ceil(query_len[i] / BLOCK_M)]
-    #   <= \sum_i[floor(query_len[i] / BLOCK_M) + 1]
-    #    = \sum_i[floor(query_len[i] / BLOCK_M)] + num_seqs
-    #   <= floor(\sum_i(query_len[i]) / BLOCK_M) + num_seqs
-    #    = floor(q.shape[0] / BLOCK_M) + num_seqs
-    total_num_q_blocks = q.shape[0] // BLOCK_M + num_seqs
+    # \sum_i[ceil(query_len[i] / BLOCK_Q)]
+    #   <= \sum_i[floor(query_len[i] / BLOCK_Q) + 1]
+    #    = \sum_i[floor(query_len[i] / BLOCK_Q)] + num_seqs
+    #   <= floor(\sum_i(query_len[i]) / BLOCK_Q) + num_seqs
+    #    = floor(q.shape[0] / BLOCK_Q) + num_seqs
+    total_num_q_blocks = q.shape[0] // BLOCK_Q + num_seqs
 
     kernel_unified_attention_2d[(
         total_num_q_blocks,
-        num_query_heads,
+        num_kv_heads,
     )](
         output_ptr=out,
         query_ptr=q,
@@ -312,6 +285,7 @@ def unified_attention(
         k_scale=k_descale,
         v_scale=v_descale,
         softcap=softcap,
+        num_query_heads=num_query_heads,
         num_queries_per_kv=num_queries_per_kv,
         block_table_stride=block_table.stride(0),
         query_stride_0=q.stride(0),
@@ -333,9 +307,9 @@ def unified_attention(
         stride_v_cache_2=v.stride(2),
         stride_v_cache_3=v.stride(3),
         query_start_len_ptr=cu_seqlens_q,
+        BLOCK_Q=BLOCK_Q,
         num_seqs=num_seqs,
         BLOCK_M=BLOCK_M,
-        **_experiment_compile_options(),
     )
 
 
@@ -493,90 +467,3 @@ def test_triton_unified_attn(
         atol, rtol = 1.5e-1, 1.5e-1
     torch.testing.assert_close(output, ref_output, atol=atol, rtol=rtol), \
         f"{torch.max(torch.abs(output - ref_output))}"
-
-
-@torch.inference_mode()
-def benchmark_unified_attention(warmup=5, active=30):
-    torch.set_default_device("npu")
-    torch.manual_seed(0)
-    seq_lens = [(1, 1328), (5, 18), (129, 463)]
-    query_lens = [x[0] for x in seq_lens]
-    kv_lens_list = [x[1] for x in seq_lens]
-    num_query_heads, num_kv_heads = 8, 2
-    head_size, block_size, num_blocks = 128, 32, 2048
-    dtype = torch.float16
-    max_query_len = max(query_lens)
-    max_kv_len = max(kv_lens_list)
-    scale = head_size**-0.5
-
-    query = torch.randn(sum(query_lens), num_query_heads, head_size, dtype=dtype)
-    key_cache = torch.randn(num_blocks, block_size, num_kv_heads, head_size, dtype=dtype)
-    value_cache = torch.randn_like(key_cache)
-    cu_query_lens = torch.tensor([0] + query_lens, dtype=torch.int32).cumsum(dim=0, dtype=torch.int32)
-    kv_lens = torch.tensor(kv_lens_list, dtype=torch.int32)
-    max_num_blocks_per_seq = (max_kv_len + block_size - 1) // block_size
-    block_tables = torch.randint(0, num_blocks, (len(seq_lens), max_num_blocks_per_seq), dtype=torch.int32)
-    output = torch.empty_like(query)
-
-    fn = lambda: unified_attention(
-        q=query,
-        k=key_cache,
-        v=value_cache,
-        out=output,
-        cu_seqlens_q=cu_query_lens,
-        seqused_k=kv_lens,
-        max_seqlen_q=max_query_len,
-        max_seqlen_k=max_kv_len,
-        softmax_scale=scale,
-        causal=True,
-        window_size=(-1, -1),
-        block_table=block_tables,
-        softcap=0,
-        q_descale=None,
-        k_descale=None,
-        v_descale=None,
-    )
-    fn()
-    torch.npu.synchronize()
-    latency_ms = do_bench_npu(
-        fn,
-        warmup=warmup,
-        active=active,
-        target_kernel_name="kernel_unified_attention_2d",
-    )
-    print(f"BENCHMARK operator=unified_attention latency_ms={latency_ms:.6f} warmup={warmup} active={active}")
-    return latency_ms
-
-
-if __name__ == "__main__":
-    print("[EXPERIMENT] operator_parameters=" + json.dumps({
-        "sequence_lengths": [[1, 1328], [5, 18], [129, 463]],
-        "num_query_heads": 8,
-        "num_kv_heads": 2,
-        "head_size": 128,
-        "block_size": 32,
-        "num_blocks": 2048,
-        "dtype": "float16",
-        "causal": True,
-        "sliding_window": None,
-        "soft_cap": None,
-        "q_dtype": None,
-    }, sort_keys=True))
-    # A small, deterministic case used by the operator-screening smoke test.
-    # Keep the full parametrized pytest cases above for later coverage runs.
-    test_triton_unified_attn(
-        seq_lens=[(1, 1328), (5, 18), (129, 463)],
-        num_heads=(8, 2),
-        head_size=128,
-        sliding_window=None,
-        dtype=torch.float16,
-        block_size=32,
-        soft_cap=None,
-        num_blocks=2048,
-        q_dtype=None,
-    )
-    print("======Unified Attention Test Passed!======")
-    benchmark_unified_attention(
-        warmup=int(os.getenv("EXPERIMENT_WARMUP", "5")),
-        active=int(os.getenv("EXPERIMENT_ACTIVE", "30")),
-    )

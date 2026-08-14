@@ -52,12 +52,30 @@ For every accepted operator case, enumerate all 48 requested triples:
   `MarkMultiBuffer` default of 2
 - `vf_merge_level = 0, 1, 2`
 
+Every formal candidate explicitly sets `enable_dynamic_cv_pipeline=false`.
+This prevents the A5 frontend's dynamic-CV path from replacing the requested
+`set_workspace_multibuffer` value with 0. BishengIR may still infer MixedCV for
+a Triton mixed Cube/Vector kernel from its `mix_mode`; disabling the frontend
+dynamic path does not disable that native MixedCV inference.
+
 `multibuffer_num` does not control CVPipeline workspace buffers or the
 independently inferred preload-local value. CV depth and physical workspace
 buffer count retain BishengIR's native single-value behavior. There is no
 ordering constraint between the independent ordinary
 `multibuffer_num` axis and CV `depth`, so the sweep includes
 `multibuffer_num > depth`.
+
+An explicit `multibuffer_num` also resolves
+`limit_auto_multi_buffer_buffer=no-limit`. The upstream default is
+`only-cube`: it permits ordinary multibuffering for the Cube-side L1/L0C
+buffers of a MIX function but excludes the Vector-side UB Load/Store buffers.
+With `only-cube`, changing the ordinary count can therefore leave PlanMemory's
+UB result unchanged. `no-limit` allows the same requested count to reach both
+sides. All formal values 1 through 4 use `no-limit`, so comparisons within the
+sweep vary the count under one fixed strategy. Omitting `multibuffer_num`
+retains the upstream `only-cube` default; comparing an omitted value with an
+explicit value would change both count and strategy and is not a controlled
+count-only comparison.
 
 Write one row for every operator/case/triple, including failures and unsupported
 relationships. Successful rows must contain both repeated NPU latency statistics
@@ -108,12 +126,16 @@ must not be used for a formal 48-row run.
 
 Each new row records the public axes `depth`, `multibuffer_num`, and
 `vf_merge_level`, plus the resolved audit field `set_workspace_multibuffer`,
-which must equal `depth`.
+which must equal `depth`. Cache metadata must also resolve
+`enable_dynamic_cv_pipeline=false` and
+`limit_auto_multi_buffer_buffer=no-limit`; otherwise the controller rejects
+the artifact for that requested row.
 Historical result directories use the `legacy-cv-split-v0` schema and must not
 be interpreted as measurements of the new ordinary-local `multibuffer_num`.
 The intermediate `cv-depth-equals-buffers+local-multibuffer-v1` schema contains
 only the older 30-row `multibuffer_num <= depth` subset. New 48-row runs use
-`native-cv-depth+independent-local-multibuffer-v3`; the immediately preceding
+`native-cv-depth+no-dynamic-cv+independent-local-multibuffer-v4`; the preceding
+`native-cv-depth+independent-local-multibuffer-v3` and
 `cv-depth-equals-buffers+independent-local-multibuffer-v2` results remain valid
 pre-rollback comparison data.
 
@@ -132,6 +154,16 @@ compiler so metadata generated before UB reporting is not reused.
 Each candidate also has a subprocess timeout. A kernel that does not return is
 retained as an `unsupported` row with `timed_out=true`; it cannot block the
 remaining configurations indefinitely.
+
+The foreground/server run log prints four auditable records for every row:
+`requested_parameters` contains the operator, three public axes, fixed
+experiment policies, and benchmark controls; `operator_parameters` describes
+the fixed input shape, dtype, mode, and launch tile; `resolved_npu_options`
+contains every final `NPUOptions` value after defaults and frontend
+adjustments; and `cmd_list` is the exact `bishengir-compile` command. The same
+records are kept in
+`logs/d<depth>-b<multibuffer_num>-m<vf_merge_level>.log`, together with the
+candidate's complete stdout and stderr.
 
 ### Run one complete operator sweep inside the container
 
