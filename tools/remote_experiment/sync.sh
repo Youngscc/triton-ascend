@@ -72,24 +72,10 @@ rsync_args=(
   --exclude=.git
   --exclude=.codex-remote/
   "${generated_excludes[@]}"
+  --exclude=/python/
   --exclude=/llvm-project/
   --exclude=/llvm-project-*/
   --exclude=/.llvm-project/
-  --exclude=/python/triton/_C/*.so
-  --exclude=/python/triton/_C/*.dylib
-  --exclude=/python/triton/_C/*.pyd
-  --exclude=/python/triton/_C/*.pdb
-  --exclude=/python/triton/_C/*.exe
-  --exclude=/python/triton/_C/*.ilk
-  --exclude=/python/triton/_C/triton-mlir-opt
-  --exclude=/python/triton/_C/triton-opt
-  --exclude=/python/triton/_C/FileCheck
-  --exclude=/python/triton/FileCheck
-  --exclude=/python/triton/backends/*/
-  --exclude=/python/triton/language/extra/*/
-  --exclude=/python/triton/tools/extra/
-  --exclude=/python/triton/profiler/
-  --exclude=/python/triton/instrumentation/
 #   --exclude=extracted_stages/
   --exclude=ub_overflow_kernel_candidates/
 )
@@ -121,14 +107,5 @@ rsync -az --delete \
   --exclude=third-party/torch-mlir/externals/llvm-project/ \
   "$PROJECT_ROOT/third_party/ascend/AscendNPU-IR/" \
   "$REMOTE_HOST:$REMOTE_PROJECT/third_party/ascend/AscendNPU-IR/"
-
-# setup.py normally materializes this package during an editable install. The
-# remote workflow executes directly from the source tree, so mirror the actual
-# backend source into that generated package. Deletion is scoped to this one
-# generated directory and cannot affect builds, caches, results, or other code.
-rsync -az --delete \
-  "${generated_excludes[@]}" \
-  "$PROJECT_ROOT/third_party/ascend/backend/" \
-  "$REMOTE_HOST:$REMOTE_PROJECT/python/triton/backends/ascend/"
 
 printf 'Synced %s -> %s:%s\n' "$PROJECT_ROOT" "$REMOTE_HOST" "$REMOTE_PROJECT"

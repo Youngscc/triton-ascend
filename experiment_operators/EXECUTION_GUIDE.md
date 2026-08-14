@@ -345,10 +345,10 @@ REMOTE_SOURCE_MODE="rsync"
 ./tools/remote_experiment/pull-results.sh
 ```
 
-`sync.sh` 只传源码和必要的 Git 元数据，统一排除 `__pycache__`、Python
-字节码、测试/覆盖率缓存、虚拟环境、构建目录、本机动态库以及
-生成的 Triton 工具和 Python 包。排除项在服务器上已有的内容会保留，因而
-不会删除服务器自身构建的环境、缓存和实验结果。若旧版同步曾带入电脑端的
+`sync.sh` 只传非 `python/` 源码和必要的 Git 元数据，完整排除顶层
+`python/`，并统一排除 `__pycache__`、Python 字节码、测试/覆盖率缓存、
+虚拟环境和构建目录。服务器已有的整个 `python/`、自身构建的环境、缓存和
+实验结果都会保留。若旧版同步曾带入电脑端的
 `python/triton/_C/libtriton.so`，需在容器内执行一次：
 
 ```bash
@@ -356,3 +356,5 @@ REMOTE_SOURCE_MODE="rsync"
 ```
 
 随后按本章的离线 LLVM 参数重新执行环境和编译器构建。
+以后若提交修改了正式的 `python/` 源码，必须在服务器通过 Git 更新或单独
+处理；离线 `sync.sh` 不会传递这些修改。
