@@ -255,6 +255,25 @@ def matching_metadata(
     min_mtime_ns: int,
 ):
     matches = []
+    closest_mismatch = None
+    expected = {
+        "multibuffer_num": multibuffer_num,
+        "vf_merge_level": merge,
+        "limit_auto_multi_buffer_buffer": "no-limit",
+    }
+    if pipeline_axis == "intra_cache_num":
+        expected.update({
+            "enable_dynamic_cv_pipeline": True,
+            "intra_cache_num": pipeline_value,
+            "inter_cache_num": 1,
+            "load_cache_num": 1,
+            "set_workspace_multibuffer": 0,
+        })
+    else:
+        expected.update({
+            "enable_dynamic_cv_pipeline": False,
+            "set_workspace_multibuffer": pipeline_value,
+        })
     for path in cache_dir.glob("*/**/*.json"):
         if path.name.startswith("__grp__"):
             continue
@@ -265,27 +284,30 @@ def matching_metadata(
         mtime_ns = path.stat().st_mtime_ns
         if mtime_ns < min_mtime_ns:
             continue
-        if pipeline_axis == "intra_cache_num":
-            pipeline_matches = (
-                metadata.get("enable_dynamic_cv_pipeline") is True
-                and metadata.get("intra_cache_num") == pipeline_value
-                and metadata.get("inter_cache_num") == 1
-                and metadata.get("load_cache_num") == 1
-                and metadata.get("set_workspace_multibuffer") == 0
-            )
-        else:
-            pipeline_matches = (
-                metadata.get("enable_dynamic_cv_pipeline") is False
-                and metadata.get("set_workspace_multibuffer") == pipeline_value
-            )
-        if (
-            pipeline_matches
-            and metadata.get("multibuffer_num") == multibuffer_num
-            and metadata.get("vf_merge_level") == merge
-            and metadata.get("limit_auto_multi_buffer_buffer") == "no-limit"
-        ):
+        mismatches = {
+            name: (metadata.get(name), value)
+            for name, value in expected.items()
+            if metadata.get(name) != value
+        }
+        if not mismatches:
             matches.append((mtime_ns, path, metadata))
-    return max(matches, default=(None, None, None), key=lambda item: item[0] or -1)[1:]
+        mismatch_candidate = (len(mismatches), -mtime_ns, path, metadata, mismatches)
+        if closest_mismatch is None or mismatch_candidate[:2] < closest_mismatch[:2]:
+            closest_mismatch = mismatch_candidate
+    if matches:
+        path, metadata = max(matches, key=lambda item: item[0])[1:]
+        return path, metadata, None
+    if closest_mismatch is None:
+        return None, None, f"no recent compiler metadata found under {cache_dir}"
+    _, _, path, metadata, mismatches = closest_mismatch
+    details = ", ".join(
+        f"{name}={actual!r} expected={wanted!r}"
+        for name, (actual, wanted) in sorted(mismatches.items())
+    )
+    fallback_rc = metadata.get("dynamic_cv_pipeline_return_code")
+    if fallback_rc is not None:
+        details += f", dynamic_cv_pipeline_return_code={fallback_rc!r}"
+    return None, None, f"closest metadata {path.name}: {details}"
 
 
 def artifact_row(
@@ -297,7 +319,7 @@ def artifact_row(
     min_mtime_ns: int,
     include_audit: bool = True,
 ):
-    metadata_path, metadata = matching_metadata(
+    metadata_path, metadata, metadata_diagnostic = matching_metadata(
         cache_dir,
         pipeline_axis,
         pipeline_value,
@@ -318,6 +340,7 @@ def artifact_row(
             "binary_hash": None,
             "metadata_path": None,
             "binary_path": None,
+            "metadata_diagnostic": metadata_diagnostic,
         }
 
     stem = metadata.get("name") or metadata_path.stem
@@ -330,6 +353,7 @@ def artifact_row(
         "required_ub_bits": required_ub_bits,
         "required_ub_bytes": required_ub_bits / 8 if required_ub_bits else None,
         "required_ub_kib": required_ub_bits / 8192 if required_ub_bits else None,
+        "metadata_diagnostic": None,
     }
     if not include_audit:
         return result
@@ -402,6 +426,10 @@ def simple_reason(row: dict) -> str:
         return "未得到UB使用量"
     if row["diagnostic"] == "compiler metadata missing or does not match fixed experiment options":
         return "未找到与参数匹配的编译结果"
+    if row["diagnostic"].startswith("compiler metadata mismatch: "):
+        return "编译结果参数不匹配：" + row["diagnostic"].removeprefix(
+            "compiler metadata mismatch: "
+        )
     return "当前配置不支持"
 
 
@@ -763,6 +791,7 @@ def main() -> int:
                 for line in output.splitlines()
                 if line.startswith("[EXPERIMENT] operator_parameters=")
                 or line.startswith("[EXPERIMENT] resolved_npu_options=")
+                or line.startswith("[EXPERIMENT] dynamic_cv_pipeline_fallback=")
                 or line.startswith("[DEBUG] cmd_list:")
             )
         )
@@ -802,7 +831,7 @@ def main() -> int:
             diagnostic = "successful exit and benchmark output required"
         elif not artifacts["metadata_constraints_matched"]:
             status = "unsupported"
-            diagnostic = "compiler metadata missing or does not match fixed experiment options"
+            diagnostic = "compiler metadata mismatch: " + artifacts["metadata_diagnostic"]
         elif artifacts["required_ub_bits"] is None:
             status = "unsupported"
             diagnostic = "required_ub_bits missing from compiler metadata"

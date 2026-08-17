@@ -601,6 +601,11 @@ case 的完整 stdout/stderr 都会单独保存到同一结果目录下的 `logs
 路径，因此运行疑似卡住时可以在另一个终端直接 `tail -f`。case 超时后 runner
 会终止该候选及其启动的编译器/runtime 子进程，再继续下一组配置。
 
+若日志出现 `ERR9999` 且显示 `bishengir-opt` 返回 1，真正原因位于同一 case
+日志中随后输出的 `bishengir-opt failed` 段。该段会记录实际 executable、返回码
+以及完整 stdout/stderr。这个阶段负责把项目 `triton-mlir-opt` 产生的 MLIR
+bytecode 解码成文本，发生在 `bishengir-compile` 和三个实验 pass 参数之前。
+
 A3 元数据必须满足：
 
 ```text
@@ -621,6 +626,10 @@ limit_auto_multi_buffer_buffer == no-limit
 ```
 
 DynamicCV 若回退为 false，该配置会记录为“不支持”，不会混入有效测量。
+case 日志会输出 `dynamic_cv_pipeline_fallback` 及其 return code，CSV 的原因列还会
+列出最近 compiler metadata 中每个不匹配字段的实际值和期望值。若 HSTU 或
+unified 的全部配置都显示 `enable_dynamic_cv_pipeline=False expected=True`，说明
+这些 kernel 全部触发了 DynamicCV fallback，不是实验参数没有传入。
 
 可调整运行策略：
 

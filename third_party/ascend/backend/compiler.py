@@ -145,6 +145,7 @@ def _export_coalesce_metadata(mod, metadata, *, require_row_contract=False):
 
 def _adjust_metadata_by_module_result(mod, metadata, opt, **kwargs):
     rc = _get_then_remove_rc(mod, "triton_ascend.dynamic_cv_pipeline.rc")
+    metadata["dynamic_cv_pipeline_return_code"] = rc if rc != -1 else None
     if rc != -1 and rc > 0:
         # When the option dynamic_cv_pipeline is set to False,
         # these options should also reverted.
@@ -152,8 +153,14 @@ def _adjust_metadata_by_module_result(mod, metadata, opt, **kwargs):
         metadata["enable_mixed_cv"] = kwargs["enable_mixed_cv"]
         metadata["disable_auto_inject_block_sync"] = kwargs["disable_auto_inject_block_sync"]
         metadata["set_workspace_multibuffer"] = kwargs["set_workspace_multibuffer"]
-        if opt.debug:
-            print(f"SSBUFFER return code={rc}, will fallback to enable_dynamic_cv_pipeline=False")
+        if opt.debug or os.getenv("TRITON_PRINT_AUTOTUNING") == "1":
+            print(
+                "[EXPERIMENT] dynamic_cv_pipeline_fallback="
+                + json.dumps({
+                    "return_code": rc,
+                    "enable_dynamic_cv_pipeline": False,
+                }, sort_keys=True)
+            )
 
 
 def _get_dump_paths(hash_key: str, src_path: str, dst_path: str) -> Tuple[str, str]:
@@ -392,13 +399,23 @@ def bc_to_linalg_by_bishengir_opt(bc_data: bytes, metadata, opt):
 
         bishengir_opt_path, env = _get_bishengir_opt_path()
 
-        subprocess.run([
+        result = subprocess.run([
             bishengir_opt_path,
             bc_path,
             "--mlir-print-debuginfo",
             "-o",
             mlir_path,
-        ], env=env, capture_output=True, check=True, text=True)
+        ], env=env, capture_output=True, check=False, text=True)
+        if result.returncode != 0:
+            stdout = result.stdout.strip() or "<empty>"
+            stderr = result.stderr.strip() or "<empty>"
+            raise RuntimeError(
+                "bishengir-opt failed while decoding Triton MLIR bytecode\n"
+                f"executable: {bishengir_opt_path}\n"
+                f"returncode: {result.returncode}\n"
+                f"stdout:\n{stdout}\n"
+                f"stderr:\n{stderr}"
+            )
 
         # Read the generated MLIR text
         linalg_text = Path(mlir_path).read_text()
