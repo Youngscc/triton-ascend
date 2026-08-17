@@ -37,9 +37,12 @@ Triton Ascend
 
 **API参考**
 
-- :doc:`triton.language API <triton_api/index>`
-- :doc:`triton <triton_api/triton/index>`
-- :doc:`libdevice开发者手册 <libdevice/libdevice_developer_guide>`
+- :doc:`triton <python-api/triton>`
+- :doc:`triton.language <python-api/triton.language>`
+- :doc:`triton.testing <python-api/triton.testing>`
+.. - :doc:`triton.language.extra.cann.extension <python-api/triton.language.extra.cann.extension>`
+.. - :doc:`triton.language.extra.cann.libdevice <python-api/triton.language.extra.cann.libdevice>`
+.. - :doc:`triton.extension.buffer.language <python-api/triton.extension.buffer.language>`
 
 **特性说明**
 
@@ -59,8 +62,6 @@ Triton Ascend
 - :doc:`Contributors <community/CONTRIBUTOR>`
 - :doc:`安全声明 <community/SECURITYNOTE_zh>`
 
-
-.. toctree 驱动侧栏导航。
 
 .. toctree::
    :hidden:
@@ -97,9 +98,12 @@ Triton Ascend
    :titlesonly:
    :caption: API参考
 
-   triton.language API <triton_api/index>
-   triton <triton_api/triton/index>
-   libdevice开发者手册 <libdevice/libdevice_developer_guide>
+   triton <python-api/triton>
+   triton.language <python-api/triton.language>
+   triton.testing <python-api/triton.testing>
+..   triton.language.extra.cann.extension <python-api/triton.language.extra.cann.extension>
+..   triton.language.extra.cann.libdevice <python-api/triton.language.extra.cann.libdevice>
+..   triton.extension.buffer.language <python-api/triton.extension.buffer.language>
 
 .. toctree::
    :hidden:

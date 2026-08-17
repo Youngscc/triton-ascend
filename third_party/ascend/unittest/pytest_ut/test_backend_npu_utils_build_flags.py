@@ -5,6 +5,10 @@ import types
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+pytestmark = pytest.mark.backend("none")
+
 DEFAULT_UTILS_PATH = (Path(__file__).resolve().parents[2] / "backend" / "utils.py")
 
 
@@ -104,3 +108,22 @@ def test_a3_detection_falls_back_to_torch_device_name(monkeypatch):
     monkeypatch.setitem(sys.modules, "torch_npu", types.ModuleType("torch_npu"))
 
     assert not utils.is_compile_on_910_95()
+
+
+@pytest.mark.parametrize(
+    ("arch", "raw_ub_kib", "graph_budget_bytes"),
+    (
+        ("Ascend910B1", 192, 96 * 1024),
+        ("Ascend910_9581", 256, 128 * 1024),
+        ("Ascend950A3", 256, 128 * 1024),
+        ("", 0, 0),
+        ("unknown-arch", 0, 0),
+        (None, 0, 0),
+    ),
+)
+def test_graph_ub_budget_resolves_from_explicit_arch(arch, raw_ub_kib, graph_budget_bytes):
+    """The compiler-side resolver must not depend on the active NPU device."""
+    utils = _load_utils_module()
+
+    assert utils.ub_size_in_kbytes_for_arch(arch) == raw_ub_kib
+    assert utils.graph_ub_budget_bytes_for_arch(arch) == graph_budget_bytes

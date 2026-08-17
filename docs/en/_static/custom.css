@@ -19,3 +19,9 @@ article table.docutils {
     text-decoration: none;
     margin-right: 8px;
 }
+
+/* DataType support tables: center the √/× support marks */
+div.dtype-support-table table.docutils th:not(:first-child),
+div.dtype-support-table table.docutils td:not(:first-child) {
+    text-align: center;
+}
