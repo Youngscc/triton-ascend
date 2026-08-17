@@ -96,6 +96,7 @@ SIMPLE_CSV_SUFFIX_FIELDNAMES = [
     "运行延迟_ms",
     "UB使用_KiB",
     "本轮总耗时_s",
+    "日志文件",
 ]
 
 
@@ -428,6 +429,9 @@ def write_simple_table(
                     "运行延迟_ms": row["latency_ms"],
                     "UB使用_KiB": row["required_ub_kib"],
                     "本轮总耗时_s": row["wall_time_s"],
+                    "日志文件": str(
+                        Path("logs") / Path(row["log_path"]).name
+                    ),
                 }
             )
     return csv_path
@@ -584,12 +588,8 @@ def main() -> int:
         args.output_dir
         or ROOT / ".codex-remote/results" / f"{run_id}-{operator}"
     ).resolve()
-    if args.simple_output:
-        result_dir.mkdir(parents=True, exist_ok=False)
-        logs_dir = None
-    else:
-        logs_dir = result_dir / "logs"
-        logs_dir.mkdir(parents=True, exist_ok=False)
+    logs_dir = result_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=False)
     cache_dir = Path(os.environ.get("TRITON_CACHE_DIR", Path.home() / ".triton/cache"))
 
     vf_merge_values = (
@@ -663,7 +663,7 @@ def main() -> int:
         progress.begin(
             key, pipeline_axis, pipeline_value, multibuffer_num, merge
         )
-        log_path = logs_dir / f"{key}.log" if logs_dir is not None else None
+        log_path = logs_dir / f"{key}.log"
         env = os.environ.copy()
         env.pop("EXPERIMENT_DEPTH", None)
         env.pop("EXPERIMENT_INTRA_CACHE_NUM", None)
@@ -730,13 +730,12 @@ def main() -> int:
                 output = output.decode("utf-8", errors="replace")
             returncode = 124
         wall_time = time.monotonic() - started
-        if log_path is not None:
-            log_header = (
-                "[EXPERIMENT] requested_parameters="
-                + json.dumps(requested_parameters, sort_keys=True)
-                + "\n"
-            )
-            log_path.write_text(log_header + output)
+        log_header = (
+            "[EXPERIMENT] requested_parameters="
+            + json.dumps(requested_parameters, sort_keys=True)
+            + "\n"
+        )
+        log_path.write_text(log_header + output)
         audit_lines = tuple(
             dict.fromkeys(
                 line
@@ -791,19 +790,16 @@ def main() -> int:
 
         diagnostic = compact_diagnostic(status, output, diagnostic)
 
-        if status != "measured":
-            if args.simple_output:
-                progress.log(f"{key} 结果={simple_result(status)}")
-            else:
-                print_candidate_failure(
-                    key=key,
-                    status=status,
-                    returncode=returncode,
-                    diagnostic=diagnostic,
-                    output=output,
-                    log_path=log_path,
-                    emit=progress.log,
-                )
+        if status != "measured" and not args.simple_output:
+            print_candidate_failure(
+                key=key,
+                status=status,
+                returncode=returncode,
+                diagnostic=diagnostic,
+                output=output,
+                log_path=log_path,
+                emit=progress.log,
+            )
 
         row = {
             "operator": operator,
@@ -828,10 +824,26 @@ def main() -> int:
             "wall_time_s": round(wall_time, 6),
             "timed_out": timed_out,
             "returncode": returncode,
-            "log_path": str(log_path) if log_path is not None else None,
+            "log_path": str(log_path),
         }
         rows.append(row)
         if args.simple_output:
+            case_fields = [
+                f"CASE {index}/{len(configs)}",
+                f"key={key}",
+                f"{pipeline_axis}={pipeline_value}",
+                f"multibuffer_num={multibuffer_num}",
+                f"vf_merge_level={merge}",
+                f"结果={simple_result(status)}",
+                f"status={status}",
+                f"latency_ms={row['latency_ms'] if row['latency_ms'] is not None else '-'}",
+                f"ub_kib={row['required_ub_kib'] if row['required_ub_kib'] is not None else '-'}",
+                f"wall_time_s={row['wall_time_s']}",
+                f"log=logs/{log_path.name}",
+            ]
+            if status != "measured":
+                case_fields.append(f"原因={simple_reason(row)}")
+            progress.log(" ".join(case_fields))
             result_path = write_simple_table(rows, result_dir, pipeline_axis)
         else:
             write_tables(rows, result_dir)
@@ -848,6 +860,7 @@ def main() -> int:
             f"不支持={result_counts['不支持']}"
         )
         print(f"result_file={result_path}")
+        print(f"case_logs={logs_dir}")
         return 0 if len(rows) == len(configs) else 1
 
     status_counts = Counter(row["status"] for row in rows)

@@ -574,7 +574,16 @@ SWEEP_LIMIT=1 SWEEP_WARMUP=1 SWEEP_ACTIVE=1 \
 每个算子的正式实验包含 32 行。A3 每行对应唯一的
 `(depth, multibuffer_num, vf_merge_level)`；A5 每行对应唯一的
 `(intra_cache_num, multibuffer_num, vf_merge_level)`。失败或不支持的配置不会被
-丢弃，终端会持续显示当前参数以及成功、失败、不支持数量。
+丢弃。终端会持续显示当前参数以及成功、失败、不支持数量；每轮
+结束后还会保留一行不被进度条覆盖的核心日志，例如：
+
+```text
+CASE 1/32 key=i1-b1-m0 intra_cache_num=1 multibuffer_num=1 vf_merge_level=0 结果=成功 status=measured latency_ms=... ub_kib=... wall_time_s=... log=logs/i1-b1-m0.log
+```
+
+失败或不支持行会额外显示简短原因，默认不会把完整 IR 打印到终端。每个
+case 的完整 stdout/stderr 都会单独保存到同一结果目录下的 `logs/<case>.log`；
+编译错误、pipeline 诊断、正确性 mismatch 和 benchmark 输出都在该文件中。
 
 A3 元数据必须满足：
 
@@ -609,7 +618,7 @@ SWEEP_PROGRESS_MODE=plain \
 SWEEP_INCLUDE_VF_MERGE_LEVEL_2=1 \
   ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
 
-# 仅排查编译器时保留逐配置日志、哈希和完整审计信息
+# 仅排查编译器时额外保留哈希、manifest 和完整审计信息
 SWEEP_DETAILED_OUTPUT=1 \
   ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
 ```
@@ -620,10 +629,12 @@ SWEEP_DETAILED_OUTPUT=1 \
 
 ```text
 .codex-remote/results/<UTC+8时间>-<operator>/results.csv
+.codex-remote/results/<UTC+8时间>-<operator>/logs/<case>.log
 ```
 
 `results.csv` 每组一行，直接显示 `成功`、`失败` 或 `不支持`，并保留简短原因、
-延迟、UB 使用量和该轮总耗时。
+延迟、UB 使用量、该轮总耗时和对应日志文件。`logs/` 中每组一个完整日志，
+例如 A5 的 `i3-b2-m1.log` 或 A3 的 `d3-b2-m1.log`。
 
 详细模式下刷新所有算子的最新完整结果和 HTML：
 

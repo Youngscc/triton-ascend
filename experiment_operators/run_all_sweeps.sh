@@ -23,7 +23,8 @@ Runs 32 compiler configurations for exactly one Python operator wrapper.
 A3 varies static CV depth; A5 enables DynamicCV and varies intra_cache_num.
 Both environments vary ordinary multibuffer_num and vf_merge_level.
 vf_merge_level=2 is temporarily excluded unless explicitly enabled.
-By default, the only result record is one readable results.csv file.
+By default, results.csv summarizes the run and logs/<case>.log retains each
+configuration's complete compiler, correctness, and benchmark output.
 
 Useful overrides:
   DRY_RUN=1
@@ -204,7 +205,7 @@ printf '\nstarting single-operator sweep\n'
 printf 'completed operator_file=%s\n' "$OPERATOR_FILE"
 
 if [[ "$DETAILED_OUTPUT" != "1" ]]; then
-  printf '%s\n' 'sweep complete; results.csv is the only result record'
+  printf '%s\n' 'sweep complete; see results.csv and logs/<case>.log'
   exit 0
 fi
 

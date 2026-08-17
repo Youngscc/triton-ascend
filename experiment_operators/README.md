@@ -126,11 +126,12 @@ REMOTE_MODE=dev ./tools/remote_experiment/run.sh \
 ```
 
 Results are written under `.codex-remote/results/<run-id>-<operator>/` inside
-the server checkout. The default repository entry point writes only
-`results.csv`, with one readable row per requested triple. Its result column is
-`成功`, `失败`, or `不支持`; it does not expose hashes, cache keys, binary paths,
-or compiler commands. `--limit N` exists only for controller smoke tests and
-must not be used for a formal 32-row run.
+the server checkout. The default repository entry point writes `results.csv`,
+with one readable row per requested triple, and `logs/<case>.log`, with the
+complete stdout/stderr of each configuration. Its result column is `成功`,
+`失败`, or `不支持`; it does not expose hashes, cache keys, binary paths, or
+compiler commands. `--limit N` exists only for controller smoke tests and must
+not be used for a formal 32-row run.
 
 Each new row records the architecture-specific first axis, `multibuffer_num`,
 and `vf_merge_level`. A3 metadata must resolve static depth with DynamicCV
