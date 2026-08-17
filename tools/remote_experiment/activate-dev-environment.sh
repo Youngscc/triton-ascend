@@ -41,10 +41,15 @@ case "$TRITON_ASCEND_SOC_NAME" in
   *Ascend910_95*|*Ascend950*|*910_958*)
     export TRITON_ASCEND_BITCODE_ARCH=c310
     export BISHENGIR_NATIVE_A5_REGBASE=1
+    # MLIR 22 custom HIVM enum attributes are not bytecode-compatible with
+    # CANN's MLIR 19 reader. The custom compiler accepts the textual IR
+    # directly, preserving the full downstream BishengIR pipeline.
+    export TRITON_ASCEND_USE_BYTECODE=0
     ;;
   *Ascend910B*|*Ascend910_93*)
     export TRITON_ASCEND_BITCODE_ARCH=c220
     unset BISHENGIR_NATIVE_A5_REGBASE
+    unset TRITON_ASCEND_USE_BYTECODE
     ;;
   *)
     printf 'unsupported or unknown experiment SoC: %s\n' \
@@ -53,7 +58,8 @@ case "$TRITON_ASCEND_SOC_NAME" in
     ;;
 esac
 
-printf 'DEV_ENVIRONMENT_OK soc=%s bitcode_arch=%s native_a5_regbase=%s\n' \
+printf 'DEV_ENVIRONMENT_OK soc=%s bitcode_arch=%s native_a5_regbase=%s use_bytecode=%s\n' \
   "$TRITON_ASCEND_SOC_NAME" "$TRITON_ASCEND_BITCODE_ARCH" \
-  "${BISHENGIR_NATIVE_A5_REGBASE:-0}"
+  "${BISHENGIR_NATIVE_A5_REGBASE:-0}" \
+  "${TRITON_ASCEND_USE_BYTECODE:-default}"
 unset _remote_activate_dir

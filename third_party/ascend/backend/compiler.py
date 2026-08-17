@@ -1432,6 +1432,14 @@ class AscendBackend(BaseBackend):
             # Lazy init enable_dynamic_cv_pipeline if not provided
             if options.enable_dynamic_cv_pipeline is None:
                 object.__setattr__(options, "enable_dynamic_cv_pipeline", is_compile_on_910_95())
+            bytecode_override = os.getenv("TRITON_ASCEND_USE_BYTECODE")
+            if bytecode_override is not None:
+                if bytecode_override not in ("0", "1"):
+                    raise ValueError(
+                        "TRITON_ASCEND_USE_BYTECODE must be 0 or 1; "
+                        f"got {bytecode_override!r}"
+                    )
+                object.__setattr__(options, "use_bytecode", bytecode_override == "1")
             # Costmodel path should avoid extra BC<->MLIR conversion stages
             # to keep compile-only autotune routing lightweight and stable.
             if getattr(options, "enable_costmodel_backend", False):

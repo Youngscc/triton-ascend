@@ -508,8 +508,14 @@ source tools/remote_experiment/activate-dev-environment.sh
 预期输出：
 
 ```text
-DEV_ENVIRONMENT_OK soc=<设备型号> bitcode_arch=<c220或c310> native_a5_regbase=<0或1>
+DEV_ENVIRONMENT_OK soc=<设备型号> bitcode_arch=<c220或c310> native_a5_regbase=<0或1> use_bytecode=<default或0>
 ```
+
+A5 项目开发环境固定显示 `use_bytecode=0`。项目 `triton-mlir-opt` 使用 MLIR 22，
+而 CANN `bishengir-opt` 使用 MLIR 19；即使 bytecode version 4 能通过标准 LLVM
+属性门禁，MLIR 22 写出的 `HIVM_AddressSpaceAttr` 枚举参数仍不能被 MLIR 19
+读取。A5 因此直接将文本 MLIR 交给自定义 `bishengir-compile`，仍然执行完整的
+BishengIR/HIVM pipeline，只跳过不兼容的 bytecode 编解码中转。A3 保持默认路径。
 
 确认所有组件来自当前项目：
 
@@ -630,6 +636,9 @@ case 日志会输出 `dynamic_cv_pipeline_fallback` 及其 return code，CSV 的
 列出最近 compiler metadata 中每个不匹配字段的实际值和期望值。若 HSTU 或
 unified 的全部配置都显示 `enable_dynamic_cv_pipeline=False expected=True`，说明
 这些 kernel 全部触发了 DynamicCV fallback，不是实验参数没有传入。
+其中 return code `2` 是 DynamicCV 的 `ERRCODE_IGNORED`，表示当前 IR 不适用该
+pass（例如没有 `linalg.matmul`、命中黑名单或已有 `scope.scope`），不是 pass
+崩溃。此类 kernel 不进入 A5 `intra_cache_num` 正式实验样本。
 
 可调整运行策略：
 

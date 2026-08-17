@@ -264,6 +264,7 @@ def matching_metadata(
     if pipeline_axis == "intra_cache_num":
         expected.update({
             "enable_dynamic_cv_pipeline": True,
+            "use_bytecode": False,
             "intra_cache_num": pipeline_value,
             "inter_cache_num": 1,
             "load_cache_num": 1,
@@ -749,6 +750,7 @@ def main() -> int:
                 "set_workspace_multibuffer": 0,
                 "inter_cache_num": 1,
                 "load_cache_num": 1,
+                "use_bytecode": False,
             })
         progress.log(
             f"[{index}/{len(configs)}] {key} requested_parameters="

@@ -147,13 +147,13 @@ LLVM must match the top-level repository gitlinks in the server checkout.
   current Python/core with the CANN-matched compiler.
 - The top-level Triton and `triton-mlir-opt` use the repository-selected MLIR
   22, while the standalone `bishengir-compile` uses AscendNPU-IR's pinned MLIR
-  19.1.7. The MLIR 22 writer must emit bytecode version 4, the newest tested
-  format that MLIR 19 can consume; bytecode versions 5 and 6 encode native
-  operation properties that fail on the MLIR 19 reader. CANN's
-  `bishengir-opt` decodes version 4 to textual IR before the custom
-  `bishengir-compile` runs. `setup-dev-environment.sh` verifies this boundary
-  with a fresh `llvm.inttoptr` bytecode round trip and prints
-  `MLIR_BYTECODE_ROUNDTRIP_OK`.
+  19.1.7. Bytecode version 4 remains the newest shared format for standard
+  attributes, but it is not sufficient for custom HIVM enum attributes:
+  MLIR 19 cannot decode an MLIR 22 `HIVM_AddressSpaceAttr`. A5 dev activation
+  therefore sets `TRITON_ASCEND_USE_BYTECODE=0` and passes textual MLIR directly
+  to the custom compiler; A3 keeps the default bytecode path. The setup script's
+  `MLIR_BYTECODE_ROUNDTRIP_OK` check covers only the standard `llvm.inttoptr`
+  boundary and must not be treated as proof of custom-attribute compatibility.
 - `dev-compatible` has completed Python-to-benchmark smoke tests for fused
   attention, unified attention, and HSTU forward attention. Initial 2-warmup,
   5-active means were approximately 2.839409 ms, 57.708093 ms, and 0.044769 ms
@@ -211,6 +211,10 @@ usage; never keep only the fastest configuration.
   first axis, and `inter_cache_num` plus `load_cache_num` are fixed to 1.
   DynamicCV fallback resolves the metadata switch to false and is rejected as
   unsupported rather than mixed into measurements.
+- DynamicCV return code 2 is `ERRCODE_IGNORED`, meaning the pass is not
+  applicable to the lowered IR (for example no `linalg.matmul`, a blacklist
+  hit, or an existing `scope.scope`). HSTU and unified attention currently
+  return 2 on A5 and are excluded from the formal `intra_cache_num` corpus.
 - `NPUOptions.multibuffer_num` is a separate ordinary-local multibuffer
   control. The backend forwards it as `--set-local-multibuffer`; the HFusion
   pipelines use it when estimating ordinary multibuffer pressure and selecting

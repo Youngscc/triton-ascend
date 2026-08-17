@@ -139,6 +139,24 @@ class CompilerCostmodelContractTest(unittest.TestCase):
         self.assertTrue(opt_costmodel.enable_costmodel_backend)
         self.assertFalse(opt_costmodel.use_bytecode)
 
+    def test_parse_options_honors_bytecode_environment_override(self):
+        cmplr, _dump_mgr, GPUTarget = self._load_compiler_module()
+        backend = cmplr.AscendBackend(GPUTarget(backend="npu", arch="910B"))
+
+        with mock.patch.dict(cmplr.os.environ, {"TRITON_ASCEND_USE_BYTECODE": "0"}):
+            text_options = backend.parse_options({})
+            self.assertFalse(text_options.use_bytecode)
+            stages = {}
+            backend.add_stages(stages, text_options, None)
+            self.assertNotIn("mlirbc", stages)
+            self.assertNotIn("bcmlir", stages)
+            self.assertIn("npubin", stages)
+        with mock.patch.dict(cmplr.os.environ, {"TRITON_ASCEND_USE_BYTECODE": "1"}):
+            self.assertTrue(backend.parse_options({}).use_bytecode)
+        with mock.patch.dict(cmplr.os.environ, {"TRITON_ASCEND_USE_BYTECODE": "invalid"}):
+            with self.assertRaisesRegex(ValueError, "must be 0 or 1"):
+                backend.parse_options({})
+
     def test_bytecode_writer_targets_bishengir_compatible_version(self):
         cmplr, _dump_mgr, _GPUTarget = self._load_compiler_module()
 
