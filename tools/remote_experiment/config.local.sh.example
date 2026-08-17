@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-# Required by scripts executed directly on the server and in its container.
+# Optional overrides. By default the scripts use the current checkout and
+# container name triton-ascend-exp.
 REMOTE_PROJECT="/absolute/server/path/to/triton-ascend"
 REMOTE_CONTAINER="container-name"
 

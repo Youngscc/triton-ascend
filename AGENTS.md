@@ -26,8 +26,9 @@ Keep the unified A3 and A5/Ascend 950 experiment procedure in
 - Active server project path: `/home/y00969467/triton-ascend`
 - Active experiment container: `triton-ascend-exp`
 
-The ignored server-side `config.local.sh` stores the server project path and
-existing container name; all server scripts load it through `config.sh`.
+The optional ignored `config.local.sh` can override the project path and
+existing container name; without it, `config.sh` uses the current checkout and
+container name `triton-ascend-exp`.
 Workstation paths and the SSH alias are configured only when the offline
 `sync.sh` fallback or optional result retrieval is needed. The server project
 path must be visible at the same absolute path inside the container.

@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
 
 _REMOTE_CONFIG_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+_REMOTE_DEFAULT_PROJECT="$(cd -- "$_REMOTE_CONFIG_DIR/../.." && pwd)"
 if [[ -f "$_REMOTE_CONFIG_DIR/config.local.sh" ]]; then
   # shellcheck source=/dev/null
   source "$_REMOTE_CONFIG_DIR/config.local.sh"
 fi
-unset _REMOTE_CONFIG_DIR
-
-if [[ -z "${REMOTE_PROJECT:-}" || -z "${REMOTE_CONTAINER:-}" ]]; then
-  printf '%s\n' \
-    'Edit REMOTE_PROJECT and REMOTE_CONTAINER in tools/remote_experiment/config.local.sh first.' >&2
-  return 2 2>/dev/null || exit 2
-fi
+REMOTE_PROJECT="${REMOTE_PROJECT:-$_REMOTE_DEFAULT_PROJECT}"
+REMOTE_CONTAINER="${REMOTE_CONTAINER:-triton-ascend-exp}"
+unset _REMOTE_CONFIG_DIR _REMOTE_DEFAULT_PROJECT
 REMOTE_LOG_DIR="${REMOTE_LOG_DIR:-$REMOTE_PROJECT/.codex-remote/logs}"
 REMOTE_VENV="${REMOTE_VENV:-$REMOTE_PROJECT/.codex-remote/venv}"
 REMOTE_COMPILER_BUILD="${REMOTE_COMPILER_BUILD:-$REMOTE_PROJECT/.codex-remote/ascendnpu-ir-build-explicit}"

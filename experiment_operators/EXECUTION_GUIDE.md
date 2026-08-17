@@ -1,7 +1,8 @@
 # Triton-Ascend A3/A5 单算子实验手册
 
-服务器仓库是主工作区。构建和前台实验在已有容器内执行，服务器项目必须以相同
-绝对路径挂载进容器。
+本手册默认所有命令都在实验环境机器上执行；只有“准备离线材料”一节需要一台能
+联网、且 CPU 架构与实验机器相同的 Linux 机器。实验源码、容器和结果均保存在
+实验环境机器本地。
 
 当前默认实验会根据设备选择第一轴，共遍历 32 组配置：
 
@@ -10,116 +11,428 @@ A3: depth(1..4) × multibuffer_num(1..4) × vf_merge_level(0..1)
 A5: intra_cache_num(1..4) × multibuffer_num(1..4) × vf_merge_level(0..1)
 ```
 
-`vf_merge_level=2` 因 A5 RegBase 编译器的 dominance 错误暂时排除。仅在验证
-该问题时设置 `SWEEP_INCLUDE_VF_MERGE_LEVEL_2=1`，恢复全部 48 组。
+`vf_merge_level=2` 因 A5 RegBase 编译器的 dominance 错误暂时排除。仅在诊断该
+问题时设置 `SWEEP_INCLUDE_VF_MERGE_LEVEL_2=1`，恢复全部 48 组。
 
-在 A3 上，正式 sweep 固定 `enable_dynamic_cv_pipeline=false`，第一轴使用原生
-静态 `set_workspace_multibuffer=depth`。在 A5 上，正式 sweep 固定
-`enable_dynamic_cv_pipeline=true`，第一轴改为 `intra_cache_num=1..4`，同时固定
-`inter_cache_num=1`、`load_cache_num=1` 和 `set_workspace_multibuffer=0`。如果
-DynamicCV 前端回退并把元数据中的开关改为 false，该组会记为“不支持”，不会混入
-有效测量。显式的 `multibuffer_num` 同时固定
-`limit_auto_multi_buffer_buffer=no-limit`：四个 count 值在同一个策略下比较，
-并允许普通 multibuffer 作用到 MIX 函数 Vector 侧的 UB Load/Store。未显式传入
-`multibuffer_num` 时仍使用上游默认的 `only-cube`，这种默认运行不属于正式
-count 轴的对照数据。
-
-| 环境 | Python/CANN | bitcode | A5 RegBase |
+| 环境 | 推荐基础镜像 | Python/Torch | bitcode |
 | --- | --- | --- | --- |
-| A3 | Python 3.11 / CANN 9.0 | `c220` | 关闭 |
-| A5/Ascend 950 | Python 3.12 / CANN 9.1 | `c310` | 开启 |
+| A3 | 与设备匹配的 CANN 9.0 devel 镜像 | Python 3.11 / Torch 2.7.1 | `c220` |
+| A5/Ascend 950 | CANN 9.1.0 950 devel 镜像 | Python 3.12 / Torch 2.7.1 | `c310` |
 
-## 1. 准备仓库和容器配置
+下面给出的完整离线文件名和 Python 命令以 A5 x86 为准。A3 使用 CANN 9.0 时，
+`torch-npu` 应改为与其匹配的 `2.7.1.post4`，并在 Python 3.11 的 A3 镜像中准备
+wheelhouse；不要把 A5 的 Python 3.12 wheelhouse 混用到 A3。
 
-在服务器宿主机执行：
+## 快速入口
+
+- 容器、Python 环境、Triton 和 BishengIR 都已经构建好：从[第 8 节](#8-每次进入容器后激活环境)开始。
+- 容器和 Python 依赖已经就绪，但项目尚未构建：从[第 7 节](#7-首次构建)开始。
+- 环境机器不能联网：先在联网机器完成[第 1 节](#1-在联网机器准备离线材料)，再从第 2 节开始。
+- 环境机器可以联网：镜像可直接在第 2 节拉取，Python 包按第 6 节的在线命令安装。
+
+## 1. 在联网机器准备离线材料
+
+完全离线安装需要四类材料：Docker 镜像、Python wheelhouse、包含全部 submodule
+的源码，以及与当前源码匹配的 Triton LLVM 预编译包。四者应在与实验机器相同
+CPU 架构的 Linux 环境中准备；本项目的 A5 环境使用 `linux/amd64`。
+
+### 1.1 下载并导出 CANN Docker 镜像
+
+A5 使用包含编译工具的 `devel` 镜像：
 
 ```bash
-git clone --recurse-submodules git@github.com:Youngscc/triton-ascend.git
+mkdir -p triton-ascend-offline
+cd triton-ascend-offline
+
+IMAGE=quay.io/ascend/cann:9.1.0-950-ubuntu22.04-py3.12-devel
+docker pull --platform linux/amd64 "$IMAGE"
+docker image inspect "$IMAGE" --format '{{.RepoTags}} {{.Architecture}}'
+docker save "$IMAGE" | gzip -1 > cann-9.1.0-950-py3.12-devel-amd64.tar.gz
+sha256sum cann-9.1.0-950-py3.12-devel-amd64.tar.gz \
+  > cann-9.1.0-950-py3.12-devel-amd64.tar.gz.sha256
+```
+
+预期架构为 `amd64`。不要手工解压这个文件；其中的 `layer.tar`、`json` 和
+`VERSION` 是 Docker 镜像层，必须由 `docker load` 导入。
+
+A3 应在 Quay Tags 页面选择与实际 SoC、操作系统、Python 和 CPU 架构匹配的
+`devel` 标签，再用相同的 `docker pull`、`docker save` 流程导出，不要把 A5 的
+`950` 镜像用于 A3。
+
+若确认官方 devel 镜像缺少宿主编译工具，可在联网机器先构建完整派生镜像，再把
+派生镜像而非基础镜像传到离线环境：
+
+```bash
+cat > Dockerfile.triton-ascend-env <<'EOF'
+ARG CANN_BASE_IMAGE
+FROM ${CANN_BASE_IMAGE}
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      git ca-certificates build-essential zlib1g-dev clang-15 lld-15 ccache && \
+    rm -rf /var/lib/apt/lists/*
+EOF
+
+BUILD_IMAGE=triton-ascend-env:cann9.1.0-950-py3.12-amd64
+docker build --platform linux/amd64 \
+  --build-arg CANN_BASE_IMAGE="$IMAGE" \
+  -t "$BUILD_IMAGE" -f Dockerfile.triton-ascend-env .
+docker save "$BUILD_IMAGE" | gzip -1 \
+  > triton-ascend-env-cann9.1.0-950-amd64.tar.gz
+sha256sum triton-ascend-env-cann9.1.0-950-amd64.tar.gz \
+  > triton-ascend-env-cann9.1.0-950-amd64.tar.gz.sha256
+
+# 后续 wheelhouse 也用派生镜像准备。
+IMAGE=$BUILD_IMAGE
+```
+
+使用派生镜像时，后续所有 `IMAGE=...` 均改成
+`triton-ascend-env:cann9.1.0-950-py3.12-amd64`。
+
+### 1.2 下载离线 Python wheelhouse
+
+使用刚拉取的同一镜像下载 wheel，可避免 Python 版本和 CPU 架构不匹配：
+
+```bash
+mkdir -p wheelhouse
+
+docker run --rm --platform linux/amd64 \
+  -v "$PWD/wheelhouse:/wheelhouse" "$IMAGE" bash -c '
+set -e
+python3 -m pip download --dest /wheelhouse \
+  "torch==2.7.1+cpu" \
+  --index-url https://download.pytorch.org/whl/cpu \
+  --extra-index-url https://pypi.org/simple
+
+python3 -m pip download --dest /wheelhouse --no-deps \
+  "torch-npu==2.7.1.post8"
+
+python3 -m pip download --dest /wheelhouse \
+  "cmake>=3.28,<4" "ninja>=1.11.1" wheel setuptools pybind11 \
+  "attrs==24.2.0" "numpy==1.26.4" "scipy==1.13.1" \
+  "decorator==5.1.1" "psutil==6.0.0" pyyaml pandas \
+  "pytest==8.3.2" "pytest-xdist==3.6.1" \
+  --index-url https://repo.huaweicloud.com/repository/pypi/simple
+'
+
+tar -czf python-wheelhouse-py312-amd64.tar.gz wheelhouse
+sha256sum python-wheelhouse-py312-amd64.tar.gz \
+  > python-wheelhouse-py312-amd64.tar.gz.sha256
+```
+
+wheelhouse 不安装 PyPI 的 `triton` 包。实验使用当前仓库源码构建的 Triton，安装
+另一个 `triton` wheel 会造成 Python 文件与 `libtriton.so` 不匹配。
+
+### 1.3 准备包含 submodule 的源码
+
+```bash
+git clone --branch experiment --recurse-submodules \
+  git@github.com:Youngscc/triton-ascend.git
 cd triton-ascend
+git submodule sync --recursive
+git submodule update --init --recursive
+git status --short
+cd ..
 
-cp tools/remote_experiment/config.local.sh.example \
-  tools/remote_experiment/config.local.sh
-vi tools/remote_experiment/config.local.sh
+tar --exclude='triton-ascend/.codex-remote' \
+  -czf triton-ascend-experiment-source.tar.gz triton-ascend
+sha256sum triton-ascend-experiment-source.tar.gz \
+  > triton-ascend-experiment-source.tar.gz.sha256
 ```
 
-填写：
+压缩包必须保留顶层 `.git`、`.git/modules` 和嵌套 submodule 内容。只复制普通
+源码文件会导致构建脚本无法确定当前 commit 和依赖版本。
+
+### 1.4 准备 Triton LLVM
+
+Triton 顶层构建使用项目指定的预编译 LLVM；AscendNPU-IR 则使用它自己
+submodule 中的 LLVM 源码，两者不能互相替代。最稳妥的离线准备方式是在同一
+镜像和同一源码 commit 上完成一次联网的 `setup-dev-environment.sh`，然后打包
+下载到 `~/.triton/llvm/` 下的实际 LLVM 目录：
 
 ```bash
-REMOTE_PROJECT="/服务器绝对路径/triton-ascend"
-REMOTE_CONTAINER="已有实验容器名"
+find ~/.triton/llvm -mindepth 1 -maxdepth 1 -type d -name 'llvm-*' -print
+
+# LLVM_ROOT 必须直接包含 bin、include 和 lib。
+LLVM_ROOT=/root/.triton/llvm/<当前源码下载出的实际目录>
+test -x "$LLVM_ROOT/bin/FileCheck"
+tar -C "$(dirname "$LLVM_ROOT")" -czf triton-llvm-amd64.tar.gz \
+  "$(basename "$LLVM_ROOT")"
+sha256sum triton-llvm-amd64.tar.gz > triton-llvm-amd64.tar.gz.sha256
 ```
 
-项目已存在时更新：
+不要复用其他 Triton commit 的 LLVM 目录。联网环境若不需要离线备份，可跳过
+本小节，让第 7 节首次构建自动下载当前 commit 对应的 LLVM。
+
+## 2. 将离线材料放到环境机器
+
+建议把大文件放到容量充足的持久化磁盘，而不是 `/run` 这类 tmpfs。示例目录：
 
 ```bash
+mkdir -p /opt/triton-ascend-offline
+cd /opt/triton-ascend-offline
+```
+
+将第 1 节生成的文件放入该目录后校验。基础镜像和派生镜像只校验实际传输的
+那个；其余三类离线材料都要通过校验：
+
+```bash
+# 二选一。
+sha256sum -c cann-9.1.0-950-py3.12-devel-amd64.tar.gz.sha256
+# sha256sum -c triton-ascend-env-cann9.1.0-950-amd64.tar.gz.sha256
+
+sha256sum -c python-wheelhouse-py312-amd64.tar.gz.sha256
+sha256sum -c triton-ascend-experiment-source.tar.gz.sha256
+sha256sum -c triton-llvm-amd64.tar.gz.sha256
+```
+
+环境机器能联网时，可只准备源码，并直接执行：
+
+```bash
+IMAGE=quay.io/ascend/cann:9.1.0-950-ubuntu22.04-py3.12-devel
+docker pull "$IMAGE"
+```
+
+完全离线时导入镜像：
+
+```bash
+gzip -dc cann-9.1.0-950-py3.12-devel-amd64.tar.gz | docker load
+IMAGE=quay.io/ascend/cann:9.1.0-950-ubuntu22.04-py3.12-devel
+docker image inspect "$IMAGE" --format '{{.RepoTags}} {{.Architecture}}'
+```
+
+若准备的是上一节的派生镜像，则改为：
+
+```bash
+gzip -dc triton-ascend-env-cann9.1.0-950-amd64.tar.gz | docker load
+IMAGE=triton-ascend-env:cann9.1.0-950-py3.12-amd64
+docker image inspect "$IMAGE" --format '{{.RepoTags}} {{.Architecture}}'
+```
+
+导入镜像通常会额外占用接近压缩包解压后大小的 Docker 存储空间。确认
+`docker info` 中的 `Docker Root Dir` 所在分区空间充足后再导入：
+
+```bash
+docker info --format 'root={{.DockerRootDir}} driver={{.Driver}}'
+df -h "$(docker info --format '{{.DockerRootDir}}')"
+```
+
+## 3. 检查宿主机和 NPU
+
+```bash
+uname -m
+docker version --format '{{.Server.Version}}'
+docker info --format '{{json .Runtimes}}'
+npu-smi info
+```
+
+A5 x86 环境预期 `uname -m` 为 `x86_64`，Docker runtime 列表中包含 `ascend`，
+并且 `npu-smi info` 能看到 Ascend 950。先确认要使用的物理卡空闲；以下示例使用
+物理卡 7。
+
+## 4. 准备项目源码
+
+环境机器能访问 GitHub 时：
+
+```bash
+cd /home
+git clone --branch experiment --recurse-submodules \
+  git@github.com:Youngscc/triton-ascend.git
+cd triton-ascend
+git submodule sync --recursive
+git submodule update --init --recursive
+```
+
+已有仓库更新时：
+
+```bash
+cd /home/triton-ascend
 git fetch origin
+git checkout experiment
 git pull --ff-only
 git submodule sync --recursive
 git submodule update --init --recursive
 ```
 
-检查容器与挂载：
+完全离线时解压第 1 节准备的完整 checkout：
 
 ```bash
-source tools/remote_experiment/config.sh
-docker inspect "$REMOTE_CONTAINER" --format '{{.State.Status}}'
-docker exec "$REMOTE_CONTAINER" test -d "$REMOTE_PROJECT"
+cd /home
+tar -xzf /opt/triton-ascend-offline/triton-ascend-experiment-source.tar.gz
+cd /home/triton-ascend
+git status --short
+git submodule status --recursive
 ```
 
-预期状态为 `running`，项目目录检查退出码为 0。
+## 5. 创建并进入实验容器
 
-## 2. 首次构建
+只选择一种设备注入方式。宿主机已配置 Ascend Docker Runtime 时，使用下面的
+推荐命令；不要再同时添加 `--device=/dev/davinci7` 或
+`ASCEND_RT_VISIBLE_DEVICES=7`，否则可能发生二次卡号映射。
+
+```bash
+cd /home/triton-ascend
+PROJECT=$(pwd -P)
+CONTAINER=triton-ascend-exp
+IMAGE=quay.io/ascend/cann:9.1.0-950-ubuntu22.04-py3.12-devel
+
+docker run -u root -dit \
+  --name "$CONTAINER" \
+  --runtime=ascend \
+  -e ASCEND_VISIBLE_DEVICES=7 \
+  --net=host \
+  --security-opt seccomp=unconfined \
+  --shm-size=64g \
+  -v /opt/triton-ascend-offline:/opt/triton-ascend-offline:ro \
+  -v "$PROJECT:$PROJECT" \
+  -w "$PROJECT" \
+  "$IMAGE" bash
+```
+
+容器中只暴露一张物理卡时，它是逻辑卡 `npu:0`。后续命令不要再把宿主机物理
+编号 7 传给 `torch.npu.set_device` 或 `ASCEND_RT_VISIBLE_DEVICES`。
+
+如果宿主机没有 Ascend Docker Runtime，改用显式设备挂载，且同样不要混用两套
+方式：
+
+```bash
+docker run -u root -dit \
+  --name "$CONTAINER" \
+  --device=/dev/davinci7 \
+  --device=/dev/davinci_manager \
+  --device=/dev/hisi_hdc \
+  -e ASCEND_RT_VISIBLE_DEVICES=7 \
+  --net=host \
+  --security-opt seccomp=unconfined \
+  --shm-size=64g \
+  -v /usr/local/dcmi:/usr/local/dcmi \
+  -v /opt/triton-ascend-offline:/opt/triton-ascend-offline:ro \
+  -v "$PROJECT:$PROJECT" \
+  -w "$PROJECT" \
+  "$IMAGE" bash
+```
 
 进入容器：
 
 ```bash
-source tools/remote_experiment/config.sh
-docker exec -u root -it "$REMOTE_CONTAINER" bash
-cd "$REMOTE_PROJECT"
-source tools/remote_experiment/config.sh
+docker start "$CONTAINER"
+docker exec -u root -it "$CONTAINER" bash
+cd /home/triton-ascend
 ```
 
-检查基础环境：
+## 6. 安装系统和 Python 依赖
+
+先加载 CANN 并检查 devel 镜像中的编译工具：
 
 ```bash
+source tools/remote_experiment/load-cann-environment.sh
 python3 --version
-ninja --version
-clang-15 --version | head -1
-ld.lld-15 --version | head -1
 command -v ccec
 command -v hivmc
-npu-smi info
+command -v bishengir-opt
+command -v clang-15 || command -v clang
+command -v ld.lld-15 || command -v ld.lld
+command -v ninja
 ```
 
-缺少常用 Python 包或 Debian 包时：
+联网且缺少 Ubuntu 构建工具时：
 
 ```bash
-python3 -m pip install <package>
-apt-get update && apt-get install -y <package>
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  git ca-certificates build-essential zlib1g-dev clang-15 lld-15 ccache
 ```
 
-A5 使用：
+离线环境不能用 pip wheel 补系统动态库、编译器或 `zlib1g-dev`。这些工具若不在
+镜像中，应使用第 1.1 节的派生镜像命令；不要在离线机器上反复执行
+`apt-get update`。
 
-```text
-torch==2.7.1
-torch-npu==2.7.1.post8
-```
-
-构建当前仓库的 Triton-Ascend 和 BishengIR：
+创建项目虚拟环境：
 
 ```bash
-JOBS=32 ./tools/remote_experiment/setup-dev-environment.sh
-JOBS=32 ./tools/remote_experiment/rebuild-compiler.sh
+python3 -m venv --system-site-packages .codex-remote/venv
+source .codex-remote/venv/bin/activate
 ```
 
-无法访问 Triton LLVM 下载地址的环境（包括当前 A5 离线环境）必须先定位已解压
-的 LLVM，并为 Triton 构建显式启用离线模式：
+联网安装 A5 Python 包：
 
 ```bash
+python -m pip install --upgrade pip
+python -m pip install "torch==2.7.1+cpu" \
+  --index-url https://download.pytorch.org/whl/cpu
+python -m pip install "torch-npu==2.7.1.post8"
+python -m pip install \
+  "cmake>=3.28,<4" "ninja>=1.11.1" wheel setuptools pybind11 \
+  "attrs==24.2.0" "numpy==1.26.4" "scipy==1.13.1" \
+  "decorator==5.1.1" "psutil==6.0.0" pyyaml pandas \
+  "pytest==8.3.2" "pytest-xdist==3.6.1" \
+  --index-url https://repo.huaweicloud.com/repository/pypi/simple
+```
+
+离线安装时，把只读离线包解压到项目的构建目录，再禁止 pip 访问网络：
+
+```bash
+mkdir -p .codex-remote/offline/python
+tar -xzf /opt/triton-ascend-offline/python-wheelhouse-py312-amd64.tar.gz \
+  -C .codex-remote/offline/python
+
+python -m pip install --no-index \
+  --find-links .codex-remote/offline/python/wheelhouse \
+  "torch==2.7.1+cpu" "torch-npu==2.7.1.post8" \
+  "cmake>=3.28,<4" "ninja>=1.11.1" wheel setuptools pybind11 \
+  "attrs==24.2.0" "numpy==1.26.4" "scipy==1.13.1" \
+  "decorator==5.1.1" "psutil==6.0.0" pyyaml pandas \
+  "pytest==8.3.2" "pytest-xdist==3.6.1"
+```
+
+检查环境：
+
+```bash
+python -m pip check
+python - <<'PY'
+import numpy
+import pandas
+import torch
+import torch_npu
+
+print("torch:", torch.__version__)
+print("torch_npu:", torch_npu.__version__)
+print("visible NPU count:", torch.npu.device_count())
+torch.npu.set_device(0)
+print("logical npu:0:", torch.npu.get_device_name(0))
+PY
+```
+
+单卡容器预期 `visible NPU count: 1`，设备名包含 Ascend 950。若数量为 0，不要
+继续构建或实验，先检查容器设备注入方式。
+
+## 7. 首次构建
+
+### 7.1 联网构建
+
+```bash
+cd /home/triton-ascend
+JOBS=16 TRITON_PARALLEL_LINK_JOBS=2 \
+  ./tools/remote_experiment/setup-dev-environment.sh
+JOBS=16 ./tools/remote_experiment/rebuild-compiler.sh
+```
+
+### 7.2 离线构建
+
+解压第 1 节准备的 LLVM：
+
+```bash
+mkdir -p .codex-remote/llvm
+tar -xzf /opt/triton-ascend-offline/triton-llvm-amd64.tar.gz \
+  -C .codex-remote/llvm
+
 FILECHECK=$(find "$PWD/.codex-remote/llvm" -type f -name FileCheck | head -1)
 LLVM_ROOT=$(dirname "$(dirname "$FILECHECK")")
 test -x "$LLVM_ROOT/bin/FileCheck" && echo LLVM_OK
+```
 
+`LLVM_ROOT` 必须直接包含 `bin/`、`include/` 和 `lib/`。随后执行：
+
+```bash
 TRITON_OFFLINE_BUILD=1 \
 LLVM_SYSPATH="$LLVM_ROOT" \
 TRITON_PARALLEL_LINK_JOBS=2 \
@@ -129,10 +442,7 @@ JOBS=16 \
 JOBS=16 ./tools/remote_experiment/rebuild-compiler.sh
 ```
 
-`LLVM_ROOT` 必须是直接包含 `bin/`、`include/` 和 `lib/` 的目录。离线构建
-检查应先输出 `LLVM_OK`，并且构建期间不应再尝试下载 LLVM。
-
-成功输出包含：
+成功输出应包含：
 
 ```text
 MLIR_BYTECODE_ROUNDTRIP_OK
@@ -140,14 +450,14 @@ TRITON_DEV_IMPORT_OK
 BISHENGIR_PACKAGE_OK soc=<设备型号> bitcode_arch=<c220或c310>
 ```
 
-`setup-dev-environment.sh` 创建 `.codex-remote/venv`，复用容器的 Torch、
-Torch-NPU 和 CANN，并构建当前 checkout 的 Triton。`rebuild-compiler.sh` 构建
-项目固定版本的 BishengIR 和对应设备的 bitcode。
+`setup-dev-environment.sh` 构建当前 checkout 的 Triton 和 `libtriton.so`；
+`rebuild-compiler.sh` 构建仓库 gitlink 指定的 AscendNPU-IR/BishengIR，并生成当前
+SoC 对应的 `c220` 或 `c310` bitcode。
 
-## 3. 每次进入容器后激活环境
+## 8. 每次进入容器后激活环境
 
 ```bash
-cd "$REMOTE_PROJECT"
+cd /home/triton-ascend
 source tools/remote_experiment/activate-dev-environment.sh
 ```
 
@@ -157,161 +467,121 @@ source tools/remote_experiment/activate-dev-environment.sh
 DEV_ENVIRONMENT_OK soc=<设备型号> bitcode_arch=<c220或c310> native_a5_regbase=<0或1>
 ```
 
-快速检查：
+确认所有组件来自当前项目：
 
 ```bash
 which python
 python - <<'PY'
 import os
-import pandas
+import sys
+import torch
 import triton
 from triton._C import libtriton
 
+print("python prefix:", sys.prefix)
 print("triton:", triton.__file__)
 print("libtriton:", libtriton.__file__)
 print("compiler:", os.environ["TRITON_NPU_COMPILER_PATH"])
+print("device:", torch.npu.get_device_name(0))
 PY
 ```
 
-Python 应位于 `.codex-remote/venv/bin`，Triton、`libtriton` 和编译器均应来自
-当前项目。不要只激活 venv；完整环境使用上述激活脚本。
+Python prefix 应位于 `.codex-remote/venv`；Triton、`libtriton.so` 和
+`bishengir-compile` 都应来自当前项目目录。不要只执行 venv 的 `activate`，完整
+实验环境必须使用本节的激活脚本。
 
-## 4. 冒烟验证
-
-查看空闲卡：
-
-```bash
-npu-smi info
-```
+## 9. 冒烟验证
 
 运行 Vector Add：
 
 ```bash
-ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> \
-  python -u third_party/ascend/tutorials/01-vector-add.py
+python -u third_party/ascend/tutorials/01-vector-add.py
 ```
 
-单卡容器可省略 `ASCEND_RT_VISIBLE_DEVICES`。预期输出：
+单卡容器直接使用逻辑卡 `npu:0`，不再设置物理卡号。预期输出包含：
 
 ```text
 The maximum difference between torch and triton is 0.0
 ======Vector Add Test Passed!======
 ```
 
-运行一组实验配置：
+只运行一组实验配置：
 
 ```bash
 SWEEP_LIMIT=1 SWEEP_WARMUP=1 SWEEP_ACTIVE=1 \
   ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
 ```
 
-预期终端显示 `实验完成：成功=1 失败=0 不支持=0`，生成的 `results.csv`
-包含一行结果。
+预期显示 `实验完成：成功=1 失败=0 不支持=0`，并生成只有一行数据的
+`results.csv`。冒烟通过后再运行完整实验。
 
-### A5 mismatch 快速诊断
+## 10. 运行完整实验
 
-当静态 CV depth 出现大规模 correctness mismatch 时，先固定
-`multibuffer_num=1` 和默认的 `vf_merge_level=1`，只比较 dynamic CV 与少量
-静态 depth。容器内执行：
+每条命令只运行一个算子，默认每组 5 次 warmup、30 次 active 测量和 120 秒
+超时：
 
 ```bash
-ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> \
-  python -u experiment_operators/diagnose_a5_mismatch.py --operator fused
+./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
+./run_all_sweeps.sh experiment_operators/candidates/unified_attention.py
+./run_all_sweeps.sh experiment_operators/candidates/hstu_attention.py
+./run_all_sweeps.sh experiment_operators/candidates/flash_attention_npu_v8.py
 ```
 
-单卡容器可省略设备变量。诊断入口会先通过
-`activate-dev-environment.sh` 自动切换到与正式 sweep 相同的项目 venv、
-自编译 BishengIR 和设备 bitcode，然后重新启动诊断。该命令只跑 dynamic、
-A5 静态默认值以及静态
-depth 1--4 六例，使用各自独立的临时缓存，结束后自动删除。终端不会输出
-IR，只显示：
+每个算子的正式实验包含 32 行。A3 每行对应唯一的
+`(depth, multibuffer_num, vf_merge_level)`；A5 每行对应唯一的
+`(intra_cache_num, multibuffer_num, vf_merge_level)`。失败或不支持的配置不会被
+丢弃，终端会持续显示当前参数以及成功、失败、不支持数量。
+
+A3 元数据必须满足：
 
 ```text
-CASE F-DYN result=PASS
-CASE F-DEF result=...
-CASE F-D4 result=PASS
-CASE F-D3 result=MISMATCH count=... total=... max_abs=... lhs_zero=... rhs_zero=... chunks=...,...,...,...
-CASE F-D2 result=MISMATCH count=... total=... max_abs=... lhs_zero=... rhs_zero=... chunks=...,...,...,...
-CASE F-D1 result=MISMATCH count=... total=... max_abs=... lhs_zero=... rhs_zero=... chunks=...,...,...,...
-CONCLUSION ...
+set_workspace_multibuffer == depth
+enable_dynamic_cv_pipeline == false
+limit_auto_multi_buffer_buffer == no-limit
 ```
 
-手工反馈时只需提供这六个 `CASE` 和最后的 `CONCLUSION`。其中 `chunks` 是将
-输出连续等分为四段后的 mismatch 数，可以快速判断错误是否集中在某个流水
-区间。继续诊断 HSTU 或 Unified 时分别执行：
+A5 元数据必须满足：
 
-```bash
-python -u experiment_operators/diagnose_a5_mismatch.py --operator hstu
-python -u experiment_operators/diagnose_a5_mismatch.py --operator unified
+```text
+intra_cache_num == 请求值
+inter_cache_num == 1
+load_cache_num == 1
+set_workspace_multibuffer == 0
+enable_dynamic_cv_pipeline == true
+limit_auto_multi_buffer_buffer == no-limit
 ```
 
-`--operator all` 会串行运行全部十例，仅在单算子结论不足时使用。
+DynamicCV 若回退为 false，该配置会记录为“不支持”，不会混入有效测量。
 
-## 5. 运行完整实验
-
-容器内前台运行：
+可调整运行策略：
 
 ```bash
-ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> \
-  ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
-```
+# 纯文本进度，适合重定向到一个日志文件
+SWEEP_PROGRESS_MODE=plain \
+  ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py \
+  2>&1 | tee fused_attention.log
 
-命令只接收一个算子 Python 文件。单卡容器可省略设备变量。正式实验默认每组
-5 次 warmup、30 次 active 测量和 120 秒超时；失败配置仍会记录并继续运行。
-
-每个算子显示一条总进度条，下一行显示当前
-当前设备的第一轴、`multibuffer_num`、`vf_merge_level` 以及累计的 `success`、`failed`、
-`unsupported`。其中 `success` 对应持久化状态 `measured`，`unsupported` 对应
-同名状态，其余编译失败和正确性失败计入 `failed`。前台终端原地刷新两行；
-后台运行输出可由 `logs.sh latest` 读取的纯文本进度快照。可用
-`SWEEP_PROGRESS_MODE=plain` 强制纯文本，或用 `SWEEP_PROGRESS_MODE=off` 关闭。
-
-默认结果目录只包含一个 `results.csv`。完整实验应有 32 行。A3 每行对应唯一的
-`(depth, multibuffer_num, vf_merge_level)`；A5 每行对应唯一的
-`(intra_cache_num, multibuffer_num, vf_merge_level)`。`结果` 列直接显示 `成功`、
-`失败` 或 `不支持`。其余列只保留简短原因、延迟、UB 和该轮总耗时；
-不显示缓存键、哈希或二进制路径。每组配置仍会在终端打印请求参数、解析后的
-NPU 参数和实际编译器命令，便于确认所有控制值确实传入对应 pass；这些核心
-日志不会额外写成逐配置文件。
-
-每轮缓存 metadata 还必须满足
-在 A3 上，元数据必须满足 `set_workspace_multibuffer == depth` 和
-`enable_dynamic_cv_pipeline == false`；在 A5 上必须满足
-`intra_cache_num` 等于请求值、`inter_cache_num == 1`、`load_cache_num == 1`、
-`set_workspace_multibuffer == 0` 和 `enable_dynamic_cv_pipeline == true`。两者都要求
-`limit_auto_multi_buffer_buffer == no-limit`；不满足时该产物不会被计为有效测量。
-
-在服务器宿主机后台运行：
-
-```bash
-ASCEND_RT_VISIBLE_DEVICES=<空闲物理卡> REMOTE_MODE=dev \
-  ./tools/remote_experiment/run.sh \
+# 仅诊断时恢复 vf_merge_level=2，共 48 组
+SWEEP_INCLUDE_VF_MERGE_LEVEL_2=1 \
   ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
 
-./tools/remote_experiment/logs.sh latest
-```
-
-`Ctrl-C` 只停止日志跟随，不终止后台实验。
-
-只有排查编译器问题时才启用详细审计模式：
-
-```bash
+# 仅排查编译器时保留逐配置日志、哈希和完整审计信息
 SWEEP_DETAILED_OUTPUT=1 \
   ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
 ```
 
-该模式才会额外记录完整参数、编译命令、每轮日志、哈希和聚合报告；正式查看
-32 种默认配置结果时不要启用。
+## 11. 查看结果和生成报告
 
-## 6. 结果和报告
-
-结果位于：
+默认结果位于：
 
 ```text
-.codex-remote/results/<UTC+8时间>-<operator>/
+.codex-remote/results/<UTC+8时间>-<operator>/results.csv
 ```
 
-刷新所有算子的最新完整结果和 HTML：
+`results.csv` 每组一行，直接显示 `成功`、`失败` 或 `不支持`，并保留简短原因、
+延迟、UB 使用量和该轮总耗时。
+
+详细模式下刷新所有算子的最新完整结果和 HTML：
 
 ```bash
 source tools/remote_experiment/activate-dev-environment.sh
@@ -325,10 +595,19 @@ python experiment_operators/summarize_latest.py
 .codex-remote/results/latest-summary/experiment-report.html
 ```
 
-## 7. 常用维护
+## 12. 何时需要重新构建
+
+| 改动 | 操作 |
+| --- | --- |
+| 只修改实验控制器、候选算子参数、报告或文档 | `git pull` 后直接运行，不重新构建 |
+| 修改顶层 `python/`、Triton C++/MLIR 或顶层 LLVM 版本 | 重新执行 `setup-dev-environment.sh` |
+| 修改 AscendNPU-IR 源码、其 nested submodule 或顶层 gitlink | 重新执行 `rebuild-compiler.sh` |
+| 新机器、删除 `.codex-remote/venv` 或首次使用该 checkout | 两个构建脚本都执行 |
+
+## 13. 清理
 
 ```bash
-# 预览后清理 venv 和构建产物
+# 先预览，再清理 venv 和构建产物
 ./tools/remote_experiment/clean-environment.sh rebuild
 ./tools/remote_experiment/clean-environment.sh rebuild --execute
 
@@ -341,32 +620,3 @@ python experiment_operators/summarize_latest.py
 # 删除全部实验结果
 ./tools/remote_experiment/clean-environment.sh results --execute
 ```
-
-服务器无法访问 GitHub 时，可在个人电脑的 `config.local.sh` 额外填写：
-
-```bash
-LOCAL_PROJECT="/本地绝对路径/triton-ascend"
-REMOTE_HOST="服务器SSH别名"
-REMOTE_SOURCE_MODE="rsync"
-```
-
-然后从个人电脑执行：
-
-```bash
-./tools/remote_experiment/sync.sh
-./tools/remote_experiment/pull-results.sh
-```
-
-`sync.sh` 只传非 `python/` 源码和必要的 Git 元数据，完整排除顶层
-`python/`，并统一排除 `__pycache__`、Python 字节码、测试/覆盖率缓存、
-虚拟环境和构建目录。服务器已有的整个 `python/`、自身构建的环境、缓存和
-实验结果都会保留。若旧版同步曾带入电脑端的
-`python/triton/_C/libtriton.so`，需在容器内执行一次：
-
-```bash
-./tools/remote_experiment/clean-environment.sh rebuild --execute
-```
-
-随后按本章的离线 LLVM 参数重新执行环境和编译器构建。
-以后若提交修改了正式的 `python/` 源码，必须在服务器通过 Git 更新或单独
-处理；离线 `sync.sh` 不会传递这些修改。

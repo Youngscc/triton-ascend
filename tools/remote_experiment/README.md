@@ -5,7 +5,9 @@ Git directly on the server. Triton-Ascend builds, BishengIR builds, experiments,
 log following, and report generation all run on the server; build and foreground
 experiment commands run inside the existing experiment container.
 
-Create the ignored server configuration once in the server checkout:
+The scripts default to the current checkout and container name
+`triton-ascend-exp`, so no local configuration is needed for that layout. To
+override either value, create the ignored local configuration:
 
 ```bash
 cd /absolute/server/path/to/triton-ascend
@@ -14,7 +16,7 @@ cp tools/remote_experiment/config.local.sh.example \
 vi tools/remote_experiment/config.local.sh
 ```
 
-The required values are:
+The optional overrides are:
 
 ```bash
 REMOTE_PROJECT="/absolute/server/path/to/triton-ascend"
