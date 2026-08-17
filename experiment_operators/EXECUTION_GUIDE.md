@@ -90,37 +90,78 @@ IMAGE=$BUILD_IMAGE
 
 ### 1.2 下载离线 Python wheelhouse
 
-使用刚拉取的同一镜像下载 wheel，可避免 Python 版本和 CPU 架构不匹配：
+使用刚拉取的同一镜像解析依赖和下载 wheel，可避免 Python 版本、CPU 架构以及
+`torch`/`torch-npu` 组合不匹配。先固定项目的直接依赖；随后在干净 venv 中让
+pip 解析传递依赖、生成精确 lock，并用该 lock 下载全部 wheel：
 
 ```bash
-mkdir -p wheelhouse
+mkdir -p python-offline/wheelhouse
+cat > python-offline/requirements-a5-direct.txt <<'EOF'
+pip==24.3.1
+setuptools==75.8.0
+wheel==0.45.1
+cmake==3.31.10
+ninja==1.11.1.1
+pybind11==2.13.6
+attrs==24.2.0
+numpy==1.26.4
+scipy==1.13.1
+decorator==5.1.1
+psutil==6.0.0
+PyYAML==6.0.2
+pandas==2.2.3
+pytest==8.3.2
+pytest-xdist==3.6.1
+torch==2.7.1+cpu
+torch-npu==2.7.1.post8
+EOF
 
 docker run --rm --platform linux/amd64 \
-  -v "$PWD/wheelhouse:/wheelhouse" "$IMAGE" bash -c '
-set -e
-python3 -m pip download --dest /wheelhouse \
-  "torch==2.7.1+cpu" \
-  --index-url https://download.pytorch.org/whl/cpu \
-  --extra-index-url https://pypi.org/simple
+  -v "$PWD/python-offline:/out" "$IMAGE" bash -c '
+set -euo pipefail
+python3 -m venv /tmp/resolve
+source /tmp/resolve/bin/activate
 
-python3 -m pip download --dest /wheelhouse --no-deps \
-  "torch-npu==2.7.1.post8"
-
-python3 -m pip download --dest /wheelhouse \
-  "cmake>=3.28,<4" "ninja>=1.11.1" wheel setuptools pybind11 \
-  "attrs==24.2.0" "numpy==1.26.4" "scipy==1.13.1" \
-  "decorator==5.1.1" "psutil==6.0.0" pyyaml pandas \
-  "pytest==8.3.2" "pytest-xdist==3.6.1" \
+python -m pip install "pip==24.3.1" \
   --index-url https://repo.huaweicloud.com/repository/pypi/simple
+python -m pip install -r /out/requirements-a5-direct.txt \
+  --index-url https://repo.huaweicloud.com/repository/pypi/simple \
+  --extra-index-url https://download.pytorch.org/whl/cpu
+
+python -m pip check
+python -m pip freeze --all | LC_ALL=C sort \
+  > /out/requirements-a5-py312-amd64.lock.txt
+if grep -qiE "^triton(==| @ )" /out/requirements-a5-py312-amd64.lock.txt; then
+  echo "unexpected PyPI triton dependency in lock" >&2
+  exit 1
+fi
+
+python -m pip download --only-binary=:all: --dest /out/wheelhouse \
+  -r /out/requirements-a5-py312-amd64.lock.txt \
+  --index-url https://repo.huaweicloud.com/repository/pypi/simple \
+  --extra-index-url https://download.pytorch.org/whl/cpu
+
+python3 -m venv /tmp/offline-check
+/tmp/offline-check/bin/python -m pip install --no-index \
+  --find-links /out/wheelhouse \
+  -r /out/requirements-a5-py312-amd64.lock.txt
+/tmp/offline-check/bin/python -m pip check
 '
 
-tar -czf python-wheelhouse-py312-amd64.tar.gz wheelhouse
+tar -czf python-wheelhouse-py312-amd64.tar.gz python-offline
 sha256sum python-wheelhouse-py312-amd64.tar.gz \
   > python-wheelhouse-py312-amd64.tar.gz.sha256
 ```
 
-wheelhouse 不安装 PyPI 的 `triton` 包。实验使用当前仓库源码构建的 Triton，安装
-另一个 `triton` wheel 会造成 Python 文件与 `libtriton.so` 不匹配。
+第一次 `pip check` 验证在线解析结果，第二次验证 wheelhouse 在完全不访问索引时
+仍能独立安装。`--only-binary=:all:` 保证离线目录中只有 wheel；任何包没有适配
+Python 3.12/x86-64 的 wheel 时，下载会直接失败而不是混入源码包。lock 中禁止出现
+PyPI 的 `triton`；实验使用当前仓库源码构建的 Triton，另一个 `triton` wheel 会
+造成 Python 文件与 `libtriton.so` 不匹配。
+
+A3 必须在 A3 的 Python 3.11/CANN 9.0 镜像中重新执行整个解析和验证流程，将
+`torch-npu` 改为 `2.7.1.post4`，并将 lock 和压缩包文件名中的 `a5-py312` 改为
+`a3-py311`。不要手工复用 A5 生成的 lock 或 wheelhouse。
 
 ### 1.3 准备包含 submodule 的源码
 
@@ -356,16 +397,19 @@ source .codex-remote/venv/bin/activate
 联网安装 A5 Python 包：
 
 ```bash
-python -m pip install --upgrade pip
-python -m pip install "torch==2.7.1+cpu" \
-  --index-url https://download.pytorch.org/whl/cpu
-python -m pip install "torch-npu==2.7.1.post8"
-python -m pip install \
-  "cmake>=3.28,<4" "ninja>=1.11.1" wheel setuptools pybind11 \
-  "attrs==24.2.0" "numpy==1.26.4" "scipy==1.13.1" \
-  "decorator==5.1.1" "psutil==6.0.0" pyyaml pandas \
-  "pytest==8.3.2" "pytest-xdist==3.6.1" \
+python -m pip install "pip==24.3.1" \
   --index-url https://repo.huaweicloud.com/repository/pypi/simple
+python -m pip install \
+  "pip==24.3.1" "setuptools==75.8.0" "wheel==0.45.1" \
+  "cmake==3.31.10" "ninja==1.11.1.1" "pybind11==2.13.6" \
+  "attrs==24.2.0" "numpy==1.26.4" "scipy==1.13.1" \
+  "decorator==5.1.1" "psutil==6.0.0" "PyYAML==6.0.2" \
+  "pandas==2.2.3" \
+  "pytest==8.3.2" "pytest-xdist==3.6.1" \
+  "torch==2.7.1+cpu" "torch-npu==2.7.1.post8" \
+  --index-url https://repo.huaweicloud.com/repository/pypi/simple \
+  --extra-index-url https://download.pytorch.org/whl/cpu
+python -m pip check
 ```
 
 离线安装时，把只读离线包解压到项目的构建目录，再禁止 pip 访问网络：
@@ -376,12 +420,8 @@ tar -xzf /opt/triton-ascend-offline/python-wheelhouse-py312-amd64.tar.gz \
   -C .codex-remote/offline/python
 
 python -m pip install --no-index \
-  --find-links .codex-remote/offline/python/wheelhouse \
-  "torch==2.7.1+cpu" "torch-npu==2.7.1.post8" \
-  "cmake>=3.28,<4" "ninja>=1.11.1" wheel setuptools pybind11 \
-  "attrs==24.2.0" "numpy==1.26.4" "scipy==1.13.1" \
-  "decorator==5.1.1" "psutil==6.0.0" pyyaml pandas \
-  "pytest==8.3.2" "pytest-xdist==3.6.1"
+  --find-links .codex-remote/offline/python/python-offline/wheelhouse \
+  -r .codex-remote/offline/python/python-offline/requirements-a5-py312-amd64.lock.txt
 ```
 
 检查环境：
@@ -428,9 +468,13 @@ tar -xzf /opt/triton-ascend-offline/triton-llvm-amd64.tar.gz \
 FILECHECK=$(find "$PWD/.codex-remote/llvm" -type f -name FileCheck | head -1)
 LLVM_ROOT=$(dirname "$(dirname "$FILECHECK")")
 test -x "$LLVM_ROOT/bin/FileCheck" && echo LLVM_OK
+test -f "$LLVM_ROOT/lib/cmake/mlir/MLIRConfig.cmake" && echo MLIR_OK
+test -f "$LLVM_ROOT/lib/cmake/lld/LLDConfig.cmake" && echo LLD_OK
 ```
 
-`LLVM_ROOT` 必须直接包含 `bin/`、`include/` 和 `lib/`。随后执行：
+`LLVM_ROOT` 必须直接包含 `bin/`、`include/` 和 `lib/`，上述三项检查都必须
+输出 `OK`。setup 脚本会将该目录下的 MLIR 和 LLD 配置路径显式传给 CMake，
+避免复用 `LLD_DIR-NOTFOUND`。随后执行：
 
 ```bash
 TRITON_OFFLINE_BUILD=1 \

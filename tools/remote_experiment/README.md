@@ -113,6 +113,12 @@ TRITON_PARALLEL_LINK_JOBS=2 \
 JOBS=4 ./tools/remote_experiment/setup-dev-environment.sh
 ```
 
+When `LLVM_SYSPATH` is set, the setup validates `bin/FileCheck`,
+`lib/cmake/mlir/MLIRConfig.cmake`, and
+`lib/cmake/lld/LLDConfig.cmake`, then passes the MLIR and LLD package
+directories explicitly to CMake. The path must be the LLVM installation root,
+not its parent directory.
+
 `setup-dev-environment.sh` creates `.codex-remote/venv` when it is absent,
 installs a private CMake 3.28+ only when required, builds this checkout's
 Triton-Ascend and `libtriton.so`, performs the editable install, and verifies

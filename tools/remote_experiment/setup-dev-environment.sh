@@ -120,7 +120,39 @@ export TRITON_BUILD_WITH_CCACHE=true
 export TRITON_BUILD_PROTON=OFF
 export TRITON_BUILD_DISTRIBUTED=OFF
 export TRITON_PARALLEL_LINK_JOBS="${TRITON_PARALLEL_LINK_JOBS:-2}"
-export TRITON_APPEND_CMAKE_ARGS=-DTRITON_BUILD_UT=OFF
+
+user_cmake_args="${TRITON_APPEND_CMAKE_ARGS:-}"
+triton_cmake_args=(-DTRITON_BUILD_UT=OFF)
+if [[ -n "${LLVM_SYSPATH:-}" ]]; then
+  if [[ ! -d "$LLVM_SYSPATH" ]]; then
+    printf 'LLVM_SYSPATH does not exist: %s\n' "$LLVM_SYSPATH" >&2
+    exit 1
+  fi
+  llvm_syspath="$(cd -- "$LLVM_SYSPATH" && pwd -P)"
+  llvm_filecheck="$llvm_syspath/bin/FileCheck"
+  llvm_mlir_config="$llvm_syspath/lib/cmake/mlir/MLIRConfig.cmake"
+  llvm_lld_config="$llvm_syspath/lib/cmake/lld/LLDConfig.cmake"
+  test -x "$llvm_filecheck" || {
+    printf 'offline LLVM is missing FileCheck: %s\n' "$llvm_filecheck" >&2
+    exit 1
+  }
+  test -f "$llvm_mlir_config" || {
+    printf 'offline LLVM is missing MLIRConfig.cmake: %s\n' "$llvm_mlir_config" >&2
+    exit 1
+  }
+  test -f "$llvm_lld_config" || {
+    printf 'offline LLVM is missing LLDConfig.cmake: %s\n' "$llvm_lld_config" >&2
+    exit 1
+  }
+  triton_cmake_args+=(
+    "-DMLIR_DIR=$llvm_syspath/lib/cmake/mlir"
+    "-DLLD_DIR=$llvm_syspath/lib/cmake/lld"
+  )
+  printf 'offline LLVM: %s\n' "$llvm_syspath"
+fi
+printf -v generated_cmake_args '%q ' "${triton_cmake_args[@]}"
+generated_cmake_args="${generated_cmake_args% }"
+export TRITON_APPEND_CMAKE_ARGS="${user_cmake_args:+$user_cmake_args }$generated_cmake_args"
 export GIT_DIR="$repo_git_dir"
 export GIT_WORK_TREE="$REMOTE_PROJECT"
 
