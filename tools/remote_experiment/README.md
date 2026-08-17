@@ -40,9 +40,9 @@ git submodule update --init --recursive
 
 Use `sync.sh` from a workstation only when the server cannot access GitHub. The
 fallback transfer excludes `.codex-remote`, virtual environments, build/cache
-directories, Python caches, coverage/test caches, and the entire top-level
-`python/` tree. It never writes the workstation's Python sources, generated
-packages, Triton tools, or `libtriton` library into the server `python/` tree.
+directories, Python caches, coverage/test caches, generated packages, and
+locally built binaries under `python/triton/_C`. Tracked Python sources are
+transferred, including `python/build_helpers.py` and the Triton package source.
 The cache/build exclusion policy is also applied to AscendNPU-IR. The fallback
 still transfers the Git metadata needed by the build without replacing server
 experiment artifacts. Set
@@ -50,13 +50,12 @@ experiment artifacts. Set
 fallback; a normal server clone uses the default `auto` mode and its own `.git`.
 
 Excluded files already present on the server are deliberately preserved. This
-includes the complete server-side `python/` tree, venv, compiler build, cache,
-and experiment results.
+includes locally built files under `python/triton/_C`, the venv, compiler build,
+cache, and experiment results.
 Do not add `--delete-excluded` to `sync.sh`. If an older sync already copied a
 workstation binary such as `python/triton/_C/libtriton.so`, run the documented
 `clean-environment.sh rebuild --execute` step once inside the server container
-and rebuild there. Changes committed under `python/` must be delivered with Git
-on the server or handled explicitly; offline `sync.sh` will not transfer them.
+and rebuild there.
 
 ## Create or repair the development environment
 

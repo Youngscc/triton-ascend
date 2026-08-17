@@ -72,7 +72,16 @@ rsync_args=(
   --exclude=.git
   --exclude=.codex-remote/
   "${generated_excludes[@]}"
-  --exclude=/python/
+  --exclude=/python/triton/_C/*.so
+  --exclude=/python/triton/_C/*.so.*
+  --exclude=/python/triton/_C/*.dylib
+  --exclude=/python/triton/_C/*.dll
+  --exclude=/python/triton/_C/*.pyd
+  --exclude=/python/triton/_C/*.pdb
+  --exclude=/python/triton/_C/*.exe
+  --exclude=/python/triton/_C/*.ilk
+  --exclude=/python/triton/_C/triton-mlir-opt
+  --exclude=/python/triton/_C/FileCheck
   --exclude=/llvm-project/
   --exclude=/llvm-project-*/
   --exclude=/.llvm-project/
