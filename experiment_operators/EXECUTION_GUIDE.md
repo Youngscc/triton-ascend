@@ -549,6 +549,19 @@ The maximum difference between torch and triton is 0.0
 ======Vector Add Test Passed!======
 ```
 
+如果 Vector Add 无输出或超时，先运行不经过 Triton 编译器的 runtime 探针：
+
+```bash
+timeout 30 python -u experiment_operators/diagnose_npu_runtime.py
+echo "exit=$?"
+```
+
+正常结果最后是 `NPU_RUNTIME_OK` 和 `exit=0`。`exit=124` 表示超时，最后一个
+`RUNTIME_STAGE` 精确标明卡在 import、`set_device`、allocate、torch add 或
+`synchronize`。单卡 Ascend Runtime 容器应显示 `device_count 1`；使用
+`ASCEND_VISIBLE_DEVICES=<物理卡>` 创建的容器中，不要再设置
+`ASCEND_RT_VISIBLE_DEVICES` 造成二次编号映射。
+
 只运行一组实验配置：
 
 ```bash
@@ -584,6 +597,9 @@ CASE 1/32 key=i1-b1-m0 intra_cache_num=1 multibuffer_num=1 vf_merge_level=0 结�
 失败或不支持行会额外显示简短原因，默认不会把完整 IR 打印到终端。每个
 case 的完整 stdout/stderr 都会单独保存到同一结果目录下的 `logs/<case>.log`；
 编译错误、pipeline 诊断、正确性 mismatch 和 benchmark 输出都在该文件中。
+日志从 case 启动时开始流式写入，终端的 `requested_parameters` 行会显示其绝对
+路径，因此运行疑似卡住时可以在另一个终端直接 `tail -f`。case 超时后 runner
+会终止该候选及其启动的编译器/runtime 子进程，再继续下一组配置。
 
 A3 元数据必须满足：
 

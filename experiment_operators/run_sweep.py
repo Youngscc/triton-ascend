@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -460,6 +461,24 @@ def print_candidate_failure(
     emit(f"[{key}] full_log={log_path}")
 
 
+def terminate_process_group(process: subprocess.Popen, grace_seconds: float = 5.0) -> None:
+    """Stop a timed-out candidate and the compiler/runtime children it started."""
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=grace_seconds)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    process.wait()
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     operator_group = parser.add_mutually_exclusive_group(required=True)
@@ -706,36 +725,38 @@ def main() -> int:
         progress.log(
             f"[{index}/{len(configs)}] {key} requested_parameters="
             + json.dumps(requested_parameters, sort_keys=True)
+            + f" log={log_path}"
         )
         started_epoch_ns = time.time_ns()
         started = time.monotonic()
         timed_out = False
-        try:
-            completed = subprocess.run(
-                [sys.executable, "-u", str(candidate)],
-                cwd=ROOT,
-                env=env,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                timeout=args.timeout,
-                check=False,
-            )
-            output = completed.stdout or ""
-            returncode = completed.returncode
-        except subprocess.TimeoutExpired as error:
-            timed_out = True
-            output = error.stdout or ""
-            if isinstance(output, bytes):
-                output = output.decode("utf-8", errors="replace")
-            returncode = 124
-        wall_time = time.monotonic() - started
         log_header = (
             "[EXPERIMENT] requested_parameters="
             + json.dumps(requested_parameters, sort_keys=True)
             + "\n"
         )
-        log_path.write_text(log_header + output)
+        with log_path.open("w", encoding="utf-8") as log_handle:
+            log_handle.write(log_header)
+            log_handle.flush()
+            process = subprocess.Popen(
+                [sys.executable, "-u", str(candidate)],
+                cwd=ROOT,
+                env=env,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            try:
+                returncode = process.wait(timeout=args.timeout)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                terminate_process_group(process)
+                returncode = 124
+            except KeyboardInterrupt:
+                terminate_process_group(process)
+                raise
+        wall_time = time.monotonic() - started
+        output = log_path.read_text(encoding="utf-8", errors="replace")
         audit_lines = tuple(
             dict.fromkeys(
                 line
