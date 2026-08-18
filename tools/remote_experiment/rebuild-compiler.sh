@@ -115,6 +115,16 @@ cmake -S "$llvm_source" -B "$REMOTE_COMPILER_BUILD" -G Ninja \
 cmake --build "$REMOTE_COMPILER_BUILD" \
   --target bishengir-compile bishengir-opt -j "$jobs"
 
+generated_hivm_enums="$(find "$REMOTE_COMPILER_BUILD" \
+  -type f -name HIVMEnums.cpp.inc -print -quit)"
+if [[ -z "$generated_hivm_enums" ]] \
+  || ! grep -q 'ssbuf' "$generated_hivm_enums"; then
+  printf 'generated HIVM enum schema does not contain SSBUF: %s\n' \
+    "${generated_hivm_enums:-not found}" >&2
+  exit 1
+fi
+printf 'HIVM_TABLEGEN_SSBUF_OK file=%s\n' "$generated_hivm_enums"
+
 custom_bishengir_opt="$REMOTE_COMPILER_BUILD/bin/bishengir-opt"
 test -x "$custom_bishengir_opt" || {
   printf 'custom bishengir-opt not found: %s\n' "$custom_bishengir_opt" >&2

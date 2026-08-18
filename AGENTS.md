@@ -159,6 +159,8 @@ LLVM must match the top-level repository gitlinks in the server checkout.
   The compiler build stores AscendNPU-IR and vendored LLVM commits in
   `.source-revisions`; a missing or changed stamp cleans the build targets
   before rebuilding so stale TableGen output cannot retain an old HIVM schema.
+  The rebuild prints `HIVM_TABLEGEN_SSBUF_OK` only after the generated enum
+  implementation itself contains `ssbuf`, before testing either executable.
 - `dev-compatible` has completed Python-to-benchmark smoke tests for fused
   attention, unified attention, and HSTU forward attention. Initial 2-warmup,
   5-active means were approximately 2.839409 ms, 57.708093 ms, and 0.044769 ms
