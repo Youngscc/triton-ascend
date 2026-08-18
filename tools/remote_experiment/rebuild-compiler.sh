@@ -34,6 +34,23 @@ llvm_source="$compiler_source/third-party/llvm-project/llvm"
 system_bc_lib="$REMOTE_SYSTEM_COMPILER_LIB"
 build_lib="$REMOTE_COMPILER_BUILD/lib"
 toolchain_bin="$REMOTE_COMPILER_BUILD/cann-toolchain-bin"
+build_revision_stamp="$REMOTE_COMPILER_BUILD/.source-revisions"
+
+compiler_revision="$(git -C "$compiler_source" rev-parse HEAD)"
+llvm_revision="$(git -C "$compiler_source/third-party/llvm-project" rev-parse HEAD)"
+expected_build_revisions="ascendnpu_ir=$compiler_revision
+llvm_project=$llvm_revision"
+actual_build_revisions=""
+if [[ -f "$build_revision_stamp" ]]; then
+  actual_build_revisions="$(cat "$build_revision_stamp")"
+fi
+if [[ -f "$REMOTE_COMPILER_BUILD/CMakeCache.txt" \
+  && "$actual_build_revisions" != "$expected_build_revisions" ]]; then
+  printf 'BISHENGIR_BUILD_CACHE_RESET old=%s new=%s\n' \
+    "${actual_build_revisions//$'\n'/,}" \
+    "${expected_build_revisions//$'\n'/,}"
+  cmake --build "$REMOTE_COMPILER_BUILD" --target clean
+fi
 
 soc_name="$("$REMOTE_VENV/bin/python" - <<'PY'
 import torch
@@ -186,5 +203,6 @@ test -s "$build_lib/host.bc" || {
   exit 1
 }
 
+printf '%s\n' "$expected_build_revisions" >"$build_revision_stamp"
 printf 'BISHENGIR_PACKAGE_OK soc=%s bitcode_arch=%s tools=compile,opt\n' \
   "$soc_name" "$bitcode_arch"

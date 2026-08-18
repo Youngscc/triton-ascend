@@ -154,6 +154,10 @@ The rebuild also feeds the decoded SSBUF text to the project
 `bishengir-compile` and prints `BISHENGIR_COMPILE_SSBUF_PARSE_OK`. Development
 activation clears `BISHENGIR_LEGACY_A5_REGBASE`, because that switch delegates
 to CANN's older A5 compiler instead of using the merged native pipeline.
+The build directory records the AscendNPU-IR and vendored LLVM commits in
+`.source-revisions`. A missing or changed stamp triggers a target clean before
+configuration, ensuring stale TableGen output cannot preserve an older HIVM
+attribute schema after a Git checkout.
 
 The venv interpreter may be a symlink to `/usr/local/bin/python`. That resolved
 file location is normal and is not used to decide whether the venv is active;

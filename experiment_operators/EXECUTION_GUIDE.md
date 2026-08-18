@@ -458,6 +458,12 @@ JOBS=16 TRITON_PARALLEL_LINK_JOBS=2 \
 JOBS=16 ./tools/remote_experiment/rebuild-compiler.sh
 ```
 
+构建目录使用 `.source-revisions` 记录 AscendNPU-IR 和其 vendored LLVM commit。
+旧构建目录没有记录，或者任一 commit 发生变化时，脚本会先输出
+`BISHENGIR_BUILD_CACHE_RESET` 并清理该构建树的旧 TableGen/目标文件，再进行
+完整重建。这可以防止 Git checkout 后旧生成文件时间戳较新，导致源码已包含新
+枚举而二进制仍链接旧 HIVM schema。
+
 ### 7.2 离线构建
 
 解压第 1 节准备的 LLVM：
