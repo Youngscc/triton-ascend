@@ -175,6 +175,20 @@ tree and BishengIR compiler first, and detects the NPU architecture. On A5 it
 also enables the native project RegBase pipeline; on A3 it leaves that mode
 disabled. A successful activation prints `DEV_ENVIRONMENT_OK`.
 
+To compare a working environment with one that fails after DynamicCV is
+enabled, run the read-only report in both activated shells:
+
+```bash
+./tools/remote_experiment/inspect-compiler-environment.sh \
+  | tee tmp/compiler-environment-report.txt
+```
+
+It reports resolved tools, packages, repository revisions, LLVM/MLIR 22 and
+19 paths, linked libraries, CMake state, and source/generated SSBUF schemas. It
+also performs generic and SSBUF bytecode-v4 roundtrips without launching an NPU
+kernel. Set `ENV_REPORT_SOC_NAME=Ascend950` only when the final compiler parse
+probe cannot infer the SoC from the activated environment.
+
 ## Run experiments
 
 Foreground execution runs inside the container:

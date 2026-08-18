@@ -18,11 +18,11 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RESULTS_DIR = ROOT / ".codex-remote/results"
 SUPPORTED_FIELDS = [
     "operator",
+    "enable_dynamic_cv_pipeline",
     "depth",
     "intra_cache_num",
     "multibuffer_num",
@@ -149,13 +149,8 @@ def load_rows(path: Path) -> list[dict]:
 def is_complete_sweep(manifest: dict, rows: list[dict]) -> bool:
     requested = manifest.get("requested_configuration_count")
     executed = manifest.get("executed_configuration_count")
-    return (
-        isinstance(requested, int)
-        and requested > 0
-        and executed == requested
-        and len(rows) == requested
-        and not manifest.get("limited_smoke_run", False)
-    )
+    return (isinstance(requested, int) and requested > 0 and executed == requested and len(rows) == requested
+            and not manifest.get("limited_smoke_run", False))
 
 
 def find_latest_runs(results_dir: Path) -> dict[str, dict]:
@@ -189,20 +184,16 @@ def find_latest_runs(results_dir: Path) -> dict[str, dict]:
         }
         previous = latest.get(operator)
         if previous is None or (run_time, result_dir.name) > (
-            previous["run_time"],
-            previous["result_dir"].name,
+                previous["run_time"],
+                previous["result_dir"].name,
         ):
             latest[operator] = candidate
     return latest
 
 
 def is_supported(row: dict) -> bool:
-    return (
-        row.get("status") == "measured"
-        and row.get("correctness_status") == "passed"
-        and row.get("latency_ms") is not None
-        and row.get("required_ub_bits") not in (None, 0)
-    )
+    return (row.get("status") == "measured" and row.get("correctness_status") == "passed"
+            and row.get("latency_ms") is not None and row.get("required_ub_bits") not in (None, 0))
 
 
 def coverage(count: int, total: int) -> float:
@@ -221,16 +212,22 @@ def row_depth(row: dict):
 
 
 def pipeline_axis(run: dict) -> str:
-    return (
-        "intra_cache_num"
-        if "intra_cache_num" in run["manifest"].get("axes", {})
-        else "depth"
-    )
+    return ("intra_cache_num" if "intra_cache_num" in run["manifest"].get("axes", {}) else "depth")
 
 
 def row_pipeline_value(row: dict):
     intra = row.get("intra_cache_num")
     return intra if intra is not None else row_depth(row)
+
+
+def row_sort_key(row: dict):
+    pipeline_value = row_pipeline_value(row)
+    return (
+        0 if row.get("enable_dynamic_cv_pipeline") is False else 1,
+        -1 if pipeline_value is None else pipeline_value,
+        row.get("multibuffer_num", -1),
+        row.get("vf_merge_level", -1),
+    )
 
 
 def summarize_run(run: dict) -> dict:
@@ -259,9 +256,15 @@ def summarize_run(run: dict) -> dict:
         "ub_present_count": ub_present,
         "ub_coverage": coverage(ub_present, len(rows)),
         "timed_out_count": timed_out,
-        "distinct_cache_keys": len({row.get("cache_key") for row in rows if row.get("cache_key")}),
-        "distinct_ttir_hashes": len({row.get("ttir_hash") for row in rows if row.get("ttir_hash")}),
-        "distinct_binary_hashes": len({row.get("binary_hash") for row in rows if row.get("binary_hash")}),
+        "distinct_cache_keys": len({row.get("cache_key")
+                                    for row in rows
+                                    if row.get("cache_key")}),
+        "distinct_ttir_hashes": len({row.get("ttir_hash")
+                                     for row in rows
+                                     if row.get("ttir_hash")}),
+        "distinct_binary_hashes": len({row.get("binary_hash")
+                                       for row in rows
+                                       if row.get("binary_hash")}),
         "supported_latency_ms": None,
         "supported_ub_bits": None,
     }
@@ -286,30 +289,14 @@ def supported_rows(latest: dict[str, dict]) -> list[dict]:
     for operator, run in sorted(latest.items()):
         for row in sorted(
             (row for row in run["rows"] if is_supported(row)),
-            key=lambda item: (
-                row_pipeline_value(item),
-                item.get("multibuffer_num", -1),
-                item["vf_merge_level"],
-            ),
+                key=row_sort_key,
         ):
-            output.append(
-                {
-                    field: (
-                        operator
-                        if field == "operator"
-                        else run["run_id"]
-                        if field == "run_id"
-                        else str(run["result_dir"])
-                        if field == "result_dir"
-                        else experiment_schema(run)
-                        if field == "experiment_schema"
-                        else row_depth(row)
-                        if field == "depth"
-                        else row.get(field)
-                    )
-                    for field in SUPPORTED_FIELDS
-                }
-            )
+            output.append({
+                field: (operator if field == "operator" else run["run_id"] if field == "run_id" else
+                        str(run["result_dir"]) if field == "result_dir" else experiment_schema(run) if field ==
+                        "experiment_schema" else row_depth(row) if field == "depth" else row.get(field))
+                for field in SUPPORTED_FIELDS
+            })
     return output
 
 
@@ -389,27 +376,23 @@ def effect_rows(latest: dict[str, dict]) -> list[dict]:
                 reference_latency_median = rounded_median(reference_latency)
                 ub_median = rounded_median(candidate_ub)
                 reference_ub_median = rounded_median(reference_ub)
-                output.append(
-                    {
-                        "operator": operator,
-                        "variable": variable,
-                        "value": value,
-                        "reference_value": reference_value,
-                        "controlled_slice": spec["controlled_slice"],
-                        "matched_samples": len(matched_keys),
-                        "latency_ms_median": latency_median,
-                        "latency_delta_pct": percent_delta(
-                            latency_median, reference_latency_median
-                        ),
-                        "required_ub_kib_median": ub_median,
-                        "ub_delta_pct": percent_delta(ub_median, reference_ub_median),
-                        "latency_ms_mean": rounded_mean(candidate_latency),
-                        "required_ub_kib_mean": rounded_mean(candidate_ub),
-                        "reference_latency_ms_median": reference_latency_median,
-                        "reference_ub_kib_median": reference_ub_median,
-                        "run_id": run["run_id"],
-                    }
-                )
+                output.append({
+                    "operator": operator,
+                    "variable": variable,
+                    "value": value,
+                    "reference_value": reference_value,
+                    "controlled_slice": spec["controlled_slice"],
+                    "matched_samples": len(matched_keys),
+                    "latency_ms_median": latency_median,
+                    "latency_delta_pct": percent_delta(latency_median, reference_latency_median),
+                    "required_ub_kib_median": ub_median,
+                    "ub_delta_pct": percent_delta(ub_median, reference_ub_median),
+                    "latency_ms_mean": rounded_mean(candidate_latency),
+                    "required_ub_kib_mean": rounded_mean(candidate_ub),
+                    "reference_latency_ms_median": reference_latency_median,
+                    "reference_ub_kib_median": reference_ub_median,
+                    "run_id": run["run_id"],
+                })
     return output
 
 
@@ -423,6 +406,7 @@ def write_csv(path: Path, rows: list[dict], fieldnames: list[str]) -> None:
 def write_supported_markdown(path: Path, rows: list[dict]) -> None:
     columns = [
         "operator",
+        "enable_dynamic_cv_pipeline",
         "depth",
         "intra_cache_num",
         "multibuffer_num",
@@ -433,6 +417,7 @@ def write_supported_markdown(path: Path, rows: list[dict]) -> None:
     ]
     labels = [
         "operator",
+        "DynamicCV",
         "CV depth",
         "DynamicCV intra cache",
         "ordinary buffers",
@@ -446,7 +431,7 @@ def write_supported_markdown(path: Path, rows: list[dict]) -> None:
         values = [row.get(column) for column in columns]
         lines.append("| " + " | ".join("" if value is None else str(value) for value in values) + " |")
     if not rows:
-        lines.append("| _no supported configurations_ |  |  |  |  |  |  |  |")
+        lines.append("| _no supported configurations_ |  |  |  |  |  |  |  |  |")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -478,33 +463,25 @@ def write_effects_markdown(path: Path, rows: list[dict]) -> None:
         if variable not in active_variables:
             continue
         selected = [row for row in rows if row["variable"] == variable]
-        lines.extend(
-            [
-                "",
-                f"## {spec['x_label']}",
-                "",
-                f"Controlled slice: `{spec['controlled_slice']}`.",
-                "",
-                "| operator | value | matched | latency median (ms) | latency Δ | UB median (KiB) | UB Δ |",
-                "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
-            ]
-        )
+        lines.extend([
+            "",
+            f"## {spec['x_label']}",
+            "",
+            f"Controlled slice: `{spec['controlled_slice']}`.",
+            "",
+            "| operator | value | matched | latency median (ms) | latency Δ | UB median (KiB) | UB Δ |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ])
         for row in selected:
-            lines.append(
-                "| "
-                + " | ".join(
-                    [
-                        operator_label(row["operator"]),
-                        str(row["value"]),
-                        str(row["matched_samples"]),
-                        format_number(row["latency_ms_median"]),
-                        format_percent(row["latency_delta_pct"]),
-                        format_number(row["required_ub_kib_median"], 3),
-                        format_percent(row["ub_delta_pct"]),
-                    ]
-                )
-                + " |"
-            )
+            lines.append("| " + " | ".join([
+                operator_label(row["operator"]),
+                str(row["value"]),
+                str(row["matched_samples"]),
+                format_number(row["latency_ms_median"]),
+                format_percent(row["latency_delta_pct"]),
+                format_number(row["required_ub_kib_median"], 3),
+                format_percent(row["ub_delta_pct"]),
+            ]) + " |")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -516,9 +493,7 @@ def write_effects_svg(path: Path, rows: list[dict]) -> None:
     legend_row_height = 21
     top = 84 + legend_rows * legend_row_height
     active_variables = {row["variable"] for row in rows}
-    active_specs = [
-        spec for spec in EFFECT_SPECS if spec["variable"] in active_variables
-    ]
+    active_specs = [spec for spec in EFFECT_SPECS if spec["variable"] in active_variables]
     height = top + len(active_specs) * 245 + 30
     outer_x = 45
     row_height = 245
@@ -547,13 +522,11 @@ def write_effects_svg(path: Path, rows: list[dict]) -> None:
         legend_y = 50 + (index // legend_columns) * legend_row_height
         color = operator_color(operator)
         label = html.escape(operator_label(operator))
-        svg.extend(
-            [
-                f'<line x1="{legend_x}" y1="{legend_y}" x2="{legend_x + 24}" y2="{legend_y}" stroke="{color}" stroke-width="3"/>',
-                f'<circle cx="{legend_x + 12}" cy="{legend_y}" r="4" fill="{color}"/>',
-                f'<text x="{legend_x + 31}" y="{legend_y + 4}" font-size="12">{label}</text>',
-            ]
-        )
+        svg.extend([
+            f'<line x1="{legend_x}" y1="{legend_y}" x2="{legend_x + 24}" y2="{legend_y}" stroke="{color}" stroke-width="3"/>',
+            f'<circle cx="{legend_x + 12}" cy="{legend_y}" r="4" fill="{color}"/>',
+            f'<text x="{legend_x + 31}" y="{legend_y + 4}" font-size="12">{label}</text>',
+        ])
 
     for row_index, spec in enumerate(active_specs):
         variable = spec["variable"]
@@ -566,11 +539,7 @@ def write_effects_svg(path: Path, rows: list[dict]) -> None:
             chart_y = panel_y + plot_top
             chart_width = panel_width - plot_left - plot_right
             chart_height = panel_height - plot_top - plot_bottom
-            values = [
-                float(row[metric])
-                for row in variable_rows
-                if row.get(metric) is not None
-            ]
+            values = [float(row[metric]) for row in variable_rows if row.get(metric) is not None]
             low = min([0.0, *values]) if values else -1.0
             high = max([0.0, *values]) if values else 1.0
             span = high - low
@@ -592,21 +561,17 @@ def write_effects_svg(path: Path, rows: list[dict]) -> None:
                 return chart_y + (high - value) * chart_height / (high - low)
 
             title = f"{spec['x_label']} · {metric_title}"
-            svg.extend(
-                [
-                    f'<text x="{panel_x}" y="{panel_y + 18}" font-size="14" font-weight="600">{html.escape(title)}</text>',
-                    f'<rect x="{chart_x:.2f}" y="{chart_y:.2f}" width="{chart_width:.2f}" height="{chart_height:.2f}" fill="none" stroke="#d1d5db"/>',
-                ]
-            )
+            svg.extend([
+                f'<text x="{panel_x}" y="{panel_y + 18}" font-size="14" font-weight="600">{html.escape(title)}</text>',
+                f'<rect x="{chart_x:.2f}" y="{chart_y:.2f}" width="{chart_width:.2f}" height="{chart_height:.2f}" fill="none" stroke="#d1d5db"/>',
+            ])
             for tick_index in range(5):
                 tick = low + (high - low) * tick_index / 4
                 y = y_pos(tick)
-                svg.extend(
-                    [
-                        f'<line x1="{chart_x:.2f}" y1="{y:.2f}" x2="{chart_x + chart_width:.2f}" y2="{y:.2f}" stroke="#e5e7eb"/>',
-                        f'<text x="{chart_x - 8:.2f}" y="{y + 4:.2f}" text-anchor="end" font-size="11" fill="#4b5563">{tick:.1f}</text>',
-                    ]
-                )
+                svg.extend([
+                    f'<line x1="{chart_x:.2f}" y1="{y:.2f}" x2="{chart_x + chart_width:.2f}" y2="{y:.2f}" stroke="#e5e7eb"/>',
+                    f'<text x="{chart_x - 8:.2f}" y="{y + 4:.2f}" text-anchor="end" font-size="11" fill="#4b5563">{tick:.1f}</text>',
+                ])
             if low <= 0 <= high:
                 zero_y = y_pos(0)
                 svg.append(
@@ -614,40 +579,26 @@ def write_effects_svg(path: Path, rows: list[dict]) -> None:
                 )
             for value in x_values:
                 x = x_pos(value)
-                svg.extend(
-                    [
-                        f'<line x1="{x:.2f}" y1="{chart_y + chart_height:.2f}" x2="{x:.2f}" y2="{chart_y + chart_height + 5:.2f}" stroke="#6b7280"/>',
-                        f'<text x="{x:.2f}" y="{chart_y + chart_height + 20:.2f}" text-anchor="middle" font-size="11">{value}</text>',
-                    ]
-                )
+                svg.extend([
+                    f'<line x1="{x:.2f}" y1="{chart_y + chart_height:.2f}" x2="{x:.2f}" y2="{chart_y + chart_height + 5:.2f}" stroke="#6b7280"/>',
+                    f'<text x="{x:.2f}" y="{chart_y + chart_height + 20:.2f}" text-anchor="middle" font-size="11">{value}</text>',
+                ])
             for operator in operators:
                 series = sorted(
-                    (
-                        row
-                        for row in variable_rows
-                        if row["operator"] == operator and row.get(metric) is not None
-                    ),
+                    (row for row in variable_rows if row["operator"] == operator and row.get(metric) is not None),
                     key=lambda row: row["value"],
                 )
                 if not series:
                     continue
                 color = operator_color(operator)
-                points = [
-                    (x_pos(int(row["value"])), y_pos(float(row[metric])), row)
-                    for row in series
-                ]
-                svg.append(
-                    '<polyline fill="none" stroke="{}" stroke-width="2.5" points="{}"/>'.format(
-                        color, " ".join(f"{x:.2f},{y:.2f}" for x, y, _ in points)
-                    )
-                )
+                points = [(x_pos(int(row["value"])), y_pos(float(row[metric])), row) for row in series]
+                svg.append('<polyline fill="none" stroke="{}" stroke-width="2.5" points="{}"/>'.format(
+                    color, " ".join(f"{x:.2f},{y:.2f}" for x, y, _ in points)))
                 for x, y, row in points:
                     tooltip = html.escape(
-                        f"{operator_label(operator)}: {variable}={row['value']}, {metric}={row[metric]:+.3f}%"
-                    )
+                        f"{operator_label(operator)}: {variable}={row['value']}, {metric}={row[metric]:+.3f}%")
                     svg.append(
-                        f'<circle cx="{x:.2f}" cy="{y:.2f}" r="4" fill="{color}"><title>{tooltip}</title></circle>'
-                    )
+                        f'<circle cx="{x:.2f}" cy="{y:.2f}" r="4" fill="{color}"><title>{tooltip}</title></circle>')
             svg.append(
                 f'<text x="{chart_x + chart_width / 2:.2f}" y="{panel_y + panel_height - 2:.2f}" text-anchor="middle" font-size="11" fill="#4b5563">{html.escape(spec["x_label"])}</text>'
             )
@@ -670,13 +621,16 @@ def main() -> int:
     effects = effect_rows(latest)
     per_operator = [summarize_run(run) for _, run in sorted(latest.items())]
     summary = {
-        "selected_operator_count": len(latest),
-        "supported_row_count": len(rows),
-        "operators": per_operator,
-        "controlled_effect_row_count": len(effects),
-        "controlled_effect_method": {
-            spec["variable"]: spec["controlled_slice"] for spec in EFFECT_SPECS
-        },
+        "selected_operator_count":
+        len(latest),
+        "supported_row_count":
+        len(rows),
+        "operators":
+        per_operator,
+        "controlled_effect_row_count":
+        len(effects),
+        "controlled_effect_method": {spec["variable"]: spec["controlled_slice"]
+                                     for spec in EFFECT_SPECS},
         "notes": [
             "Supported means measured, correctness passed, latency present, and nonzero UB present.",
             "A3 varies static CV `depth` with DynamicCV disabled; A5 enables "
@@ -691,9 +645,7 @@ def main() -> int:
     write_csv(output_dir / "effects.csv", effects, EFFECT_FIELDS)
     write_effects_markdown(output_dir / "effects.md", effects)
     write_effects_svg(output_dir / "effects.svg", effects)
-    (output_dir / "effects.json").write_text(
-        json.dumps(effects, indent=2) + "\n", encoding="utf-8"
-    )
+    (output_dir / "effects.json").write_text(json.dumps(effects, indent=2) + "\n", encoding="utf-8")
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     for run in latest.values():
         print(f"latest {run['operator']}: {run['result_dir']}")

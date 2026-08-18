@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run and retain every requested three-axis compiler configuration.
+"""Run and retain every requested compiler configuration.
 
 This is deliberately a small controller around the existing operator wrappers.
 It does not choose a winner and it never drops a failed configuration.
@@ -20,8 +20,7 @@ import sys
 import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-from typing import TextIO
-
+from typing import NamedTuple, TextIO
 
 ROOT = Path(__file__).resolve().parents[1]
 CANDIDATES = {
@@ -34,13 +33,9 @@ PASS_MARKERS = {
     "unified_attention": "Unified Attention Test Passed!",
     "hstu_attention": "HSTU Attention Forward Test Passed!",
 }
-BENCHMARK_RE = re.compile(
-    r"BENCHMARK operator=(?P<operator>\S+) latency_ms=(?P<latency>[0-9.]+) "
-    r"warmup=(?P<warmup>\d+) active=(?P<active>\d+)"
-)
-MISMATCHED_ELEMENTS_RE = re.compile(
-    r"Mismatched elements:\s*(?P<count>[0-9,]+)\s*/", re.IGNORECASE
-)
+BENCHMARK_RE = re.compile(r"BENCHMARK operator=(?P<operator>\S+) latency_ms=(?P<latency>[0-9.]+) "
+                          r"warmup=(?P<warmup>\d+) active=(?P<active>\d+)")
+MISMATCHED_ELEMENTS_RE = re.compile(r"Mismatched elements:\s*(?P<count>[0-9,]+)\s*/", re.IGNORECASE)
 DOMINANCE_ERROR_RE = re.compile(
     r"operand\s+#(?P<operand>\d+)\s+does(?:n't| not)\s+dominate\s+this\s+use",
     re.IGNORECASE,
@@ -50,11 +45,9 @@ MULTIBUFFER_VALUES = (1, 2, 3, 4)
 VF_MERGE_VALUES = (0, 1, 2)
 DEFAULT_VF_MERGE_VALUES = (0, 1)
 A3_EXPERIMENT_SCHEMA = "native-cv-depth+no-dynamic-cv+independent-local-multibuffer-v4"
-A5_EXPERIMENT_SCHEMA = "dynamic-cv-intra-cache+independent-local-multibuffer-v1"
+A5_EXPERIMENT_SCHEMA = "dynamic-cv-off-first+intra-cache+independent-local-multibuffer-v2"
 OPERATOR_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
-SOURCE_BENCHMARK_OPERATOR_RE = re.compile(
-    r"BENCHMARK\s+operator=([A-Za-z0-9][A-Za-z0-9_.-]*)"
-)
+SOURCE_BENCHMARK_OPERATOR_RE = re.compile(r"BENCHMARK\s+operator=([A-Za-z0-9][A-Za-z0-9_.-]*)")
 CSV_FIELDNAMES = [
     "operator",
     "depth",
@@ -90,6 +83,7 @@ CSV_FIELDNAMES = [
 ]
 SIMPLE_CSV_SUFFIX_FIELDNAMES = [
     "序号",
+    "enable_dynamic_cv_pipeline",
     "multibuffer_num",
     "vf_merge_level",
     "结果",
@@ -99,6 +93,13 @@ SIMPLE_CSV_SUFFIX_FIELDNAMES = [
     "本轮总耗时_s",
     "日志文件",
 ]
+
+
+class SweepConfig(NamedTuple):
+    dynamic_cv_pipeline: bool
+    pipeline_value: int | None
+    multibuffer_num: int
+    vf_merge_level: int
 
 
 class SweepProgress:
@@ -118,9 +119,7 @@ class SweepProgress:
         self._owns_stream = False
         self.mode = os.environ.get("SWEEP_PROGRESS_MODE", "auto").lower()
         if self.mode not in {"auto", "terminal", "plain", "off"}:
-            raise SystemExit(
-                "SWEEP_PROGRESS_MODE must be auto, terminal, plain, or off"
-            )
+            raise SystemExit("SWEEP_PROGRESS_MODE must be auto, terminal, plain, or off")
         self.stream, self.interactive = self._select_stream()
 
     def _select_stream(self) -> tuple[TextIO, bool]:
@@ -132,9 +131,7 @@ class SweepProgress:
             terminal = open("/dev/tty", "w", encoding="utf-8")
         except OSError:
             if self.mode == "terminal":
-                raise SystemExit(
-                    "SWEEP_PROGRESS_MODE=terminal requires a controlling terminal"
-                )
+                raise SystemExit("SWEEP_PROGRESS_MODE=terminal requires a controlling terminal")
             return sys.stdout, False
         self._owns_stream = True
         return terminal, True
@@ -143,14 +140,10 @@ class SweepProgress:
         ratio = self.completed / self.total if self.total else 1.0
         filled = min(self.BAR_WIDTH, round(ratio * self.BAR_WIDTH))
         bar = "#" * filled + "-" * (self.BAR_WIDTH - filled)
-        progress = (
-            f"[{self.operator}] [{bar}] {self.completed}/{self.total} "
-            f"({ratio * 100:5.1f}%)"
-        )
-        details = (
-            f"current: {self.current} | success={self.success} "
-            f"failed={self.failed} unsupported={self.unsupported}"
-        )
+        progress = (f"[{self.operator}] [{bar}] {self.completed}/{self.total} "
+                    f"({ratio * 100:5.1f}%)")
+        details = (f"current: {self.current} | success={self.success} "
+                   f"failed={self.failed} unsupported={self.unsupported}")
         return progress, details
 
     def _clear_interactive(self) -> None:
@@ -177,15 +170,16 @@ class SweepProgress:
         self,
         key: str,
         pipeline_axis: str,
-        pipeline_value: int,
+        pipeline_value: int | None,
+        dynamic_cv_pipeline: bool,
         multibuffer_num: int,
         merge: int,
     ) -> None:
-        self.current = (
-            f"{key} {pipeline_axis}={pipeline_value} "
-            f"multibuffer_num={multibuffer_num} "
-            f"vf_merge_level={merge}"
-        )
+        pipeline_display = "N/A" if pipeline_value is None else pipeline_value
+        self.current = (f"{key} dynamic_cv={str(dynamic_cv_pipeline).lower()} "
+                        f"{pipeline_axis}={pipeline_display} "
+                        f"multibuffer_num={multibuffer_num} "
+                        f"vf_merge_level={merge}")
         self.render()
 
     def finish_candidate(self, key: str, status: str) -> None:
@@ -217,11 +211,17 @@ class SweepProgress:
             self.stream.close()
 
 
-def requested_configs(vf_merge_values):
+def requested_configs(is_a5: bool, vf_merge_values):
+    if is_a5:
+        # Establish the no-CV baseline first. Depth 1 makes the native static
+        # CV pass a no-op while retaining a valid single workspace buffer.
+        for multibuffer_num in MULTIBUFFER_VALUES:
+            for merge in vf_merge_values:
+                yield SweepConfig(False, None, multibuffer_num, merge)
     for pipeline_value in PIPELINE_VALUES:
         for multibuffer_num in MULTIBUFFER_VALUES:
             for merge in vf_merge_values:
-                yield pipeline_value, multibuffer_num, merge
+                yield SweepConfig(is_a5, pipeline_value, multibuffer_num, merge)
 
 
 def sha256(path: Path | None) -> str | None:
@@ -239,9 +239,7 @@ def git_value(*args: str) -> str | None:
     top_git = ROOT / ".codex-remote/top-git"
     if not (ROOT / ".git").exists() and (top_git / "HEAD").is_file():
         command.extend([f"--git-dir={top_git}", f"--work-tree={ROOT}"])
-    result = subprocess.run(
-        [*command, *args], cwd=ROOT, text=True, capture_output=True, check=False
-    )
+    result = subprocess.run([*command, *args], cwd=ROOT, text=True, capture_output=True, check=False)
     value = result.stdout.strip()
     return value if result.returncode == 0 and value else None
 
@@ -249,7 +247,8 @@ def git_value(*args: str) -> str | None:
 def matching_metadata(
     cache_dir: Path,
     pipeline_axis: str,
-    pipeline_value: int,
+    pipeline_value: int | None,
+    dynamic_cv_pipeline: bool,
     multibuffer_num: int,
     merge: int,
     min_mtime_ns: int,
@@ -261,7 +260,8 @@ def matching_metadata(
         "vf_merge_level": merge,
         "limit_auto_multi_buffer_buffer": "no-limit",
     }
-    if pipeline_axis == "intra_cache_num":
+    if pipeline_axis == "intra_cache_num" and dynamic_cv_pipeline:
+        assert pipeline_value is not None
         expected.update({
             "enable_dynamic_cv_pipeline": True,
             "intra_cache_num": pipeline_value,
@@ -269,7 +269,13 @@ def matching_metadata(
             "load_cache_num": 1,
             "set_workspace_multibuffer": 0,
         })
+    elif pipeline_axis == "intra_cache_num":
+        expected.update({
+            "enable_dynamic_cv_pipeline": False,
+            "set_workspace_multibuffer": 1,
+        })
     else:
+        assert pipeline_value is not None
         expected.update({
             "enable_dynamic_cv_pipeline": False,
             "set_workspace_multibuffer": pipeline_value,
@@ -300,10 +306,8 @@ def matching_metadata(
     if closest_mismatch is None:
         return None, None, f"no recent compiler metadata found under {cache_dir}"
     _, _, path, metadata, mismatches = closest_mismatch
-    details = ", ".join(
-        f"{name}={actual!r} expected={wanted!r}"
-        for name, (actual, wanted) in sorted(mismatches.items())
-    )
+    details = ", ".join(f"{name}={actual!r} expected={wanted!r}" for name, (actual,
+                                                                            wanted) in sorted(mismatches.items()))
     fallback_rc = metadata.get("dynamic_cv_pipeline_return_code")
     if fallback_rc is not None:
         details += f", dynamic_cv_pipeline_return_code={fallback_rc!r}"
@@ -313,7 +317,8 @@ def matching_metadata(
 def artifact_row(
     cache_dir: Path,
     pipeline_axis: str,
-    pipeline_value: int,
+    pipeline_value: int | None,
+    dynamic_cv_pipeline: bool,
     multibuffer_num: int,
     merge: int,
     min_mtime_ns: int,
@@ -323,6 +328,7 @@ def artifact_row(
         cache_dir,
         pipeline_axis,
         pipeline_value,
+        dynamic_cv_pipeline,
         multibuffer_num,
         merge,
         min_mtime_ns,
@@ -377,9 +383,7 @@ def write_tables(rows: list[dict], result_dir: Path):
             handle.write(json.dumps(row, sort_keys=True) + "\n")
     with csv_path.open("w", newline="") as handle:
         # A3 exposes static depth; A5 exposes DynamicCV intra cache count.
-        writer = csv.DictWriter(
-            handle, fieldnames=CSV_FIELDNAMES, extrasaction="ignore"
-        )
+        writer = csv.DictWriter(handle, fieldnames=CSV_FIELDNAMES, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -400,10 +404,8 @@ def compact_diagnostic(status: str, output: str, default: str) -> str:
     if status == "compile_failed":
         dominance = DOMINANCE_ERROR_RE.search(output)
         if dominance:
-            return (
-                "BuildFinalHIVMPipelines dominance error: "
-                f"operand #{dominance.group('operand')}"
-            )
+            return ("BuildFinalHIVMPipelines dominance error: "
+                    f"operand #{dominance.group('operand')}")
     return default
 
 
@@ -427,42 +429,36 @@ def simple_reason(row: dict) -> str:
     if row["diagnostic"] == "compiler metadata missing or does not match fixed experiment options":
         return "未找到与参数匹配的编译结果"
     if row["diagnostic"].startswith("compiler metadata mismatch: "):
-        return "编译结果参数不匹配：" + row["diagnostic"].removeprefix(
-            "compiler metadata mismatch: "
-        )
+        return "编译结果参数不匹配：" + row["diagnostic"].removeprefix("compiler metadata mismatch: ")
     return "当前配置不支持"
 
 
-def write_simple_table(
-    rows: list[dict], result_dir: Path, pipeline_axis: str
-) -> Path:
+def write_simple_table(rows: list[dict], result_dir: Path, pipeline_axis: str) -> Path:
     csv_path = result_dir / "results.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
         fieldnames = [
             SIMPLE_CSV_SUFFIX_FIELDNAMES[0],
+            SIMPLE_CSV_SUFFIX_FIELDNAMES[1],
             pipeline_axis,
-            *SIMPLE_CSV_SUFFIX_FIELDNAMES[1:],
+            *SIMPLE_CSV_SUFFIX_FIELDNAMES[2:],
         ]
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for number, row in enumerate(rows, 1):
             result = simple_result(row["status"])
-            writer.writerow(
-                {
-                    "序号": number,
-                    pipeline_axis: row[pipeline_axis],
-                    "multibuffer_num": row["multibuffer_num"],
-                    "vf_merge_level": row["vf_merge_level"],
-                    "结果": result,
-                    "原因": simple_reason(row),
-                    "运行延迟_ms": row["latency_ms"],
-                    "UB使用_KiB": row["required_ub_kib"],
-                    "本轮总耗时_s": row["wall_time_s"],
-                    "日志文件": str(
-                        Path("logs") / Path(row["log_path"]).name
-                    ),
-                }
-            )
+            writer.writerow({
+                "序号": number,
+                "enable_dynamic_cv_pipeline": row["enable_dynamic_cv_pipeline"],
+                pipeline_axis: row[pipeline_axis],
+                "multibuffer_num": row["multibuffer_num"],
+                "vf_merge_level": row["vf_merge_level"],
+                "结果": result,
+                "原因": simple_reason(row),
+                "运行延迟_ms": row["latency_ms"],
+                "UB使用_KiB": row["required_ub_kib"],
+                "本轮总耗时_s": row["wall_time_s"],
+                "日志文件": str(Path("logs") / Path(row["log_path"]).name),
+            })
     return csv_path
 
 
@@ -479,11 +475,9 @@ def print_candidate_failure(
     """Make failed candidates visible in the foreground sweep output."""
     emit(f"[{key}] FAILED status={status} returncode={returncode}: {diagnostic}")
     if output.strip():
-        emit(
-            f"----- {key} subprocess output begin -----\n"
-            f"{output.rstrip()}\n"
-            f"----- {key} subprocess output end -----"
-        )
+        emit(f"----- {key} subprocess output begin -----\n"
+             f"{output.rstrip()}\n"
+             f"----- {key} subprocess output end -----")
     else:
         emit(f"[{key}] subprocess produced no output")
     emit(f"[{key}] full_log={log_path}")
@@ -591,28 +585,19 @@ def resolve_operator(args: argparse.Namespace) -> tuple[str, Path, str | None, s
         raise SystemExit(f"operator file must be a Python file: {candidate}")
 
     registered_operator = next(
-        (
-            name
-            for name, registered_path in CANDIDATES.items()
-            if registered_path.resolve() == candidate
-        ),
+        (name for name, registered_path in CANDIDATES.items() if registered_path.resolve() == candidate),
         None,
     )
     inferred_name = source_benchmark_operator(candidate)
-    operator = normalized_operator_name(
-        args.operator_name or registered_operator or inferred_name or candidate.stem
-    )
+    operator = normalized_operator_name(args.operator_name or registered_operator or inferred_name or candidate.stem)
     if not OPERATOR_NAME_RE.fullmatch(operator):
         raise SystemExit(f"invalid operator name: {operator!r}")
 
     pass_marker = args.pass_marker
     if pass_marker is None and registered_operator is not None:
         pass_marker = PASS_MARKERS[registered_operator]
-    correctness_evidence = (
-        f"stdout marker: {pass_marker}"
-        if pass_marker is not None
-        else "successful process exit followed by BENCHMARK output"
-    )
+    correctness_evidence = (f"stdout marker: {pass_marker}"
+                            if pass_marker is not None else "successful process exit followed by BENCHMARK output")
     return operator, candidate, pass_marker, correctness_evidence
 
 
@@ -624,112 +609,130 @@ def main() -> int:
     is_a5 = os.environ.get("BISHENGIR_NATIVE_A5_REGBASE") == "1"
     pipeline_axis = "intra_cache_num" if is_a5 else "depth"
     experiment_schema = A5_EXPERIMENT_SCHEMA if is_a5 else A3_EXPERIMENT_SCHEMA
-    dynamic_cv_pipeline = is_a5
 
     # The experiment container does not necessarily ship the IANA tzdata
     # database.  A fixed UTC+8 offset gives the desired local run ID without
     # adding a package or changing the shared container environment.
     experiment_timezone = timezone(timedelta(hours=8), name="UTC+08:00")
     run_id = datetime.now(experiment_timezone).strftime("%Y%m%dT%H%M%S%z")
-    result_dir = (
-        args.output_dir
-        or ROOT / ".codex-remote/results" / f"{run_id}-{operator}"
-    ).resolve()
+    result_dir = (args.output_dir or ROOT / ".codex-remote/results" / f"{run_id}-{operator}").resolve()
     logs_dir = result_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=False)
     cache_dir = Path(os.environ.get("TRITON_CACHE_DIR", Path.home() / ".triton/cache"))
 
-    vf_merge_values = (
-        VF_MERGE_VALUES
-        if args.include_vf_merge_level_2
-        else DEFAULT_VF_MERGE_VALUES
-    )
-    configs = list(requested_configs(vf_merge_values))
-    requested_configuration_count = (
-        len(PIPELINE_VALUES) * len(MULTIBUFFER_VALUES) * len(vf_merge_values)
-    )
+    vf_merge_values = (VF_MERGE_VALUES if args.include_vf_merge_level_2 else DEFAULT_VF_MERGE_VALUES)
+    configs = list(requested_configs(is_a5, vf_merge_values))
+    requested_configuration_count = len(configs)
     if args.limit is not None:
         if args.limit < 1:
             raise SystemExit("--limit must be positive")
-        configs = configs[: args.limit]
+        configs = configs[:args.limit]
 
     manifest = {
-        "run_id": run_id,
-        "timezone": "UTC+08:00",
-        "experiment_schema": experiment_schema,
-        "operator": operator,
-        "candidate": str(candidate),
-        "correctness_evidence": correctness_evidence,
-        "git_commit": git_value("rev-parse", "HEAD"),
-        "ascend_npu_ir_commit": git_value(
-            "rev-parse", "HEAD:third_party/ascend/AscendNPU-IR"
-        ),
-        "git_status": git_value("status", "--short", "--ignore-submodules=dirty") or "",
-        "python": sys.version,
-        "warmup": args.warmup,
-        "active": args.active,
-        "timeout_s": args.timeout,
-        "benchmark_method": os.environ.get("TRITON_BENCH_METHOD", "npu/default"),
-        "requested_configuration_count": requested_configuration_count,
-        "executed_configuration_count": len(configs),
-        "limited_smoke_run": args.limit is not None,
+        "run_id":
+        run_id,
+        "timezone":
+        "UTC+08:00",
+        "experiment_schema":
+        experiment_schema,
+        "operator":
+        operator,
+        "candidate":
+        str(candidate),
+        "correctness_evidence":
+        correctness_evidence,
+        "git_commit":
+        git_value("rev-parse", "HEAD"),
+        "ascend_npu_ir_commit":
+        git_value("rev-parse", "HEAD:third_party/ascend/AscendNPU-IR"),
+        "git_status":
+        git_value("status", "--short", "--ignore-submodules=dirty") or "",
+        "python":
+        sys.version,
+        "warmup":
+        args.warmup,
+        "active":
+        args.active,
+        "timeout_s":
+        args.timeout,
+        "benchmark_method":
+        os.environ.get("TRITON_BENCH_METHOD", "npu/default"),
+        "requested_configuration_count":
+        requested_configuration_count,
+        "executed_configuration_count":
+        len(configs),
+        "limited_smoke_run":
+        args.limit is not None,
         "axes": {
             pipeline_axis: list(PIPELINE_VALUES),
+            "enable_dynamic_cv_pipeline": [False, True] if is_a5 else [False],
             "multibuffer_num": list(MULTIBUFFER_VALUES),
             "vf_merge_level": list(vf_merge_values),
         },
-        "resolved_cv_constraint": (
-            "dynamic CV: intra_cache_num is explicit and "
-            "set_workspace_multibuffer == 0"
-            if is_a5
-            else "static CV: set_workspace_multibuffer == depth"
-        ),
-        "dynamic_cv_pipeline_constraint": (
-            "enable_dynamic_cv_pipeline == true"
-            if is_a5
-            else "enable_dynamic_cv_pipeline == false"
-        ),
-        "ordinary_multibuffer_constraint": (
-            f"multibuffer_num is independent of {pipeline_axis}"
-        ),
-        "ordinary_multibuffer_strategy": "limit_auto_multi_buffer_buffer == no-limit",
-        "fixed_dynamic_cv_buffer_counts": (
-            {"inter_cache_num": 1, "load_cache_num": 1} if is_a5 else None
-        ),
+        "resolved_cv_constraint": ("dynamic CV enabled: intra_cache_num is explicit and "
+                                   "set_workspace_multibuffer == 0; dynamic CV disabled: "
+                                   "intra_cache_num is N/A and set_workspace_multibuffer == 1"
+                                   if is_a5 else "static CV: set_workspace_multibuffer == depth"),
+        "dynamic_cv_pipeline_constraint":
+        ("disabled baseline configurations execute first, followed by "
+         "enabled intra_cache_num configurations" if is_a5 else "enable_dynamic_cv_pipeline == false"),
+        "ordinary_multibuffer_constraint": (f"multibuffer_num is independent of {pipeline_axis}"),
+        "ordinary_multibuffer_strategy":
+        "limit_auto_multi_buffer_buffer == no-limit",
+        "fixed_dynamic_cv_buffer_counts": ({"inter_cache_num": 1, "load_cache_num": 1} if is_a5 else None),
+        "dynamic_cv_disabled_baseline": ({
+            "enable_dynamic_cv_pipeline": False,
+            "set_workspace_multibuffer": 1,
+            "intra_cache_num": None,
+        } if is_a5 else None),
+        "configuration_order": (["dynamic_cv_disabled", "dynamic_cv_enabled"] if is_a5 else ["static_cv"]),
     }
     if not args.simple_output:
-        (result_dir / "manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n"
-        )
+        (result_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
     rows = []
     progress = SweepProgress(operator, len(configs))
-    for index, (pipeline_value, multibuffer_num, merge) in enumerate(configs, 1):
-        key_prefix = "i" if is_a5 else "d"
-        key = f"{key_prefix}{pipeline_value}-b{multibuffer_num}-m{merge}"
+    for index, config in enumerate(configs, 1):
+        dynamic_cv_pipeline = config.dynamic_cv_pipeline
+        pipeline_value = config.pipeline_value
+        multibuffer_num = config.multibuffer_num
+        merge = config.vf_merge_level
+        if is_a5 and not dynamic_cv_pipeline:
+            key = f"dynoff-b{multibuffer_num}-m{merge}"
+        elif is_a5:
+            key = f"dynon-i{pipeline_value}-b{multibuffer_num}-m{merge}"
+        else:
+            key = f"d{pipeline_value}-b{multibuffer_num}-m{merge}"
         progress.begin(
-            key, pipeline_axis, pipeline_value, multibuffer_num, merge
+            key,
+            pipeline_axis,
+            pipeline_value,
+            dynamic_cv_pipeline,
+            multibuffer_num,
+            merge,
         )
         log_path = logs_dir / f"{key}.log"
         env = os.environ.copy()
         env.pop("EXPERIMENT_DEPTH", None)
         env.pop("EXPERIMENT_INTRA_CACHE_NUM", None)
-        env.update(
-            {
-                "ENABLE_PRINT_UB_BITS": "true",
-                "TRITON_ALWAYS_COMPILE": "1",
-                "TRITON_PRINT_AUTOTUNING": "1",
-                "TRITON_PRINT_IR_AFTER_FAILURE": "0",
-                "EXPERIMENT_DYNAMIC_CV": "1" if is_a5 else "0",
-                "EXPERIMENT_MULTIBUFFER_NUM": str(multibuffer_num),
-                "EXPERIMENT_VF_MERGE_LEVEL": str(merge),
-                "EXPERIMENT_WARMUP": str(args.warmup),
-                "EXPERIMENT_ACTIVE": str(args.active),
-            }
-        )
-        if is_a5:
+        env.update({
+            "ENABLE_PRINT_UB_BITS": "true",
+            "TRITON_ALWAYS_COMPILE": "1",
+            "TRITON_PRINT_AUTOTUNING": "1",
+            "TRITON_PRINT_IR_AFTER_FAILURE": "0",
+            "EXPERIMENT_DYNAMIC_CV": "1" if dynamic_cv_pipeline else "0",
+            "EXPERIMENT_MULTIBUFFER_NUM": str(multibuffer_num),
+            "EXPERIMENT_VF_MERGE_LEVEL": str(merge),
+            "EXPERIMENT_WARMUP": str(args.warmup),
+            "EXPERIMENT_ACTIVE": str(args.active),
+        })
+        if is_a5 and dynamic_cv_pipeline:
+            assert pipeline_value is not None
             env["EXPERIMENT_INTRA_CACHE_NUM"] = str(pipeline_value)
+        elif is_a5:
+            env["EXPERIMENT_DEPTH"] = "1"
         else:
+            assert pipeline_value is not None
             env["EXPERIMENT_DEPTH"] = str(pipeline_value)
         requested_parameters = {
             "operator": operator,
@@ -745,25 +748,24 @@ def main() -> int:
             "active": args.active,
             "timeout_s": args.timeout,
         }
-        if is_a5:
+        if is_a5 and dynamic_cv_pipeline:
             requested_parameters.update({
                 "set_workspace_multibuffer": 0,
                 "inter_cache_num": 1,
                 "load_cache_num": 1,
             })
-        progress.log(
-            f"[{index}/{len(configs)}] {key} requested_parameters="
-            + json.dumps(requested_parameters, sort_keys=True)
-            + f" log={log_path}"
-        )
+        elif is_a5:
+            requested_parameters.update({
+                "set_workspace_multibuffer": 1,
+                "inter_cache_num": None,
+                "load_cache_num": None,
+            })
+        progress.log(f"[{index}/{len(configs)}] {key} requested_parameters=" +
+                     json.dumps(requested_parameters, sort_keys=True) + f" log={log_path}")
         started_epoch_ns = time.time_ns()
         started = time.monotonic()
         timed_out = False
-        log_header = (
-            "[EXPERIMENT] requested_parameters="
-            + json.dumps(requested_parameters, sort_keys=True)
-            + "\n"
-        )
+        log_header = ("[EXPERIMENT] requested_parameters=" + json.dumps(requested_parameters, sort_keys=True) + "\n")
         with log_path.open("w", encoding="utf-8") as log_handle:
             log_handle.write(log_header)
             log_handle.flush()
@@ -787,27 +789,18 @@ def main() -> int:
         wall_time = time.monotonic() - started
         output = log_path.read_text(encoding="utf-8", errors="replace")
         audit_lines = tuple(
-            dict.fromkeys(
-                line
-                for line in output.splitlines()
-                if line.startswith("[EXPERIMENT] operator_parameters=")
-                or line.startswith("[EXPERIMENT] resolved_npu_options=")
-                or line.startswith("[EXPERIMENT] dynamic_cv_pipeline_fallback=")
-                or line.startswith("[DEBUG] cmd_list:")
-            )
-        )
+            dict.fromkeys(line for line in output.splitlines() if line.startswith("[EXPERIMENT] operator_parameters=")
+                          or line.startswith("[EXPERIMENT] resolved_npu_options=") or line.startswith(
+                              "[EXPERIMENT] dynamic_cv_pipeline_fallback=") or line.startswith("[DEBUG] cmd_list:")))
         for line in audit_lines:
             progress.log(f"[{key}] {line}")
         benchmark = BENCHMARK_RE.search(output)
-        correctness = (
-            pass_marker in output
-            if pass_marker is not None
-            else returncode == 0 and benchmark is not None
-        )
+        correctness = (pass_marker in output if pass_marker is not None else returncode == 0 and benchmark is not None)
         artifacts = artifact_row(
             cache_dir,
             pipeline_axis,
             pipeline_value,
+            dynamic_cv_pipeline,
             multibuffer_num,
             merge,
             started_epoch_ns - 2_000_000_000,
@@ -856,12 +849,12 @@ def main() -> int:
             "operator": operator,
             "experiment_schema": manifest["experiment_schema"],
             "depth": None if is_a5 else pipeline_value,
-            "intra_cache_num": pipeline_value if is_a5 else None,
+            "intra_cache_num": (pipeline_value if is_a5 and dynamic_cv_pipeline else None),
             "multibuffer_num": multibuffer_num,
-            "set_workspace_multibuffer": 0 if is_a5 else pipeline_value,
+            "set_workspace_multibuffer": (0 if is_a5 and dynamic_cv_pipeline else 1 if is_a5 else pipeline_value),
             "enable_dynamic_cv_pipeline": dynamic_cv_pipeline,
-            "inter_cache_num": 1 if is_a5 else None,
-            "load_cache_num": 1 if is_a5 else None,
+            "inter_cache_num": 1 if is_a5 and dynamic_cv_pipeline else None,
+            "load_cache_num": 1 if is_a5 and dynamic_cv_pipeline else None,
             "limit_auto_multi_buffer_buffer": "no-limit",
             "vf_merge_level": merge,
             "status": status,
@@ -882,7 +875,8 @@ def main() -> int:
             case_fields = [
                 f"CASE {index}/{len(configs)}",
                 f"key={key}",
-                f"{pipeline_axis}={pipeline_value}",
+                f"dynamic_cv={str(dynamic_cv_pipeline).lower()}",
+                f"{pipeline_axis}={pipeline_value if pipeline_value is not None else 'N/A'}",
                 f"multibuffer_num={multibuffer_num}",
                 f"vf_merge_level={merge}",
                 f"结果={simple_result(status)}",
@@ -904,12 +898,10 @@ def main() -> int:
 
     if args.simple_output:
         result_counts = Counter(simple_result(row["status"]) for row in rows)
-        print(
-            "实验完成："
-            f"成功={result_counts['成功']} "
-            f"失败={result_counts['失败']} "
-            f"不支持={result_counts['不支持']}"
-        )
+        print("实验完成："
+              f"成功={result_counts['成功']} "
+              f"失败={result_counts['失败']} "
+              f"不支持={result_counts['不支持']}")
         print(f"result_file={result_path}")
         print(f"case_logs={logs_dir}")
         return 0 if len(rows) == len(configs) else 1

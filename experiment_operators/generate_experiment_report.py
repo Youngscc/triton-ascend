@@ -10,7 +10,6 @@ from pathlib import Path
 
 from summarize_latest import find_latest_runs, is_supported, pipeline_axis, row_depth
 
-
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RESULTS_DIR = ROOT / ".codex-remote/results"
 DEFAULT_TEMPLATE = Path(__file__).with_name("experiment_report_template.html")
@@ -36,7 +35,12 @@ def compact_row(row: dict) -> dict:
         ub_kib = float(row["required_ub_bits"]) / 8192
     return {
         "depth": row_depth(row),
-        "intra_cache_num": row.get("intra_cache_num"),
+        # Keep the report at three visible axes: on A5, the first axis is the
+        # ordered sequence "off, 1, 2, 3, 4" rather than adding a fourth
+        # boolean filter that would obscure the direct baseline comparison.
+        "intra_cache_num":
+        (row.get("intra_cache_num") if row.get("enable_dynamic_cv_pipeline") is not False else "off"),
+        "enable_dynamic_cv_pipeline": row.get("enable_dynamic_cv_pipeline"),
         "multibuffer_num": row.get("multibuffer_num"),
         "vf_merge_level": row.get("vf_merge_level"),
         "status": row.get("status", "missing"),
@@ -53,38 +57,36 @@ def report_data(latest: dict[str, dict]) -> dict:
     operators = []
     for operator, run in sorted(latest.items()):
         rows = [compact_row(row) for row in run["rows"]]
-        operators.append(
-            {
-                "id": operator,
-                "label": OPERATOR_LABELS.get(operator, operator),
-                "run_id": run["run_id"],
-                "schema": run["manifest"].get(
-                    "experiment_schema", "legacy-cv-split-v0"
-                ),
-                "pipeline_axis": pipeline_axis(run),
-                "result_dir": run["result_dir"].name,
-                "row_count": len(rows),
-                "expected_row_count": run["manifest"].get(
-                    "requested_configuration_count"
-                ),
-                "measured_count": sum(is_supported(row) for row in run["rows"]),
-                "distinct_binary_hashes": len(
-                    {
-                        row["binary_hash"]
-                        for row in rows
-                        if row.get("binary_hash")
-                    }
-                ),
-                "distinct_ttir_hashes": len(
-                    {
-                        row.get("ttir_hash")
-                        for row in run["rows"]
-                        if row.get("ttir_hash")
-                    }
-                ),
-                "rows": rows,
-            }
-        )
+        operators.append({
+            "id":
+            operator,
+            "label":
+            OPERATOR_LABELS.get(operator, operator),
+            "run_id":
+            run["run_id"],
+            "schema":
+            run["manifest"].get("experiment_schema", "legacy-cv-split-v0"),
+            "pipeline_axis":
+            pipeline_axis(run),
+            "result_dir":
+            run["result_dir"].name,
+            "row_count":
+            len(rows),
+            "expected_row_count":
+            run["manifest"].get("requested_configuration_count"),
+            "measured_count":
+            sum(is_supported(row) for row in run["rows"]),
+            "distinct_binary_hashes":
+            len({row["binary_hash"]
+                 for row in rows
+                 if row.get("binary_hash")}),
+            "distinct_ttir_hashes":
+            len({row.get("ttir_hash")
+                 for row in run["rows"]
+                 if row.get("ttir_hash")}),
+            "rows":
+            rows,
+        })
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "operators": operators,
@@ -92,12 +94,8 @@ def report_data(latest: dict[str, dict]) -> dict:
 
 
 def safe_json(data: dict) -> str:
-    return (
-        json.dumps(data, separators=(",", ":"), ensure_ascii=False)
-        .replace("&", "\\u0026")
-        .replace("<", "\\u003c")
-        .replace(">", "\\u003e")
-    )
+    return (json.dumps(data, separators=(",", ":"),
+                       ensure_ascii=False).replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e"))
 
 
 def main() -> int:
@@ -117,14 +115,10 @@ def main() -> int:
     template = template_path.read_text(encoding="utf-8")
     placeholder = "__EXPERIMENT_REPORT_DATA__"
     if template.count(placeholder) != 1:
-        raise SystemExit(
-            f"template must contain exactly one {placeholder} placeholder"
-        )
+        raise SystemExit(f"template must contain exactly one {placeholder} placeholder")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        template.replace(placeholder, safe_json(data)), encoding="utf-8"
-    )
+    output_path.write_text(template.replace(placeholder, safe_json(data)), encoding="utf-8")
     print(f"operators={len(data['operators'])}")
     print(f"rows={sum(operator['row_count'] for operator in data['operators'])}")
     print(f"output={output_path}")

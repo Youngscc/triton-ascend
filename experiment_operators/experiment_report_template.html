@@ -256,7 +256,7 @@
       const report = JSON.parse(document.getElementById("experiment-data").textContent);
       const axes = {
         depth: { label: "CV depth", short: "depth" },
-        intra_cache_num: { label: "DynamicCV intra cache 数量", short: "intra cache" },
+        intra_cache_num: { label: "DynamicCV off / intra cache 数量", short: "DynamicCV" },
         multibuffer_num: { label: "普通 multibuffer 数量", short: "multibuffer" },
         vf_merge_level: { label: "VF merge level", short: "merge" }
       };
@@ -280,9 +280,15 @@
       let currentRows = [];
       const preferredValues = {};
 
+      function compareAxisValues(a, b) {
+        if (a === "off") return b === "off" ? 0 : -1;
+        if (b === "off") return 1;
+        return Number(a) - Number(b);
+      }
+
       function uniqueNumeric(rows, key) {
         return [...new Set(rows.map(row => row[key]).filter(value => value !== null && value !== undefined))]
-          .sort((a, b) => Number(a) - Number(b));
+          .sort(compareAxisValues);
       }
 
       function setOptions(select, values, preferred) {
@@ -389,7 +395,7 @@
         return operator.rows
           .filter(row => matches(row, fixedKeys[0], elements.fixedOne.value))
           .filter(row => matches(row, fixedKeys[1], elements.fixedTwo.value))
-          .sort((a, b) => Number(a[elements.axis.value]) - Number(b[elements.axis.value]));
+          .sort((a, b) => compareAxisValues(a[elements.axis.value], b[elements.axis.value]));
       }
 
       function measured(row) {

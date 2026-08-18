@@ -4,15 +4,24 @@
 联网、且 CPU 架构与实验机器相同的 Linux 机器。实验源码、容器和结果均保存在
 实验环境机器本地。
 
-当前默认实验会根据设备选择第一轴，共遍历 32 组配置：
+当前默认实验会根据设备选择配置空间：
 
 ```text
 A3: depth(1..4) × multibuffer_num(1..4) × vf_merge_level(0..1)
-A5: intra_cache_num(1..4) × multibuffer_num(1..4) × vf_merge_level(0..1)
+A5 首先运行 DynamicCV 关闭组:
+    dynamic_cv=false × multibuffer_num(1..4) × vf_merge_level(0..1)
+A5 随后运行 DynamicCV 开启组:
+    intra_cache_num(1..4) × multibuffer_num(1..4) × vf_merge_level(0..1)
 ```
 
 `vf_merge_level=2` 因 A5 RegBase 编译器的 dominance 错误暂时排除。仅在诊断该
-问题时设置 `SWEEP_INCLUDE_VF_MERGE_LEVEL_2=1`，恢复全部 48 组。
+问题时设置 `SWEEP_INCLUDE_VF_MERGE_LEVEL_2=1`。默认 A3 为 32 组、A5 为 40
+组；启用 level 2 后分别为 48 组和 60 组。
+
+关闭语义必须按参数本身判断：`enable_dynamic_cv_pipeline=false` 才是关闭
+DynamicCV，`intra_cache_num=1` 仍属于 DynamicCV 开启组；
+`multibuffer_num=1` 是普通 local buffer 的单缓冲基线；
+`vf_merge_level=0` 表示不运行 VF merge pass。
 
 | 环境 | 推荐基础镜像 | Python/Torch | bitcode |
 | --- | --- | --- | --- |
@@ -572,6 +581,46 @@ which bishengir-opt
 两者都应位于 `.codex-remote/ascendnpu-ir-build-explicit/bin`。不要只执行 venv 的
 `activate`，完整实验环境必须使用本节的激活脚本。
 
+### 对比两套编译环境
+
+在能运行和报错的环境中分别激活完整开发环境，然后执行同一个只读诊断脚本：
+
+```bash
+source tools/remote_experiment/activate-dev-environment.sh
+./tools/remote_experiment/inspect-compiler-environment.sh \
+  | tee tmp/compiler-environment-report.txt
+```
+
+脚本不会运行 NPU kernel，也不会安装或修改任何软件。它会输出系统、NPU、
+Python 包、Triton/CANN/BishengIR/HIVM 工具的实际路径与版本，仓库及 gitlink
+版本、CMake cache、动态库解析，以及 LLVM/MLIR 22 writer 和 LLVM/MLIR 19.1.7
+reader/compiler 的关系。末尾还会执行 bytecode version 4 的普通 IR 和 DynamicCV
+`ssbuf` 两种小型 roundtrip，并打印 `PASS`、`FAIL` 或 `SKIP`。
+
+正常 A5 开发环境的关键结果应为：
+
+```text
+CHECK TOP_LEVEL_MLIR_WRITER_22             PASS
+CHECK BISHENGIR_MLIR_READER_19             PASS
+CHECK HIVM_SOURCE_HAS_SSBUF                 PASS
+CHECK HIVM_TABLEGEN_HAS_SSBUF               PASS
+CHECK BYTECODE_V4_GENERIC_ROUNDTRIP         PASS
+CHECK BYTECODE_V4_SSBUF_ROUNDTRIP           PASS
+CHECK BISHENGIR_COMPILE_SSBUF_PARSE         PASS
+```
+
+若脚本无法自动取得 SoC 名称，只有最后一项会显示 `SKIP`，可明确传入后重试：
+
+```bash
+ENV_REPORT_SOC_NAME=Ascend950 \
+  ./tools/remote_experiment/inspect-compiler-environment.sh
+```
+
+若 `HIVM_SOURCE_HAS_SSBUF=PASS` 但 `HIVM_TABLEGEN_HAS_SSBUF=FAIL`，说明源码已包含
+新枚举，但当前 BishengIR 构建仍是旧产物。若普通 roundtrip 通过而 SSBUF
+roundtrip 失败，问题集中在 DynamicCV 的 HIVM schema/reader，而不是 bytecode
+version 4 的通用兼容性。
+
 ## 9. 冒烟验证
 
 运行 Vector Add：
@@ -622,14 +671,14 @@ SWEEP_LIMIT=1 SWEEP_WARMUP=1 SWEEP_ACTIVE=1 \
 ./run_all_sweeps.sh experiment_operators/candidates/flash_attention_npu_v8.py
 ```
 
-每个算子的正式实验包含 32 行。A3 每行对应唯一的
-`(depth, multibuffer_num, vf_merge_level)`；A5 每行对应唯一的
-`(intra_cache_num, multibuffer_num, vf_merge_level)`。失败或不支持的配置不会被
-丢弃。终端会持续显示当前参数以及成功、失败、不支持数量；每轮
+每个算子的 A3 正式实验包含 32 行。A5 正式实验包含 40 行：先运行 8 个
+`DynamicCV=false` 基线，再运行 32 个唯一的
+`(intra_cache_num, multibuffer_num, vf_merge_level)` 开启组。失败或不支持的配置
+不会被丢弃。终端会持续显示当前参数以及成功、失败、不支持数量；每轮
 结束后还会保留一行不被进度条覆盖的核心日志，例如：
 
 ```text
-CASE 1/32 key=i1-b1-m0 intra_cache_num=1 multibuffer_num=1 vf_merge_level=0 结果=成功 status=measured latency_ms=... ub_kib=... wall_time_s=... log=logs/i1-b1-m0.log
+CASE 1/40 key=dynoff-b1-m0 dynamic_cv=false intra_cache_num=N/A multibuffer_num=1 vf_merge_level=0 结果=成功 status=measured latency_ms=... ub_kib=... wall_time_s=... log=logs/dynoff-b1-m0.log
 ```
 
 失败或不支持行会额外显示简短原因，默认不会把完整 IR 打印到终端。每个
@@ -657,7 +706,16 @@ enable_dynamic_cv_pipeline == false
 limit_auto_multi_buffer_buffer == no-limit
 ```
 
-A5 元数据必须满足：
+A5 DynamicCV 关闭组元数据必须满足：
+
+```text
+intra_cache_num == N/A
+set_workspace_multibuffer == 1
+enable_dynamic_cv_pipeline == false
+limit_auto_multi_buffer_buffer == no-limit
+```
+
+A5 DynamicCV 开启组元数据必须满足：
 
 ```text
 intra_cache_num == 请求值
@@ -685,7 +743,7 @@ SWEEP_PROGRESS_MODE=plain \
   ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py \
   2>&1 | tee fused_attention.log
 
-# 仅诊断时恢复 vf_merge_level=2，共 48 组
+# 仅诊断时恢复 vf_merge_level=2：A3 共 48 组，A5 共 60 组
 SWEEP_INCLUDE_VF_MERGE_LEVEL_2=1 \
   ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
 

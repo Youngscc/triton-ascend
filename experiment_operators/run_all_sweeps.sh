@@ -19,8 +19,9 @@ usage() {
   cat >&2 <<'EOF'
 Usage: ./run_all_sweeps.sh /path/to/operator.py
 
-Runs 32 compiler configurations for exactly one Python operator wrapper.
-A3 varies static CV depth; A5 enables DynamicCV and varies intra_cache_num.
+Runs 32 A3 or 40 A5 compiler configurations for one Python operator wrapper.
+A3 varies static CV depth. A5 runs 8 DynamicCV-disabled baselines first, then
+enables DynamicCV and runs 32 intra_cache_num configurations.
 Both environments vary ordinary multibuffer_num and vf_merge_level.
 vf_merge_level=2 is temporarily excluded unless explicitly enabled.
 By default, results.csv summarizes the run and logs/<case>.log retains each
@@ -34,7 +35,7 @@ Useful overrides:
   SWEEP_LIMIT=N       # smoke test only; incomplete runs are ignored by summary
   SWEEP_PROGRESS_MODE=auto  # auto, terminal, plain, or off
   SWEEP_DETAILED_OUTPUT=0   # set to 1 only for compiler debugging artifacts
-  SWEEP_INCLUDE_VF_MERGE_LEVEL_2=0  # set to 1 to restore all 48 configurations
+  SWEEP_INCLUDE_VF_MERGE_LEVEL_2=0  # set to 1 for 48 A3 or 60 A5 configurations
 EOF
 }
 

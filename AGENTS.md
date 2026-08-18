@@ -187,18 +187,20 @@ The independent variables are:
 
 | Public experiment name | Requested values | Intended compiler control |
 | --- | --- | --- |
-| A3: `depth`; A5: `intra_cache_num` | `1, 2, 3, 4` | A3 uses native static CV workspace/depth with DynamicCV disabled; A5 enables DynamicCV and varies its intra-cache count while fixing inter/load to 1 |
+| A3: `depth`; A5: DynamicCV state plus `intra_cache_num` | A3 `1, 2, 3, 4`; A5 `off`, then `1, 2, 3, 4` | A3 uses native static CV workspace/depth with DynamicCV disabled; A5 first runs a disabled baseline with static depth 1, then enables DynamicCV and varies its intra-cache count while fixing inter/load to 1 |
 | `multibuffer_num` | `1, 2, 3, 4` | independently replace the ordinary local `MarkMultiBuffer` default of 2 through `--set-local-multibuffer`, with the MIX strategy fixed to `no-limit` |
 | `vf_merge_level` | `0, 1, 2` | existing `NPUOptions.vf_merge_level` and `--enable-vf-merge-level` |
 
-The default search space has 32 combinations because VF merge level 2 is
-temporarily excluded; the explicit diagnostic opt-in has 48. There is no
+The default search space has 32 A3 or 40 A5 combinations because VF merge
+level 2 is temporarily excluded; the explicit diagnostic opt-in has 48 A3 or
+60 A5 combinations. A5 always executes its eight DynamicCV-disabled baseline
+combinations before the 32 enabled combinations. There is no
 ordering constraint between ordinary `multibuffer_num` and the first axis. Do not silently
 coerce or drop a combination. Record it as `unsupported`, `compile_failed`,
 `ub_overflow`, `incorrect`, or `measured` with a diagnostic.
 
-Every default accepted operator case must therefore produce 32 rows. A failed or
-unsupported configuration is still an observation and must remain in the
+Every default accepted operator case must therefore produce 32 A3 or 40 A5
+rows. A failed or unsupported configuration is still an observation and must remain in the
 dataset. Successful rows require both latency statistics and non-missing UB
 usage; never keep only the fastest configuration.
 
@@ -268,9 +270,11 @@ usage; never keep only the fastest configuration.
   optimization changes generated code.
 - `experiment_operators/run_sweep.py` is the standalone step-4 controller. A3
   uses schema `native-cv-depth+no-dynamic-cv+independent-local-multibuffer-v4`;
-  A5 uses `dynamic-cv-intra-cache+independent-local-multibuffer-v1`. Both
-  enumerate four first-axis values, four ordinary multibuffer values, and VF
-  levels 0/1 by default. The ordinary MIX strategy is fixed to `no-limit`. It rejects
+  A5 uses `dynamic-cv-off-first+intra-cache+independent-local-multibuffer-v2`.
+  A3 enumerates four depth values. A5 first enumerates the eight DynamicCV-off
+  combinations at static depth 1, then four enabled intra-cache values. Both
+  vary four ordinary multibuffer values and VF levels 0/1 by default. The
+  ordinary MIX strategy is fixed to `no-limit`. It rejects
   cache metadata that does not resolve all three fixed conditions.
   It writes incremental JSONL/CSV rows and per-row logs, records compiler time,
   cache/artifact hashes, correctness, timing, and UB metadata, and never
@@ -279,7 +283,7 @@ usage; never keep only the fastest configuration.
 - The repository-root `run_all_sweeps.sh` is the container-side entry point for
   one complete operator run: pass exactly one Python wrapper path. It activates
   the isolated development venv, selects the repository-built BishengIR,
-  creates a fresh Triton cache, and runs all 32 default configurations for that
+  creates a fresh Triton cache, and runs all 32 A3 or 40 A5 default configurations for that
   operator. It then scans every complete result under `.codex-remote/results`,
   selects the latest run independently for each operator, and refreshes the
   aggregate tables and HTML. Use `DRY_RUN=1` to validate the command without
@@ -462,7 +466,7 @@ for HFusion counts 1, 2, and 4 while proving the tiling estimate changes.
 
 ### 4. Extend autotune configuration and result capture
 
-Generate candidates for the 32 default architecture-specific triples and pass the
+Generate candidates for the 32 A3 or 40 A5 default architecture-specific configurations and pass the
 three values as backend compile options, not `tl.constexpr` kernel arguments.
 Extend the Ascend autotuner (or initially a thin controller around its compile
 and benchmark primitives) to retain, for each candidate:
@@ -535,7 +539,7 @@ collapse distinct experiments.
 2. **Compiler gate:** fix the current custom BishengIR-to-`hivmc` failure.
 3. **Plumbing gate:** one hand-written TTIR case proves each option reaches the
    intended pass and distinct triples create distinct cache keys/artifacts.
-4. **Compile-only gate:** enumerate all 32 default triples and classify every result,
+4. **Compile-only gate:** enumerate all 32 A3 or 40 A5 default configurations and classify every result,
    with UB captured or an explicit reason it is unavailable.
 5. **Measurement gate:** run correctness and stable NPU timing for every
    successfully compiled configuration and verify the output has exactly one
@@ -543,7 +547,7 @@ collapse distinct experiments.
 6. **Corpus gate:** dynamically classify sensitivity for each copied candidate,
    exclude wholly insensitive kernels, and retain the reason for every rejected
    or deferred source.
-7. **Generalization gate:** complete the 32-row default table for multiple accepted
+7. **Generalization gate:** complete the 32-row A3 or 40-row A5 default table for multiple accepted
    mixed Cube/Vector operators; use vector-only and Cube-only cases only as
    labeled negative controls.
 
