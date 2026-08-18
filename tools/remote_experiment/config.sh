@@ -14,6 +14,7 @@ REMOTE_VENV="${REMOTE_VENV:-$REMOTE_PROJECT/.codex-remote/venv}"
 REMOTE_COMPILER_BUILD="${REMOTE_COMPILER_BUILD:-$REMOTE_PROJECT/.codex-remote/ascendnpu-ir-build-explicit}"
 REMOTE_TRITON_CACHE="${REMOTE_TRITON_CACHE:-$REMOTE_PROJECT/.codex-remote/triton-cache}"
 REMOTE_TOP_GIT_DIR="${REMOTE_TOP_GIT_DIR:-$REMOTE_PROJECT/.codex-remote/top-git}"
+REMOTE_TMP_DIR="${REMOTE_TMP_DIR:-$REMOTE_PROJECT/tmp}"
 REMOTE_SOURCE_MODE="${REMOTE_SOURCE_MODE:-auto}"
 if [[ "$REMOTE_SOURCE_MODE" != "auto" && "$REMOTE_SOURCE_MODE" != "git" \
   && "$REMOTE_SOURCE_MODE" != "rsync" ]]; then

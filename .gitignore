@@ -52,6 +52,7 @@ __pycache__/
 .venv
 venv/
 venv.bak/
+tmp/
 
 # VS Code project files
 .vscode

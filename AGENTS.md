@@ -553,6 +553,8 @@ artifact paths use the original directory name.
 
 Keep venvs, compiler builds, caches, logs, raw measurements, and generated
 reports under the server checkout's `.codex-remote/`; it is ignored by Git.
+Keep transient files produced by `tempfile`, `mktemp`, and compiler subprocesses
+under the ignored project-root `tmp/` by exporting `TMPDIR`, `TMP`, and `TEMP`.
 Do not commit or move generated build and experiment artifacts into tracked
 source directories. The project path must remain identical on the server host
 and inside the container.

@@ -119,8 +119,9 @@ EOF
 docker run --rm --platform linux/amd64 \
   -v "$PWD/python-offline:/out" "$IMAGE" bash -c '
 set -euo pipefail
-python3 -m venv /tmp/resolve
-source /tmp/resolve/bin/activate
+mkdir -p ./tmp
+python3 -m venv ./tmp/resolve
+source ./tmp/resolve/bin/activate
 
 python -m pip install "pip==24.3.1" \
   --index-url https://repo.huaweicloud.com/repository/pypi/simple
@@ -141,11 +142,12 @@ python -m pip download --only-binary=:all: --dest /out/wheelhouse \
   --index-url https://repo.huaweicloud.com/repository/pypi/simple \
   --extra-index-url https://download.pytorch.org/whl/cpu
 
-python3 -m venv /tmp/offline-check
-/tmp/offline-check/bin/python -m pip install --no-index \
+mkdir -p ./tmp
+python3 -m venv ./tmp/offline-check
+./tmp/offline-check/bin/python -m pip install --no-index \
   --find-links /out/wheelhouse \
   -r /out/requirements-a5-py312-amd64.lock.txt
-/tmp/offline-check/bin/python -m pip check
+./tmp/offline-check/bin/python -m pip check
 '
 
 tar -czf python-wheelhouse-py312-amd64.tar.gz python-offline
@@ -511,8 +513,12 @@ source tools/remote_experiment/activate-dev-environment.sh
 预期输出：
 
 ```text
-DEV_ENVIRONMENT_OK soc=<设备型号> bitcode_arch=<c220或c310> native_a5_regbase=<0或1>
+DEV_ENVIRONMENT_OK soc=<设备型号> bitcode_arch=<c220或c310> native_a5_regbase=<0或1> tmpdir=<项目路径>/tmp
 ```
+
+激活脚本会创建项目根目录下的 `tmp/`，并将 `TMPDIR`、`TMP`、`TEMP` 全部指向
+该目录。Python `tempfile`、`mktemp` 和编译器子进程的临时文件因此不会写入系统
+`/tmp`；`tmp/` 已被 Git 忽略。
 
 项目 `triton-mlir-opt` 使用 MLIR 22，同源项目 `bishengir-opt` 使用 MLIR 19，
 二者通过 bytecode version 4 连接。不能使用 CANN 中缺少 `ssbuf` 枚举的旧

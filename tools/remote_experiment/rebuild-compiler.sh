@@ -13,6 +13,11 @@ source "$SCRIPT_DIR/load-cann-environment.sh"
 # shellcheck source=tools/remote_experiment/config.sh
 source "$SCRIPT_DIR/config.sh"
 
+mkdir -p "$REMOTE_TMP_DIR"
+export TMPDIR="$REMOTE_TMP_DIR"
+export TMP="$REMOTE_TMP_DIR"
+export TEMP="$REMOTE_TMP_DIR"
+
 if [[ ! -f "$REMOTE_VENV/bin/activate" || ! -x "$REMOTE_VENV/bin/python" ]]; then
   printf 'development venv not found: %s\n' "$REMOTE_VENV" >&2
   printf '%s\n' \

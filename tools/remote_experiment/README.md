@@ -102,6 +102,11 @@ JOBS=32 ./tools/remote_experiment/rebuild-compiler.sh
 source tools/remote_experiment/activate-dev-environment.sh
 ```
 
+The setup, compiler rebuild, and activation scripts set `TMPDIR`, `TMP`, and
+`TEMP` to `<project>/tmp`. This directory is created automatically and ignored
+by Git, so Python and compiler temporary files stay on the project filesystem
+instead of the system `/tmp` mount.
+
 When the container cannot reach the Triton LLVM artifact server, stage the
 repository-selected prebuilt LLVM under the persistent project directory and
 pass it only to the Triton build:

@@ -34,6 +34,10 @@ source "$REMOTE_VENV/bin/activate"
 export PYTHONPATH="$REMOTE_PROJECT/python${PYTHONPATH:+:$PYTHONPATH}"
 export PATH="$REMOTE_COMPILER_BUILD/bin:$PATH"
 export TRITON_NPU_COMPILER_PATH="$REMOTE_COMPILER_BUILD/bin"
+mkdir -p "$REMOTE_TMP_DIR"
+export TMPDIR="$REMOTE_TMP_DIR"
+export TMP="$REMOTE_TMP_DIR"
+export TEMP="$REMOTE_TMP_DIR"
 
 TRITON_ASCEND_SOC_NAME="$("$REMOTE_VENV/bin/python" - <<'PY'
 import torch
@@ -64,7 +68,7 @@ case "$TRITON_ASCEND_SOC_NAME" in
     ;;
 esac
 
-printf 'DEV_ENVIRONMENT_OK soc=%s bitcode_arch=%s native_a5_regbase=%s\n' \
+printf 'DEV_ENVIRONMENT_OK soc=%s bitcode_arch=%s native_a5_regbase=%s tmpdir=%s\n' \
   "$TRITON_ASCEND_SOC_NAME" "$TRITON_ASCEND_BITCODE_ARCH" \
-  "${BISHENGIR_NATIVE_A5_REGBASE:-0}"
+  "${BISHENGIR_NATIVE_A5_REGBASE:-0}" "$TMPDIR"
 unset _remote_activate_dir
