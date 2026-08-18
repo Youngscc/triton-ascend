@@ -61,6 +61,17 @@ case "$TRITON_ASCEND_SOC_NAME" in
   *Ascend910_95*|*Ascend950*|*910_958*)
     export TRITON_ASCEND_BITCODE_ARCH=c310
     export BISHENGIR_NATIVE_A5_REGBASE=1
+    _hivmc_a5_path="$(command -v hivmc-a5 || true)"
+    if [[ -z "$_hivmc_a5_path" ]]; then
+      printf '%s\n' 'hivmc-a5 was not found in the active CANN environment.' >&2
+      return 1
+    fi
+    _hivmc_a5_path="$(realpath "$_hivmc_a5_path")"
+    # BishengIR consults BISHENG_INSTALL_PATH before PATH. Pin it to the same
+    # CANN tool that this shell resolves so an inherited older path cannot win.
+    BISHENG_INSTALL_PATH="$(dirname "$_hivmc_a5_path")"
+    export BISHENG_INSTALL_PATH
+    _hivmc_a5_version="$("$_hivmc_a5_path" --version 2>&1 | head -n 1)"
     ;;
   *Ascend910B*|*Ascend910_93*)
     export TRITON_ASCEND_BITCODE_ARCH=c220
@@ -76,4 +87,8 @@ esac
 printf 'DEV_ENVIRONMENT_OK soc=%s bitcode_arch=%s native_a5_regbase=%s tmpdir=%s\n' \
   "$TRITON_ASCEND_SOC_NAME" "$TRITON_ASCEND_BITCODE_ARCH" \
   "${BISHENGIR_NATIVE_A5_REGBASE:-0}" "$TMPDIR"
-unset _remote_activate_dir
+if [[ -n "${_hivmc_a5_path:-}" ]]; then
+  printf 'A5_HIVMC_OK path=%s version=%s\n' \
+    "$_hivmc_a5_path" "$_hivmc_a5_version"
+fi
+unset _remote_activate_dir _hivmc_a5_path _hivmc_a5_version

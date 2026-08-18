@@ -87,7 +87,20 @@ print(torch.npu.get_device_name(torch.npu.current_device()))
 PY
 )"
 case "$soc_name" in
-  *Ascend910_95*|*Ascend950*|*910_958*) bitcode_arch=c310 ;;
+  *Ascend910_95*|*Ascend950*|*910_958*)
+    bitcode_arch=c310
+    hivmc_a5_path="$(command -v hivmc-a5 || true)"
+    if [[ -z "$hivmc_a5_path" ]]; then
+      printf '%s\n' 'hivmc-a5 was not found in the active CANN environment.' >&2
+      exit 1
+    fi
+    hivmc_a5_path="$(realpath "$hivmc_a5_path")"
+    BISHENG_INSTALL_PATH="$(dirname "$hivmc_a5_path")"
+    export BISHENG_INSTALL_PATH
+    hivmc_a5_version="$("$hivmc_a5_path" --version 2>&1 | head -n 1)"
+    printf 'A5_HIVMC_OK path=%s version=%s\n' \
+      "$hivmc_a5_path" "$hivmc_a5_version"
+    ;;
   *Ascend910B*|*Ascend910_93*) bitcode_arch=c220 ;;
   *)
     printf 'unsupported or unknown SoC for BishengIR bitcode: %s\n' "$soc_name" >&2
