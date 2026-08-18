@@ -36,8 +36,35 @@ build_lib="$REMOTE_COMPILER_BUILD/lib"
 toolchain_bin="$REMOTE_COMPILER_BUILD/cann-toolchain-bin"
 build_revision_stamp="$REMOTE_COMPILER_BUILD/.source-revisions"
 
-compiler_revision="$(git -C "$compiler_source" rev-parse HEAD)"
-llvm_revision="$(git -C "$compiler_source/third-party/llvm-project" rev-parse HEAD)"
+content_fingerprint() {
+  sha256sum "$@" | sha256sum | awk '{print $1}'
+}
+
+if compiler_revision="$(git -C "$compiler_source" rev-parse HEAD 2>/dev/null)"; then
+  compiler_revision="git:$compiler_revision"
+  compiler_identity_mode=git
+else
+  compiler_revision="content:$(content_fingerprint \
+    "$compiler_source/CMakeLists.txt" \
+    "$compiler_source/bishengir/include/bishengir/Dialect/HIVM/IR/CMakeLists.txt" \
+    "$compiler_source/bishengir/include/bishengir/Dialect/HIVM/IR/HIVMAttrs.td" \
+    "$compiler_source/bishengir/tools/bishengir-compile/CMakeLists.txt")"
+  compiler_identity_mode=content
+fi
+llvm_project="$compiler_source/third-party/llvm-project"
+if llvm_revision="$(git -C "$llvm_project" rev-parse HEAD 2>/dev/null)"; then
+  llvm_revision="git:$llvm_revision"
+  llvm_identity_mode=git
+else
+  llvm_revision="content:$(content_fingerprint \
+    "$llvm_project/llvm/CMakeLists.txt" \
+    "$llvm_project/cmake/Modules/LLVMVersion.cmake" \
+    "$llvm_project/mlir/CMakeLists.txt" \
+    "$llvm_project/mlir/include/mlir/IR/Attributes.h")"
+  llvm_identity_mode=content
+fi
+printf 'BISHENGIR_SOURCE_ID compiler_mode=%s llvm_mode=%s\n' \
+  "$compiler_identity_mode" "$llvm_identity_mode"
 expected_build_revisions="ascendnpu_ir=$compiler_revision
 llvm_project=$llvm_revision"
 actual_build_revisions=""

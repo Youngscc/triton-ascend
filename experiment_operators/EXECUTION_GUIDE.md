@@ -458,8 +458,11 @@ JOBS=16 TRITON_PARALLEL_LINK_JOBS=2 \
 JOBS=16 ./tools/remote_experiment/rebuild-compiler.sh
 ```
 
-构建目录使用 `.source-revisions` 记录 AscendNPU-IR 和其 vendored LLVM commit。
-旧构建目录没有记录，或者任一 commit 发生变化时，脚本会先输出
+构建目录使用 `.source-revisions` 记录 AscendNPU-IR 和其 vendored LLVM 身份。
+普通 Git checkout 使用 commit；离线 rsync checkout 没有子模块 `.git`，此时根据
+关键源码、HIVM schema 和 CMake 输入计算内容哈希，并输出
+`BISHENGIR_SOURCE_ID compiler_mode=content llvm_mode=content`。旧构建目录没有
+记录，或者任一身份发生变化时，脚本会先输出
 `BISHENGIR_BUILD_CACHE_RESET` 并清理该构建树的旧 TableGen/目标文件，再进行
 完整重建。这可以防止 Git checkout 后旧生成文件时间戳较新，导致源码已包含新
 枚举而二进制仍链接旧 HIVM schema。
@@ -499,6 +502,7 @@ JOBS=16 ./tools/remote_experiment/rebuild-compiler.sh
 ```text
 MLIR_BYTECODE_ROUNDTRIP_OK
 TRITON_DEV_IMPORT_OK
+BISHENGIR_SOURCE_ID compiler_mode=<git或content> llvm_mode=<git或content>
 HIVM_TABLEGEN_SSBUF_OK file=...
 HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK
 BISHENGIR_COMPILE_SSBUF_PARSE_OK returncode=<0或后续pipeline返回码>

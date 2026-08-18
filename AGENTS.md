@@ -156,9 +156,11 @@ LLVM must match the top-level repository gitlinks in the server checkout.
   `BISHENGIR_LEGACY_A5_REGBASE`; otherwise the wrapper delegates to CANN's old
   A5 compiler, which lacks SSBUF. Do not globally disable bytecode: direct
   TTAdapter text changes the input path and regresses Vector Add.
-  The compiler build stores AscendNPU-IR and vendored LLVM commits in
-  `.source-revisions`; a missing or changed stamp cleans the build targets
-  before rebuilding so stale TableGen output cannot retain an old HIVM schema.
+  The compiler build stores AscendNPU-IR and vendored LLVM source identities in
+  `.source-revisions`; Git checkouts use commits and offline rsync checkouts use
+  content fingerprints because nested `.git` metadata is intentionally absent.
+  A missing or changed stamp cleans the build targets before rebuilding so
+  stale TableGen output cannot retain an old HIVM schema.
   The rebuild prints `HIVM_TABLEGEN_SSBUF_OK` only after the generated enum
   implementation itself contains `ssbuf`, before testing either executable.
 - `dev-compatible` has completed Python-to-benchmark smoke tests for fused
