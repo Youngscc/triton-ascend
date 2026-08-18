@@ -626,18 +626,38 @@ version 4 的通用兼容性。
 
 ### 使用已安装 wheel 和环境 Bisheng 的独立探针
 
-若环境中已经安装了可用的 Triton-Ascend wheel，可独立验证该 wheel 与环境
-BishengIR 是否能够处理 DynamicCV。先激活安装 wheel 的 Python 环境，然后直接
-执行脚本；不要 `source`：
+若环境中有 Triton-Ascend wheel，可在独立 venv 中验证该 wheel 与环境 BishengIR
+是否能够处理 DynamicCV。不要把发布 wheel 安装到正式实验使用的
+`.codex-remote/venv`。复用环境中已经安装的 Torch、Torch-NPU 和基础依赖，只把
+待测 wheel 安装到隔离目录：
 
 ```bash
-./tools/remote_experiment/probe-installed-wheel-toolchain.sh
+cd /home/y00969467/triton-ascend
+
+BASE_PYTHON="$(readlink -f .codex-remote/venv/bin/python)"
+WHEEL_PROBE_VENV="$PWD/.codex-remote/wheel-probe-venv"
+TRITON_ASCEND_WHEEL=/离线包路径/triton_ascend-版本-python架构.whl
+
+"$BASE_PYTHON" -m venv --system-site-packages "$WHEEL_PROBE_VENV"
+"$WHEEL_PROBE_VENV/bin/python" -m pip install \
+  --no-index --no-deps --force-reinstall "$TRITON_ASCEND_WHEEL"
+```
+
+`--no-deps` 防止 pip 替换正式环境已有的 Torch、Torch-NPU、NumPy 等包，
+`--no-index` 保证离线执行时不会访问网络。不要激活这个 venv，直接把其 Python
+绝对路径传给探针；也不要 `source` 探针脚本：
+
+```bash
+SYSTEM_PROBE_PYTHON="$WHEEL_PROBE_VENV/bin/python" \
+  ./tools/remote_experiment/probe-installed-wheel-toolchain.sh
 echo "exit=$?"
 ```
 
 脚本只在子 shell 中加载 CANN，并临时清除项目开发环境的 `PYTHONPATH`、
 `TRITON_BUILD_DIR` 和 `TRITON_NPU_COMPILER_PATH`。它不会修改当前 shell，也不会
-使用 `.codex-remote` 中的项目编译器。脚本首先打印 Python、wheel、`libtriton`、
+使用 `.codex-remote/venv` 或项目自编译 BishengIR。它允许发布 wheel 位于独立的
+`.codex-remote/wheel-probe-venv`，并要求 Triton、`libtriton` 和 Ascend backend
+都来自该 Python 前缀。脚本首先打印 Python、wheel、`libtriton`、
 `triton-mlir-opt`、`triton-opt`、`bishengir-opt`、`bishengir-compile`、`hivmc`
 和 `bisheng` 的实际路径与版本，然后依次执行：
 
@@ -652,6 +672,7 @@ echo "exit=$?"
 可以只对本次命令覆盖：
 
 ```bash
+SYSTEM_PROBE_PYTHON="$WHEEL_PROBE_VENV/bin/python" \
 SYSTEM_PROBE_INTRA_CACHE_NUM=2 \
 SYSTEM_PROBE_VF_MERGE_LEVEL=1 \
 SYSTEM_PROBE_FULL_TIMEOUT=600 \

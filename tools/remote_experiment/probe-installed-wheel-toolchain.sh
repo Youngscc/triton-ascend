@@ -142,6 +142,7 @@ rows = {
     "TORCH_NPU_FILE": torch_npu.__file__,
     "TORCH_NPU_VERSION": version("torch-npu", "torch_npu"),
     "LIBTRITON": libtriton.__file__,
+    "ASCEND_UTILS_FILE": utils.__file__,
     "TRITON_MLIR_OPT": utils._get_triton_mlir_opt_path(),
     "TRITON_OPT": utils._get_triton_opt_path(),
     "BISHENGIR_OPT": reader,
@@ -168,20 +169,24 @@ PY
   fi
   check INSTALLED_WHEEL_IMPORT PASS 'wheel and triton._C.libtriton.ascend import successfully'
 
-  local triton_file libtriton triton_mlir_opt triton_opt bishengir_opt bishengir_compile
+  local python_prefix triton_file libtriton ascend_utils_file
+  local triton_mlir_opt triton_opt bishengir_opt bishengir_compile
+  python_prefix="$(field PYTHON_PREFIX)"
   triton_file="$(field TRITON_FILE)"
   libtriton="$(field LIBTRITON)"
+  ascend_utils_file="$(field ASCEND_UTILS_FILE)"
   triton_mlir_opt="$(field TRITON_MLIR_OPT)"
   triton_opt="$(field TRITON_OPT)"
   bishengir_opt="$(field BISHENGIR_OPT)"
   bishengir_compile="$(field BISHENGIR_COMPILE)"
 
   item python "$(field PYTHON)"
-  item python_prefix "$(field PYTHON_PREFIX)"
+  item python_prefix "$python_prefix"
   item triton "${triton_file} ($(field TRITON_VERSION))"
   item torch "$(field TORCH_FILE) ($(field TORCH_VERSION))"
   item torch_npu "$(field TORCH_NPU_FILE) ($(field TORCH_NPU_VERSION))"
   item libtriton "$libtriton"
+  item ascend_backend_utils "$ascend_utils_file"
   item dynamic_cv_api "$(field DYNAMIC_CV_API)"
   item device_count "$(field DEVICE_COUNT)"
   item device_name "$(field DEVICE_NAME)"
@@ -193,19 +198,30 @@ PY
   show_tool hivmc "$(command -v hivmc 2>/dev/null || true)"
   show_tool bisheng "$(command -v bisheng 2>/dev/null || true)"
 
-  local local_source=0 path
-  for path in "$triton_file" "$libtriton" "$triton_mlir_opt" "$triton_opt" \
-    "$bishengir_opt" "$bishengir_compile"; do
+  local wrong_source=0 path
+  for path in "$triton_file" "$libtriton" "$ascend_utils_file" \
+    "$triton_mlir_opt" "$triton_opt" "$bishengir_opt" "$bishengir_compile"; do
     case "$(real_path "$path")" in
-      "$PROJECT_ROOT"/*) local_source=1 ;;
+      "$PROJECT_ROOT/python"/*|\
+      "$PROJECT_ROOT/third_party/ascend"/*|\
+      "$PROJECT_ROOT/.codex-remote/venv"/*|\
+      "$PROJECT_ROOT/.codex-remote/ascendnpu-ir-build-explicit"/*)
+        wrong_source=1
+        ;;
     esac
   done
-  if (( local_source )); then
-    check TOOL_SOURCE FAIL 'a selected Python package or tool comes from this checkout'
-    printf '%s\n' 'Activate the environment containing the installed wheel, then rerun this script.'
+  for path in "$triton_file" "$libtriton" "$ascend_utils_file"; do
+    case "$(real_path "$path")" in
+      "$(real_path "$python_prefix")"/*) ;;
+      *) wrong_source=1 ;;
+    esac
+  done
+  if (( wrong_source )); then
+    check TOOL_SOURCE FAIL 'selected components resolve to the development checkout or outside the wheel Python prefix'
+    printf '%s\n' 'Set SYSTEM_PROBE_PYTHON to the isolated environment containing the installed wheel.'
     return 1
   fi
-  check TOOL_SOURCE PASS 'all selected Python/compiler components are outside this checkout'
+  check TOOL_SOURCE PASS 'Triton comes from the selected wheel environment; no project development tool was selected'
 
   if [[ ! -x "$triton_mlir_opt" || ! -x "$bishengir_opt" || ! -x "$bishengir_compile" ]]; then
     check REQUIRED_TOOLS FAIL 'writer, reader, or compiler is missing'
