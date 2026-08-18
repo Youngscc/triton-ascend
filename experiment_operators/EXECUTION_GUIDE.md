@@ -519,6 +519,9 @@ BISHENGIR_PACKAGE_OK soc=<设备型号> bitcode_arch=<c220或c310> tools=compile
 ```
 
 `setup-dev-environment.sh` 构建当前 checkout 的 Triton 和 `libtriton.so`；
+当前 upstream 存在 `setup_ascend.py` 时，脚本会使用该入口执行开发构建；不能
+手动替换为通用的 `pip install -e .`，否则会得到不含 Ascend binding 的
+`libtriton.so`，且不会安装 `triton-mlir-opt`。
 `rebuild-compiler.sh` 从仓库 gitlink 指定的 AscendNPU-IR 同时构建
 `bishengir-compile` 和 `bishengir-opt`，并生成当前 SoC 对应的 `c220` 或 `c310`
 bitcode。`HIVM_TABLEGEN_SSBUF_OK` 先确认本次构建生成的 HIVM enum 实现已经

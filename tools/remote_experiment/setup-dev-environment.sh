@@ -161,7 +161,14 @@ export TRITON_APPEND_CMAKE_ARGS="${user_cmake_args:+$user_cmake_args }$generated
 export GIT_DIR="$repo_git_dir"
 export GIT_WORK_TREE="$REMOTE_PROJECT"
 
-"$venv_python" -m pip install --no-build-isolation --no-deps -e .
+if [[ -f "$REMOTE_PROJECT/setup_ascend.py" ]]; then
+  # Current upstream keeps the Ascend backend registration and tool-copying
+  # hooks in setup_ascend.py. The generic setup.py builds a libtriton without
+  # the Ascend bindings and does not install triton-mlir-opt.
+  "$venv_python" "$REMOTE_PROJECT/setup_ascend.py" develop --no-deps
+else
+  "$venv_python" -m pip install --no-build-isolation --no-deps -e .
+fi
 
 triton_mlir_opt="$REMOTE_PROJECT/python/triton/_C/triton-mlir-opt"
 test -x "$triton_mlir_opt" || {
@@ -204,6 +211,7 @@ import torch
 import torch_npu
 import triton
 from triton._C import libtriton
+from triton._C.libtriton.ascend import ir as ascend_ir
 
 project_python = (Path(os.environ["REMOTE_PROJECT"]) / "python").resolve()
 venv = Path(os.environ["REMOTE_VENV"]).resolve()
@@ -230,5 +238,6 @@ print("python prefix:", python_prefix)
 print("python base prefix:", python_base_prefix)
 print("triton:", triton_file)
 print("libtriton:", libtriton_file)
+print("ascend binding:", ascend_ir)
 print("TRITON_DEV_IMPORT_OK")
 PY

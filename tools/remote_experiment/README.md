@@ -127,7 +127,10 @@ not its parent directory.
 `setup-dev-environment.sh` creates `.codex-remote/venv` when it is absent,
 installs a private CMake 3.28+ only when required, builds this checkout's
 Triton-Ascend and `libtriton.so`, performs the editable install, and verifies
-the import paths. It uses the server clone's own `.git`; the mirrored
+the import paths. On current upstream revisions it invokes `setup_ascend.py`,
+which registers the Ascend backend and copies `triton-mlir-opt`; invoking the
+generic `setup.py` alone produces an incompatible development installation.
+It uses the server clone's own `.git`; the mirrored
 `.codex-remote/top-git` is only a compatibility fallback for offline rsync.
 The host build requires Clang and automatically prefers the Ubuntu
 clang-15/clang++-15/lld-15 tools, including their version-suffixed paths. It
