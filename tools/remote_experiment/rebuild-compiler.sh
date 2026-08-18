@@ -17,6 +17,7 @@ mkdir -p "$REMOTE_TMP_DIR"
 export TMPDIR="$REMOTE_TMP_DIR"
 export TMP="$REMOTE_TMP_DIR"
 export TEMP="$REMOTE_TMP_DIR"
+unset BISHENGIR_LEGACY_A5_REGBASE
 
 if [[ ! -f "$REMOTE_VENV/bin/activate" || ! -x "$REMOTE_VENV/bin/python" ]]; then
   printf 'development venv not found: %s\n' "$REMOTE_VENV" >&2
@@ -125,6 +126,32 @@ printf '%s\n' \
   -o "$ssbuf_check_dir/roundtrip.mlir"
 grep -q '#hivm.address_space<ssbuf>' "$ssbuf_check_dir/roundtrip.mlir"
 printf '%s\n' 'HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK'
+
+set +e
+"$REMOTE_COMPILER_BUILD/bin/bishengir-compile" \
+  "$ssbuf_check_dir/roundtrip.mlir" --target="$soc_name" \
+  -o "$ssbuf_check_dir/compiler-parse-check" \
+  >"$ssbuf_check_dir/compiler.stdout" \
+  2>"$ssbuf_check_dir/compiler.stderr"
+compiler_parse_status=$?
+set -e
+if grep -Eiq \
+  'Failed to parse input|fail to parse HIVM_AddressSpaceAttr|expect.*hivm.*addressSpace' \
+  "$ssbuf_check_dir/compiler.stdout" "$ssbuf_check_dir/compiler.stderr"; then
+  printf '%s\n' 'project bishengir-compile cannot parse HIVM SSBUF:' >&2
+  cat "$ssbuf_check_dir/compiler.stdout" "$ssbuf_check_dir/compiler.stderr" >&2
+  exit 1
+fi
+if [[ "$bitcode_arch" == "c310" ]] \
+  && ! grep -q 'Using merged native A5 regbase pipeline' \
+    "$ssbuf_check_dir/compiler.stderr"; then
+  printf '%s\n' \
+    'project bishengir-compile did not enter the merged native A5 pipeline' >&2
+  cat "$ssbuf_check_dir/compiler.stdout" "$ssbuf_check_dir/compiler.stderr" >&2
+  exit 1
+fi
+printf 'BISHENGIR_COMPILE_SSBUF_PARSE_OK returncode=%d\n' \
+  "$compiler_parse_status"
 rm -rf -- "$ssbuf_check_dir"
 trap - EXIT
 

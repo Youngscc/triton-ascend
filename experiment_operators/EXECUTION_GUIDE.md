@@ -494,6 +494,7 @@ JOBS=16 ./tools/remote_experiment/rebuild-compiler.sh
 MLIR_BYTECODE_ROUNDTRIP_OK
 TRITON_DEV_IMPORT_OK
 HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK
+BISHENGIR_COMPILE_SSBUF_PARSE_OK returncode=<0或后续pipeline返回码>
 BISHENGIR_PACKAGE_OK soc=<设备型号> bitcode_arch=<c220或c310> tools=compile,opt
 ```
 
@@ -502,6 +503,10 @@ BISHENGIR_PACKAGE_OK soc=<设备型号> bitcode_arch=<c220或c310> tools=compile
 `bishengir-compile` 和 `bishengir-opt`，并生成当前 SoC 对应的 `c220` 或 `c310`
 bitcode。`HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK` 表明项目 MLIR 22 写出的 DynamicCV
 SSBUF 属性能被同源 MLIR 19 reader 读取。
+`BISHENGIR_COMPILE_SSBUF_PARSE_OK` 表明项目 `bishengir-compile` 自身也接受该属性；
+探针允许在解析后的无效测试 module 上由后续 pipeline 返回非零，但任何
+`HIVM_AddressSpaceAttr` 解析错误都会让重建立即失败。A5 环境会清除
+`BISHENGIR_LEGACY_A5_REGBASE`，禁止委托给缺少 SSBUF 的旧 CANN A5 编译器。
 
 ## 8. 每次进入容器后激活环境
 

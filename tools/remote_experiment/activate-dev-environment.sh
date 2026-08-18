@@ -39,6 +39,11 @@ export TMPDIR="$REMOTE_TMP_DIR"
 export TMP="$REMOTE_TMP_DIR"
 export TEMP="$REMOTE_TMP_DIR"
 
+# The repository-built A5 driver contains the merged native RegBase pipeline.
+# Inheriting this legacy switch delegates to CANN's older compiler, whose HIVM
+# schema does not include DynamicCV's SSBUF address space.
+unset BISHENGIR_LEGACY_A5_REGBASE
+
 TRITON_ASCEND_SOC_NAME="$("$REMOTE_VENV/bin/python" - <<'PY'
 import torch
 import torch_npu  # noqa: F401

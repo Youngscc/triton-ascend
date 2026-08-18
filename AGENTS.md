@@ -150,8 +150,12 @@ LLVM must match the top-level repository gitlinks in the server checkout.
   cannot decode DynamicCV's `HIVM_AddressSpaceAttr<ssbuf>`, so the rebuild
   produces the repository-matched MLIR 19 `bishengir-opt` as the compatibility
   reader. `rebuild-compiler.sh` verifies an MLIR 22-to-19 SSBUF round trip and
-  prints `HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK`. Do not globally disable bytecode:
-  direct TTAdapter text changes the input path and regresses Vector Add.
+  then verifies that the project `bishengir-compile` parses the decoded text.
+  It prints `HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK` and
+  `BISHENGIR_COMPILE_SSBUF_PARSE_OK`. Development activation must clear
+  `BISHENGIR_LEGACY_A5_REGBASE`; otherwise the wrapper delegates to CANN's old
+  A5 compiler, which lacks SSBUF. Do not globally disable bytecode: direct
+  TTAdapter text changes the input path and regresses Vector Add.
 - `dev-compatible` has completed Python-to-benchmark smoke tests for fused
   attention, unified attention, and HSTU forward attention. Initial 2-warmup,
   5-active means were approximately 2.839409 ms, 57.708093 ms, and 0.044769 ms

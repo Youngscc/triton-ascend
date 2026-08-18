@@ -150,6 +150,10 @@ project-built MLIR 19 reader and prints `HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK`.
 Development experiments require that project-built reader; CANN's older
 `bishengir-opt` does not recognize DynamicCV's SSBUF enum. CANN still supplies
 `hivmc` and the downstream device compiler.
+The rebuild also feeds the decoded SSBUF text to the project
+`bishengir-compile` and prints `BISHENGIR_COMPILE_SSBUF_PARSE_OK`. Development
+activation clears `BISHENGIR_LEGACY_A5_REGBASE`, because that switch delegates
+to CANN's older A5 compiler instead of using the merged native pipeline.
 
 The venv interpreter may be a symlink to `/usr/local/bin/python`. That resolved
 file location is normal and is not used to decide whether the venv is active;
