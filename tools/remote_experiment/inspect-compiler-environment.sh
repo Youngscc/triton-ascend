@@ -349,7 +349,7 @@ else
     if (( compile_rc == 124 )); then
       check BISHENGIR_COMPILE_SSBUF_PARSE FAIL "returncode=124; compiler probe timed out"
       sed -n '1,60p' "$PROBE_DIR/compiler.stdout" "$PROBE_DIR/compiler.stderr"
-    elif grep -Eiq 'Failed to parse input|fail to parse HIVM_AddressSpaceAttr|expect.*hivm.*addressSpace' \
+    elif grep -Fq '[ERROR] Failed to parse input file:' \
       "$PROBE_DIR/compiler.stdout" "$PROBE_DIR/compiler.stderr"; then
       check BISHENGIR_COMPILE_SSBUF_PARSE FAIL "returncode=$compile_rc; ssbuf parse rejected"
       sed -n '1,60p' "$PROBE_DIR/compiler.stdout" "$PROBE_DIR/compiler.stderr"

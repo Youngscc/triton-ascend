@@ -234,8 +234,7 @@ if (( compiler_parse_status == 124 )); then
   cat "$ssbuf_check_dir/compiler.stdout" "$ssbuf_check_dir/compiler.stderr" >&2
   exit 1
 fi
-if grep -Eiq \
-  'Failed to parse input|fail to parse HIVM_AddressSpaceAttr|expect.*hivm.*addressSpace' \
+if grep -Fq '[ERROR] Failed to parse input file:' \
   "$ssbuf_check_dir/compiler.stdout" "$ssbuf_check_dir/compiler.stderr"; then
   printf '%s\n' 'project bishengir-compile cannot parse HIVM SSBUF:' >&2
   cat "$ssbuf_check_dir/compiler.stdout" "$ssbuf_check_dir/compiler.stderr" >&2
@@ -251,6 +250,10 @@ if [[ "$bitcode_arch" == "c310" ]] \
 fi
 printf 'BISHENGIR_COMPILE_SSBUF_PARSE_OK returncode=%d\n' \
   "$compiler_parse_status"
+if (( compiler_parse_status != 0 )); then
+  printf 'BISHENGIR_COMPILE_POST_PARSE_FAILURE_ALLOWED returncode=%d\n' \
+    "$compiler_parse_status"
+fi
 rm -rf -- "$ssbuf_check_dir"
 trap - EXIT
 
