@@ -346,7 +346,10 @@ else
     run_limited "$BISHENGIR_COMPILE" "$PROBE_DIR/ssbuf-out.mlir" --target="$SOC_NAME" \
       -o "$PROBE_DIR/compiler-check" >"$PROBE_DIR/compiler.stdout" \
       2>"$PROBE_DIR/compiler.stderr" || compile_rc=$?
-    if grep -Eiq 'Failed to parse input|fail to parse HIVM_AddressSpaceAttr|expect.*hivm.*addressSpace' \
+    if (( compile_rc == 124 )); then
+      check BISHENGIR_COMPILE_SSBUF_PARSE FAIL "returncode=124; compiler probe timed out"
+      sed -n '1,60p' "$PROBE_DIR/compiler.stdout" "$PROBE_DIR/compiler.stderr"
+    elif grep -Eiq 'Failed to parse input|fail to parse HIVM_AddressSpaceAttr|expect.*hivm.*addressSpace' \
       "$PROBE_DIR/compiler.stdout" "$PROBE_DIR/compiler.stderr"; then
       check BISHENGIR_COMPILE_SSBUF_PARSE FAIL "returncode=$compile_rc; ssbuf parse rejected"
       sed -n '1,60p' "$PROBE_DIR/compiler.stdout" "$PROBE_DIR/compiler.stderr"

@@ -29,6 +29,8 @@ fi
 source "$REMOTE_VENV/bin/activate"
 
 jobs="${JOBS:-32}"
+compiler_probe_timeout="${BISHENGIR_COMPILER_PROBE_TIMEOUT:-60}"
+timeout_bin="$(command -v timeout || true)"
 compiler_source="$REMOTE_PROJECT/third_party/ascend/AscendNPU-IR"
 llvm_source="$compiler_source/third-party/llvm-project/llvm"
 system_bc_lib="$REMOTE_SYSTEM_COMPILER_LIB"
@@ -170,6 +172,21 @@ test -x "$custom_bishengir_opt" || {
   printf 'custom bishengir-opt not found: %s\n' "$custom_bishengir_opt" >&2
   exit 1
 }
+custom_bishengir_compile="$REMOTE_COMPILER_BUILD/bin/bishengir-compile"
+test -x "$custom_bishengir_compile" || {
+  printf 'custom bishengir-compile not found: %s\n' \
+    "$custom_bishengir_compile" >&2
+  exit 1
+}
+
+# Commit the source identity as soon as both compiler targets and their
+# generated schema are known-good. A later packaging or compatibility-probe
+# failure must not force Ninja to rebuild thousands of unchanged targets on
+# the next invocation.
+build_revision_stamp_tmp="$build_revision_stamp.tmp.$$"
+printf '%s\n' "$expected_build_revisions" >"$build_revision_stamp_tmp"
+mv -f -- "$build_revision_stamp_tmp" "$build_revision_stamp"
+printf '%s\n' 'BISHENGIR_BUILD_STAMP_UPDATED'
 
 # DynamicCV introduces the SSBUF address space. CANN's older bishengir-opt
 # does not know that enum value, so validate the project-built MLIR 19 reader
@@ -195,13 +212,28 @@ grep -q '#hivm.address_space<ssbuf>' "$ssbuf_check_dir/roundtrip.mlir"
 printf '%s\n' 'HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK'
 
 set +e
-"$REMOTE_COMPILER_BUILD/bin/bishengir-compile" \
-  "$ssbuf_check_dir/roundtrip.mlir" --target="$soc_name" \
-  -o "$ssbuf_check_dir/compiler-parse-check" \
-  >"$ssbuf_check_dir/compiler.stdout" \
-  2>"$ssbuf_check_dir/compiler.stderr"
+if [[ -n "$timeout_bin" ]]; then
+  "$timeout_bin" "$compiler_probe_timeout" \
+    "$custom_bishengir_compile" \
+    "$ssbuf_check_dir/roundtrip.mlir" --target="$soc_name" \
+    -o "$ssbuf_check_dir/compiler-parse-check" \
+    >"$ssbuf_check_dir/compiler.stdout" \
+    2>"$ssbuf_check_dir/compiler.stderr"
+else
+  "$custom_bishengir_compile" \
+    "$ssbuf_check_dir/roundtrip.mlir" --target="$soc_name" \
+    -o "$ssbuf_check_dir/compiler-parse-check" \
+    >"$ssbuf_check_dir/compiler.stdout" \
+    2>"$ssbuf_check_dir/compiler.stderr"
+fi
 compiler_parse_status=$?
 set -e
+if (( compiler_parse_status == 124 )); then
+  printf 'project bishengir-compile SSBUF probe timed out after %ss\n' \
+    "$compiler_probe_timeout" >&2
+  cat "$ssbuf_check_dir/compiler.stdout" "$ssbuf_check_dir/compiler.stderr" >&2
+  exit 1
+fi
 if grep -Eiq \
   'Failed to parse input|fail to parse HIVM_AddressSpaceAttr|expect.*hivm.*addressSpace' \
   "$ssbuf_check_dir/compiler.stdout" "$ssbuf_check_dir/compiler.stderr"; then
@@ -253,6 +285,5 @@ test -s "$build_lib/host.bc" || {
   exit 1
 }
 
-printf '%s\n' "$expected_build_revisions" >"$build_revision_stamp"
 printf 'BISHENGIR_PACKAGE_OK soc=%s bitcode_arch=%s tools=compile,opt\n' \
   "$soc_name" "$bitcode_arch"
