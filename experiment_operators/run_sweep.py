@@ -719,6 +719,7 @@ def main() -> int:
                 "ENABLE_PRINT_UB_BITS": "true",
                 "TRITON_ALWAYS_COMPILE": "1",
                 "TRITON_PRINT_AUTOTUNING": "1",
+                "TRITON_PRINT_IR_AFTER_FAILURE": "0",
                 "EXPERIMENT_DYNAMIC_CV": "1" if is_a5 else "0",
                 "EXPERIMENT_MULTIBUFFER_NUM": str(multibuffer_num),
                 "EXPERIMENT_VF_MERGE_LEVEL": str(merge),

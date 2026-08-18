@@ -427,6 +427,26 @@ def bc_to_linalg_by_bishengir_opt(bc_data: bytes, metadata, opt):
         return linalg_text
 
 
+def _format_bishengir_compile_failure(error: subprocess.CalledProcessError) -> str:
+    def decode(value) -> str:
+        if not value:
+            return "<empty>"
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace").strip() or "<empty>"
+        return str(value).strip() or "<empty>"
+
+    command = error.cmd
+    if isinstance(command, (list, tuple)):
+        command = shlex.join(str(arg) for arg in command)
+    return (
+        "bishengir-compile failed\n"
+        f"returncode: {error.returncode}\n"
+        f"command: {command}\n"
+        f"stdout:\n{decode(error.stdout)}\n"
+        f"stderr:\n{decode(error.stderr)}"
+    )
+
+
 def __get_metadata_attr_by_callback(lib, postfix: str, metadata, meta_key: str):
     func_symbol = metadata["kernel_name"] + postfix
     if hasattr(lib, func_symbol):
@@ -838,7 +858,7 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
         except subprocess.CalledProcessError as e:
             if opt.debug:
                 _save_npuir_debug_output(e.stdout, e.stderr, tmpdir, metadata["hash"])
-            raise
+            raise RuntimeError(_format_bishengir_compile_failure(e)) from e
         metadata["compile_time_ms"] = (time.perf_counter() - compile_started) * 1000
 
         if opt.debug:
@@ -1080,7 +1100,7 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
         except subprocess.CalledProcessError as e:
             if opt.debug:
                 _save_npuir_debug_output(e.stdout, e.stderr, tmpdir, metadata["hash"])
-            raise
+            raise RuntimeError(_format_bishengir_compile_failure(e)) from e
         metadata["compile_time_ms"] = (time.perf_counter() - compile_started) * 1000
 
         if opt.debug:

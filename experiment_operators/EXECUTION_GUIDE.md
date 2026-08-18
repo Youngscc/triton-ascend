@@ -621,6 +621,11 @@ case 的完整 stdout/stderr 都会单独保存到同一结果目录下的 `logs
 以及完整 stdout/stderr。这个阶段负责把项目 `triton-mlir-opt` 产生的 MLIR
 bytecode 解码成文本，发生在 `bishengir-compile` 和三个实验 pass 参数之前。
 
+若错误来自 `bishengir-compile`，同一 case 日志会出现
+`bishengir-compile failed`，随后记录返回码、实际命令以及捕获到的 stdout/stderr。
+实验固定关闭 `--mlir-print-ir-after-failure`，因此这里保留 pass 诊断和栈信息，
+但不会被整份失败 IR 淹没。不要只看最外层的 `MLIRCompilationError`。
+
 A3 元数据必须满足：
 
 ```text

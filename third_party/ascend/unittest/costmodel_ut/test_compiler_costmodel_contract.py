@@ -1,4 +1,5 @@
 import importlib.util
+import subprocess
 import sys
 import types
 import unittest
@@ -162,6 +163,22 @@ class CompilerCostmodelContractTest(unittest.TestCase):
         self.assertEqual(command[0], "/llvm22/bin/triton-mlir-opt")
         self.assertIn("--emit-bytecode", command)
         self.assertIn("--emit-bytecode-version=4", command)
+
+    def test_bishengir_failure_includes_captured_diagnostics(self):
+        cmplr, _dump_mgr, _GPUTarget = self._load_compiler_module()
+        error = subprocess.CalledProcessError(
+            7,
+            ["/project/bin/bishengir-compile", "kernel.mlir"],
+            output=b"compiler stdout",
+            stderr=b"actual pass diagnostic",
+        )
+
+        message = cmplr._format_bishengir_compile_failure(error)
+
+        self.assertIn("returncode: 7", message)
+        self.assertIn("bishengir-compile kernel.mlir", message)
+        self.assertIn("compiler stdout", message)
+        self.assertIn("actual pass diagnostic", message)
 
 
 if __name__ == "__main__":

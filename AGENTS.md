@@ -285,7 +285,10 @@ usage; never keep only the fastest configuration.
   `operator_parameters` records, the full final `resolved_npu_options`
   snapshot after defaults/frontend adjustments, and the exact BishengIR
   `cmd_list` to both the aggregate run log and the row-specific log. The latter
-  also retains complete candidate stdout/stderr.
+  also retains complete candidate stdout/stderr. BishengIR subprocess failures
+  are reformatted with their return code, command, and captured streams, while
+  sweep candidates disable full IR printing so the actual pass diagnostic
+  remains readable.
 - `experiment_operators/generate_latest_report.sh` selects each operator's
   latest complete result and generates the self-contained offline report at
   `.codex-remote/results/latest-summary/experiment-report.html` from
