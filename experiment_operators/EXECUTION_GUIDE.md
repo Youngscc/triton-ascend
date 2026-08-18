@@ -491,12 +491,15 @@ JOBS=16 ./tools/remote_experiment/rebuild-compiler.sh
 ```text
 MLIR_BYTECODE_ROUNDTRIP_OK
 TRITON_DEV_IMPORT_OK
-BISHENGIR_PACKAGE_OK soc=<设备型号> bitcode_arch=<c220或c310>
+HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK
+BISHENGIR_PACKAGE_OK soc=<设备型号> bitcode_arch=<c220或c310> tools=compile,opt
 ```
 
 `setup-dev-environment.sh` 构建当前 checkout 的 Triton 和 `libtriton.so`；
-`rebuild-compiler.sh` 构建仓库 gitlink 指定的 AscendNPU-IR/BishengIR，并生成当前
-SoC 对应的 `c220` 或 `c310` bitcode。
+`rebuild-compiler.sh` 从仓库 gitlink 指定的 AscendNPU-IR 同时构建
+`bishengir-compile` 和 `bishengir-opt`，并生成当前 SoC 对应的 `c220` 或 `c310`
+bitcode。`HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK` 表明项目 MLIR 22 写出的 DynamicCV
+SSBUF 属性能被同源 MLIR 19 reader 读取。
 
 ## 8. 每次进入容器后激活环境
 
@@ -508,14 +511,13 @@ source tools/remote_experiment/activate-dev-environment.sh
 预期输出：
 
 ```text
-DEV_ENVIRONMENT_OK soc=<设备型号> bitcode_arch=<c220或c310> native_a5_regbase=<0或1> use_bytecode=<default或0>
+DEV_ENVIRONMENT_OK soc=<设备型号> bitcode_arch=<c220或c310> native_a5_regbase=<0或1>
 ```
 
-A5 项目开发环境固定显示 `use_bytecode=0`。项目 `triton-mlir-opt` 使用 MLIR 22，
-而 CANN `bishengir-opt` 使用 MLIR 19；即使 bytecode version 4 能通过标准 LLVM
-属性门禁，MLIR 22 写出的 `HIVM_AddressSpaceAttr` 枚举参数仍不能被 MLIR 19
-读取。A5 因此直接将文本 MLIR 交给自定义 `bishengir-compile`，仍然执行完整的
-BishengIR/HIVM pipeline，只跳过不兼容的 bytecode 编解码中转。A3 保持默认路径。
+项目 `triton-mlir-opt` 使用 MLIR 22，同源项目 `bishengir-opt` 使用 MLIR 19，
+二者通过 bytecode version 4 连接。不能使用 CANN 中缺少 `ssbuf` 枚举的旧
+`bishengir-opt`，也不能全局关闭 bytecode；后者会改变 TTAdapter 输入路径并使
+Vector Add 回归。`hivmc` 仍使用 CANN 版本。
 
 确认所有组件来自当前项目：
 
@@ -536,9 +538,16 @@ print("device:", torch.npu.get_device_name(0))
 PY
 ```
 
-Python prefix 应位于 `.codex-remote/venv`；Triton、`libtriton.so` 和
-`bishengir-compile` 都应来自当前项目目录。不要只执行 venv 的 `activate`，完整
-实验环境必须使用本节的激活脚本。
+Python prefix 应位于 `.codex-remote/venv`；Triton、`libtriton.so`、
+`bishengir-compile` 和 `bishengir-opt` 都应来自当前项目目录。可另外执行：
+
+```bash
+which bishengir-compile
+which bishengir-opt
+```
+
+两者都应位于 `.codex-remote/ascendnpu-ir-build-explicit/bin`。不要只执行 venv 的
+`activate`，完整实验环境必须使用本节的激活脚本。
 
 ## 9. 冒烟验证
 

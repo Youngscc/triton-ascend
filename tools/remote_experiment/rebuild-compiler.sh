@@ -89,7 +89,39 @@ cmake -S "$llvm_source" -B "$REMOTE_COMPILER_BUILD" -G Ninja \
   -DBISHENG_COMPILER_PATH="$toolchain_bin" \
   -DBISHENGIR_ENABLE_TRITON_COMPILE=ON
 
-cmake --build "$REMOTE_COMPILER_BUILD" --target bishengir-compile -j "$jobs"
+cmake --build "$REMOTE_COMPILER_BUILD" \
+  --target bishengir-compile bishengir-opt -j "$jobs"
+
+custom_bishengir_opt="$REMOTE_COMPILER_BUILD/bin/bishengir-opt"
+test -x "$custom_bishengir_opt" || {
+  printf 'custom bishengir-opt not found: %s\n' "$custom_bishengir_opt" >&2
+  exit 1
+}
+
+# DynamicCV introduces the SSBUF address space. CANN's older bishengir-opt
+# does not know that enum value, so validate the project-built MLIR 19 reader
+# against bytecode emitted by this checkout's MLIR 22 writer.
+triton_mlir_opt="$REMOTE_PROJECT/python/triton/_C/triton-mlir-opt"
+test -x "$triton_mlir_opt" || {
+  printf 'project triton-mlir-opt not found: %s\n' "$triton_mlir_opt" >&2
+  exit 1
+}
+ssbuf_check_dir="$(mktemp -d)"
+trap 'rm -rf -- "$ssbuf_check_dir"' EXIT
+printf '%s\n' \
+  'module {' \
+  '  func.func @ssbuf_roundtrip(%arg0: memref<16xf16, #hivm.address_space<ssbuf>>) {' \
+  '    return' \
+  '  }' \
+  '}' >"$ssbuf_check_dir/input.mlir"
+"$triton_mlir_opt" "$ssbuf_check_dir/input.mlir" --emit-bytecode \
+  --emit-bytecode-version=4 -o "$ssbuf_check_dir/input.mlirbc"
+"$custom_bishengir_opt" "$ssbuf_check_dir/input.mlirbc" \
+  -o "$ssbuf_check_dir/roundtrip.mlir"
+grep -q '#hivm.address_space<ssbuf>' "$ssbuf_check_dir/roundtrip.mlir"
+printf '%s\n' 'HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK'
+rm -rf -- "$ssbuf_check_dir"
+trap - EXIT
 
 for stem in aic aiv mix.aic mix.aiv; do
   target_bc="$build_lib/meta_op.$stem.$bitcode_arch.bc"
@@ -122,4 +154,5 @@ test -s "$build_lib/host.bc" || {
   exit 1
 }
 
-printf 'BISHENGIR_PACKAGE_OK soc=%s bitcode_arch=%s\n' "$soc_name" "$bitcode_arch"
+printf 'BISHENGIR_PACKAGE_OK soc=%s bitcode_arch=%s tools=compile,opt\n' \
+  "$soc_name" "$bitcode_arch"

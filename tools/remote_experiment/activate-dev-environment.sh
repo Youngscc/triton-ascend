@@ -21,6 +21,13 @@ if [[ ! -x "$REMOTE_COMPILER_BUILD/bin/bishengir-compile" ]]; then
     "$REMOTE_COMPILER_BUILD/bin/bishengir-compile" >&2
   return 1
 fi
+if [[ ! -x "$REMOTE_COMPILER_BUILD/bin/bishengir-opt" ]]; then
+  printf 'custom bishengir-opt not found: %s\n' \
+    "$REMOTE_COMPILER_BUILD/bin/bishengir-opt" >&2
+  printf '%s\n' \
+    'Run ./tools/remote_experiment/rebuild-compiler.sh inside the container.' >&2
+  return 1
+fi
 
 # shellcheck disable=SC1091
 source "$REMOTE_VENV/bin/activate"
@@ -37,19 +44,18 @@ PY
 )"
 export TRITON_ASCEND_SOC_NAME
 
+# Clear the retired A5 text-IR workaround from shells that sourced an older
+# version of this script.
+unset TRITON_ASCEND_USE_BYTECODE
+
 case "$TRITON_ASCEND_SOC_NAME" in
   *Ascend910_95*|*Ascend950*|*910_958*)
     export TRITON_ASCEND_BITCODE_ARCH=c310
     export BISHENGIR_NATIVE_A5_REGBASE=1
-    # MLIR 22 custom HIVM enum attributes are not bytecode-compatible with
-    # CANN's MLIR 19 reader. The custom compiler accepts the textual IR
-    # directly, preserving the full downstream BishengIR pipeline.
-    export TRITON_ASCEND_USE_BYTECODE=0
     ;;
   *Ascend910B*|*Ascend910_93*)
     export TRITON_ASCEND_BITCODE_ARCH=c220
     unset BISHENGIR_NATIVE_A5_REGBASE
-    unset TRITON_ASCEND_USE_BYTECODE
     ;;
   *)
     printf 'unsupported or unknown experiment SoC: %s\n' \
@@ -58,8 +64,7 @@ case "$TRITON_ASCEND_SOC_NAME" in
     ;;
 esac
 
-printf 'DEV_ENVIRONMENT_OK soc=%s bitcode_arch=%s native_a5_regbase=%s use_bytecode=%s\n' \
+printf 'DEV_ENVIRONMENT_OK soc=%s bitcode_arch=%s native_a5_regbase=%s\n' \
   "$TRITON_ASCEND_SOC_NAME" "$TRITON_ASCEND_BITCODE_ARCH" \
-  "${BISHENGIR_NATIVE_A5_REGBASE:-0}" \
-  "${TRITON_ASCEND_USE_BYTECODE:-default}"
+  "${BISHENGIR_NATIVE_A5_REGBASE:-0}"
 unset _remote_activate_dir

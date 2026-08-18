@@ -119,11 +119,10 @@ LLVM must match the top-level repository gitlinks in the server checkout.
   produced an NPU binary through the custom compiler. Recheck card availability
   immediately before performance measurements.
 - Experiment runs pin `TRITON_NPU_COMPILER_PATH` to the project build and
-  reject any resolved `bishengir-compile` outside
-  `.codex-remote/ascendnpu-ir-build-explicit/bin`. CANN's `bishengir-opt`,
-  `hivmc`, and the downstream `bisheng` device backend still come from the
-  installed CANN toolkit; those paths do not replace the custom compiler that
-  consumes the three experiment controls.
+  reject any resolved `bishengir-compile` or `bishengir-opt` outside
+  `.codex-remote/ascendnpu-ir-build-explicit/bin`. The two tools must be built
+  from the same repository-pinned AscendNPU-IR source. CANN's `hivmc` and the
+  downstream `bisheng` device backend still come from the installed toolkit.
 - A5 detection must not depend exclusively on the optional Python `acl`
   module. The backend checks `TRITON_ASCEND_ARCH`, then ACL when available,
   then `torch.npu.get_device_name`; otherwise an A5 can be misclassified as
@@ -147,13 +146,12 @@ LLVM must match the top-level repository gitlinks in the server checkout.
   current Python/core with the CANN-matched compiler.
 - The top-level Triton and `triton-mlir-opt` use the repository-selected MLIR
   22, while the standalone `bishengir-compile` uses AscendNPU-IR's pinned MLIR
-  19.1.7. Bytecode version 4 remains the newest shared format for standard
-  attributes, but it is not sufficient for custom HIVM enum attributes:
-  MLIR 19 cannot decode an MLIR 22 `HIVM_AddressSpaceAttr`. A5 dev activation
-  therefore sets `TRITON_ASCEND_USE_BYTECODE=0` and passes textual MLIR directly
-  to the custom compiler; A3 keeps the default bytecode path. The setup script's
-  `MLIR_BYTECODE_ROUNDTRIP_OK` check covers only the standard `llvm.inttoptr`
-  boundary and must not be treated as proof of custom-attribute compatibility.
+  19.1.7. Bytecode version 4 is the shared format. CANN's older `bishengir-opt`
+  cannot decode DynamicCV's `HIVM_AddressSpaceAttr<ssbuf>`, so the rebuild
+  produces the repository-matched MLIR 19 `bishengir-opt` as the compatibility
+  reader. `rebuild-compiler.sh` verifies an MLIR 22-to-19 SSBUF round trip and
+  prints `HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK`. Do not globally disable bytecode:
+  direct TTAdapter text changes the input path and regresses Vector Add.
 - `dev-compatible` has completed Python-to-benchmark smoke tests for fused
   attention, unified attention, and HSTU forward attention. Initial 2-warmup,
   5-active means were approximately 2.839409 ms, 57.708093 ms, and 0.044769 ms

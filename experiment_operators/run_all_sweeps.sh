@@ -121,7 +121,9 @@ if [[ "$DRY_RUN" != "1" ]]; then
   mkdir -p "$TRITON_CACHE_DIR"
 
   expected_bishengir_compile="$(realpath "$DEV_COMPILER_DIR/bishengir-compile")"
+  expected_bishengir_opt="$(realpath "$DEV_COMPILER_DIR/bishengir-opt")"
   EXPECTED_BISHENGIR_COMPILE="$expected_bishengir_compile" \
+    EXPECTED_BISHENGIR_OPT="$expected_bishengir_opt" \
     PROJECT_ROOT="$PROJECT_ROOT" "$DEV_VENV/bin/python" - <<'PY'
 import os
 from pathlib import Path
@@ -132,18 +134,22 @@ project_root = Path(os.environ["PROJECT_ROOT"]).resolve()
 utils_file = Path(utils.__file__).resolve()
 expected = Path(os.environ["EXPECTED_BISHENGIR_COMPILE"]).resolve()
 selected = Path(utils._get_npucompiler_path()[0]).resolve()
+expected_opt = Path(os.environ["EXPECTED_BISHENGIR_OPT"]).resolve()
+selected_opt = Path(utils._get_bishengir_opt_path()[0]).resolve()
 
 if not utils_file.is_relative_to(project_root):
     raise RuntimeError(f"Ascend backend is not from this checkout: {utils_file}")
 if selected != expected:
     raise RuntimeError(f"wrong bishengir-compile: {selected}; expected: {expected}")
+if selected_opt != expected_opt:
+    raise RuntimeError(f"wrong bishengir-opt: {selected_opt}; expected: {expected_opt}")
 
 PY
 
-  actual_bishengir_opt="$(command -v bishengir-opt || true)"
+  actual_bishengir_opt="$expected_bishengir_opt"
   actual_hivmc="$(command -v hivmc || true)"
   if [[ -z "$actual_bishengir_opt" || -z "$actual_hivmc" ]]; then
-    printf 'missing CANN tools: bishengir-opt=%s hivmc=%s\n' \
+    printf 'missing required tools: bishengir-opt=%s hivmc=%s\n' \
       "${actual_bishengir_opt:-not found}" "${actual_hivmc:-not found}" >&2
     exit 1
   fi
@@ -163,7 +169,7 @@ if [[ "$DETAILED_OUTPUT" == "1" ]]; then
   else
     printf 'bitcode_package=soc:%s arch:%s (project build; required)\n' \
       "$experiment_soc" "$experiment_bitcode_arch"
-    printf 'bishengir_opt=%s (CANN bytecode reader; expected)\n' \
+    printf 'bishengir_opt=%s (project MLIR 19 bytecode reader; required)\n' \
       "$(realpath "$actual_bishengir_opt")"
     printf 'hivmc=%s (CANN binary backend; expected)\n' \
       "$(realpath "$actual_hivmc")"

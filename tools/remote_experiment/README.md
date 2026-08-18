@@ -129,14 +129,22 @@ clang-15/clang++-15/lld-15 tools, including their version-suffixed paths. It
 does not fall back to GCC. The CANN device compiler path is unchanged.
 
 The setup exits unsuccessfully if the project MLIR 22 tool cannot emit
-bytecode version 4 containing `llvm.inttoptr` that the MLIR 19 BishengIR reader
-can consume, if Python's `sys.prefix` is not the project venv, or if either
+bytecode version 4 containing `llvm.inttoptr` that the bootstrap MLIR 19
+BishengIR reader can consume, if Python's `sys.prefix` is not the project venv, or if either
 `triton` or `libtriton` resolves outside
 the current checkout. A successful run prints `MLIR_BYTECODE_ROUNDTRIP_OK` and
 ends with `TRITON_DEV_IMPORT_OK`. Because the venv
 uses `--system-site-packages`, a manual development invocation must put
 `$REMOTE_PROJECT/python` first in `PYTHONPATH`; `run_all_sweeps.sh` and
 `REMOTE_MODE=dev` do this automatically.
+
+`rebuild-compiler.sh` builds both `bishengir-compile` and `bishengir-opt` from
+the repository-pinned AscendNPU-IR. It additionally round-trips
+`#hivm.address_space<ssbuf>` from the checkout's MLIR 22 writer through the
+project-built MLIR 19 reader and prints `HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK`.
+Development experiments require that project-built reader; CANN's older
+`bishengir-opt` does not recognize DynamicCV's SSBUF enum. CANN still supplies
+`hivmc` and the downstream device compiler.
 
 The venv interpreter may be a symlink to `/usr/local/bin/python`. That resolved
 file location is normal and is not used to decide whether the venv is active;

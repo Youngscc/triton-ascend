@@ -248,12 +248,15 @@ def _get_bishengir_opt_path() -> str:
         npuir_env_path = os.path.dirname(bishengir_opt_path)
         env["PATH"] = npuir_env_path + ":" + env["PATH"]
     else:
-        bishengir_opt_path = shutil.which("bishengir-opt")
-        if bishengir_opt_path is None:
-            bishengir_opt_root = os.getenv("TRITON_NPU_COMPILER_PATH", "")
-            if bishengir_opt_root is None:
+        bishengir_opt_root = os.getenv("TRITON_NPU_COMPILER_PATH")
+        explicit_path = os.path.join(bishengir_opt_root, "bishengir-opt") if bishengir_opt_root else None
+        if explicit_path and os.path.isfile(explicit_path) and os.access(explicit_path, os.X_OK):
+            bishengir_opt_path = explicit_path
+            env["PATH"] = bishengir_opt_root + ":" + env["PATH"]
+        else:
+            bishengir_opt_path = shutil.which("bishengir-opt")
+            if bishengir_opt_path is None:
                 raise EnvironmentError("Couldn't find executable bishengir-opt or TRITON_NPU_COMPILER_PATH")
-            bishengir_opt_path = os.path.join(bishengir_opt_root, "bishengir-opt")
     return bishengir_opt_path, env
 
 

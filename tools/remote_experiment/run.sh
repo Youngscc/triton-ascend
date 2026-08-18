@@ -33,6 +33,13 @@ if [[ "$REMOTE_MODE" == "dev" ]]; then
       'Enter the experiment container and run ./tools/remote_experiment/rebuild-compiler.sh.' >&2
     exit 1
   fi
+  if [[ ! -x "$REMOTE_COMPILER_BUILD/bin/bishengir-opt" ]]; then
+    printf 'custom bytecode reader not found: %s\n' \
+      "$REMOTE_COMPILER_BUILD/bin/bishengir-opt" >&2
+    printf '%s\n' \
+      'Enter the experiment container and run ./tools/remote_experiment/rebuild-compiler.sh.' >&2
+    exit 1
+  fi
 fi
 
 # Quote each argument for one `bash -c` inside the local server container. The
