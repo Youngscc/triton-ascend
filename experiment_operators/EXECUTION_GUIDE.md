@@ -624,6 +624,56 @@ ENV_REPORT_SOC_NAME=Ascend950 \
 roundtrip 失败，问题集中在 DynamicCV 的 HIVM schema/reader，而不是 bytecode
 version 4 的通用兼容性。
 
+### 使用已安装 wheel 和环境 Bisheng 的独立探针
+
+若环境中已经安装了可用的 Triton-Ascend wheel，可独立验证该 wheel 与环境
+BishengIR 是否能够处理 DynamicCV。先激活安装 wheel 的 Python 环境，然后直接
+执行脚本；不要 `source`：
+
+```bash
+./tools/remote_experiment/probe-installed-wheel-toolchain.sh
+echo "exit=$?"
+```
+
+脚本只在子 shell 中加载 CANN，并临时清除项目开发环境的 `PYTHONPATH`、
+`TRITON_BUILD_DIR` 和 `TRITON_NPU_COMPILER_PATH`。它不会修改当前 shell，也不会
+使用 `.codex-remote` 中的项目编译器。脚本首先打印 Python、wheel、`libtriton`、
+`triton-mlir-opt`、`triton-opt`、`bishengir-opt`、`bishengir-compile`、`hivmc`
+和 `bisheng` 的实际路径与版本，然后依次执行：
+
+1. MLIR bytecode version 4 普通 roundtrip；
+2. `#hivm.address_space<ssbuf>` roundtrip；
+3. `bishengir-compile` 的 SSBUF 解析检查；
+4. fused attention 的 DynamicCV 编译、正确性检查和一次短 NPU benchmark。
+
+该探针只设置 `intra_cache_num` 和 `vf_merge_level`，不会设置
+`EXPERIMENT_MULTIBUFFER_NUM` 或传入 `--set-local-multibuffer`。默认参数为
+`intra_cache_num=1`、`vf_merge_level=0`、一次 warmup 和一次 active 测量。需要时
+可以只对本次命令覆盖：
+
+```bash
+SYSTEM_PROBE_INTRA_CACHE_NUM=2 \
+SYSTEM_PROBE_VF_MERGE_LEVEL=1 \
+SYSTEM_PROBE_FULL_TIMEOUT=600 \
+  ./tools/remote_experiment/probe-installed-wheel-toolchain.sh
+```
+
+正常结果以以下输出结束，并返回 `0`：
+
+```text
+CHECK BYTECODE_V4_SSBUF_ROUNDTRIP       PASS
+CHECK BISHENGIR_COMPILE_SSBUF_PARSE    PASS
+CHECK MULTIBUFFER_OMITTED               PASS
+CHECK FULL_PIPELINE                     PASS
+RESULT=PASS
+```
+
+完整终端摘要只保存为项目 `tmp/installed-wheel-toolchain-<时间>.log` 一个文件。
+`UB_OBSERVATION=WARN` 不影响本次兼容性结论，但表示该环境还不能直接用于正式 UB
+测量。若设备名无法自动识别，可在单次命令上设置
+`SYSTEM_PROBE_SOC_NAME=Ascend950`；若当前环境的 wheel Python 不是 `python`，可设置
+`SYSTEM_PROBE_PYTHON=/绝对路径/python`。
+
 ## 9. 冒烟验证
 
 运行 Vector Add：

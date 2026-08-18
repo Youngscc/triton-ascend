@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -127,6 +128,8 @@ class SweepProgress:
             return sys.stdout, False
         if sys.stdout.isatty():
             return sys.stdout, True
+        if self.mode == "auto":
+            return sys.stdout, False
         try:
             terminal = open("/dev/tty", "w", encoding="utf-8")
         except OSError:
@@ -136,14 +139,31 @@ class SweepProgress:
         self._owns_stream = True
         return terminal, True
 
+    def _terminal_columns(self) -> int:
+        try:
+            return max(40, os.get_terminal_size(self.stream.fileno()).columns)
+        except (AttributeError, OSError, ValueError):
+            return max(40, shutil.get_terminal_size(fallback=(100, 24)).columns)
+
+    @staticmethod
+    def _fit_line(text: str, columns: int) -> str:
+        if len(text) <= columns:
+            return text
+        return text[:max(0, columns - 3)] + "..."
+
     def _lines(self) -> tuple[str, str]:
         ratio = self.completed / self.total if self.total else 1.0
-        filled = min(self.BAR_WIDTH, round(ratio * self.BAR_WIDTH))
-        bar = "#" * filled + "-" * (self.BAR_WIDTH - filled)
-        progress = (f"[{self.operator}] [{bar}] {self.completed}/{self.total} "
-                    f"({ratio * 100:5.1f}%)")
-        details = (f"current: {self.current} | success={self.success} "
-                   f"failed={self.failed} unsupported={self.unsupported}")
+        columns = self._terminal_columns()
+        counts = (f"{self.completed}/{self.total} {ratio * 100:5.1f}% "
+                  f"ok={self.success} fail={self.failed} skip={self.unsupported}")
+        operator_budget = max(8, min(len(self.operator), columns // 4))
+        operator = self._fit_line(self.operator, operator_budget)
+        fixed_width = len(operator) + len(counts) + 6
+        bar_width = min(self.BAR_WIDTH, max(4, columns - fixed_width))
+        filled = min(bar_width, round(ratio * bar_width))
+        bar = "#" * filled + "-" * (bar_width - filled)
+        progress = self._fit_line(f"[{operator}] [{bar}] {counts}", columns)
+        details = self._fit_line(f"current: {self.current}", columns)
         return progress, details
 
     def _clear_interactive(self) -> None:
@@ -163,8 +183,7 @@ class SweepProgress:
             self.stream.flush()
             self._rendered = True
         else:
-            print(f"PROGRESS {progress}", flush=True)
-            print(f"PROGRESS {details}", flush=True)
+            print(f"PROGRESS {progress} | {details}", flush=True)
 
     def begin(
         self,
@@ -176,10 +195,9 @@ class SweepProgress:
         merge: int,
     ) -> None:
         pipeline_display = "N/A" if pipeline_value is None else pipeline_value
-        self.current = (f"{key} dynamic_cv={str(dynamic_cv_pipeline).lower()} "
-                        f"{pipeline_axis}={pipeline_display} "
-                        f"multibuffer_num={multibuffer_num} "
-                        f"vf_merge_level={merge}")
+        short_axis = "intra" if pipeline_axis == "intra_cache_num" else pipeline_axis
+        self.current = (f"{key} dyn={'on' if dynamic_cv_pipeline else 'off'} "
+                        f"{short_axis}={pipeline_display} mb={multibuffer_num} vf={merge}")
         self.render()
 
     def finish_candidate(self, key: str, status: str) -> None:
