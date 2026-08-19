@@ -238,6 +238,10 @@ def summarize_run(run: dict) -> dict:
     latency_present = sum(row.get("latency_ms") is not None for row in rows)
     ub_present = sum(row.get("required_ub_bits") not in (None, 0) for row in rows)
     timed_out = sum(bool(row.get("timed_out")) for row in rows)
+    initially_timed_out = sum(bool(row.get("initial_timed_out", row.get("timed_out"))) for row in rows)
+    recovered_timeouts = sum(
+        bool(row.get("initial_timed_out", row.get("timed_out"))) and not bool(row.get("timed_out")) for row in rows)
+    total_attempts = sum(int(row.get("attempt_count", 1)) for row in rows)
     latencies = [float(row["latency_ms"]) for row in supported]
     ub_bits = [int(row["required_ub_bits"]) for row in supported]
     result = {
@@ -256,6 +260,9 @@ def summarize_run(run: dict) -> dict:
         "ub_present_count": ub_present,
         "ub_coverage": coverage(ub_present, len(rows)),
         "timed_out_count": timed_out,
+        "initially_timed_out_count": initially_timed_out,
+        "recovered_timeout_count": recovered_timeouts,
+        "total_attempt_count": total_attempts,
         "distinct_cache_keys": len({row.get("cache_key")
                                     for row in rows
                                     if row.get("cache_key")}),

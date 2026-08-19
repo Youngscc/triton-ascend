@@ -9,6 +9,7 @@ DEV_COMPILER_DIR="${TRITON_ASCEND_COMPILER_DIR:-$PROJECT_ROOT/.codex-remote/asce
 WARMUP="${SWEEP_WARMUP:-5}"
 ACTIVE="${SWEEP_ACTIVE:-30}"
 CANDIDATE_TIMEOUT="${SWEEP_TIMEOUT:-120}"
+TIMEOUT_RETRIES="${SWEEP_TIMEOUT_RETRIES:-1}"
 RUN_TAG="${SWEEP_RUN_TAG:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 DRY_RUN="${DRY_RUN:-0}"
 LIMIT="${SWEEP_LIMIT:-}"
@@ -32,6 +33,7 @@ Useful overrides:
   SWEEP_WARMUP=5
   SWEEP_ACTIVE=30
   SWEEP_TIMEOUT=120
+  SWEEP_TIMEOUT_RETRIES=1  # timed-out cases are retried after the initial sweep
   SWEEP_LIMIT=N       # smoke test only; incomplete runs are ignored by summary
   SWEEP_PROGRESS_MODE=auto  # auto, terminal, plain, or off
   SWEEP_DETAILED_OUTPUT=0   # set to 1 only for compiler debugging artifacts
@@ -181,6 +183,8 @@ if [[ "$DETAILED_OUTPUT" == "1" ]]; then
 fi
 printf 'benchmark_policy=warmup:%s active:%s timeout:%s\n' \
   "$WARMUP" "$ACTIVE" "$CANDIDATE_TIMEOUT"
+printf 'timeout_retry_policy=retries:%s order:after-initial-sweep\n' \
+  "$TIMEOUT_RETRIES"
 
 command=(
   "$PYTHON_BIN" -u "$SCRIPT_DIR/run_sweep.py"
@@ -188,6 +192,7 @@ command=(
   --warmup "$WARMUP"
   --active "$ACTIVE"
   --timeout "$CANDIDATE_TIMEOUT"
+  --timeout-retries "$TIMEOUT_RETRIES"
 )
 if [[ -n "$LIMIT" ]]; then
   command+=(--limit "$LIMIT")

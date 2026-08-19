@@ -19,7 +19,7 @@ import shutil
 import subprocess
 import sys
 import time
-from collections import Counter
+from collections import Counter, deque
 from datetime import datetime, timedelta, timezone
 from typing import NamedTuple, TextIO
 
@@ -78,6 +78,10 @@ CSV_FIELDNAMES = [
     "metadata_path",
     "binary_path",
     "wall_time_s",
+    "last_attempt_wall_time_s",
+    "attempt_count",
+    "timeout_retries_used",
+    "initial_timed_out",
     "timed_out",
     "returncode",
     "log_path",
@@ -92,6 +96,9 @@ SIMPLE_CSV_SUFFIX_FIELDNAMES = [
     "运行延迟_ms",
     "UB使用_KiB",
     "本轮总耗时_s",
+    "尝试次数",
+    "首轮是否超时",
+    "最终是否超时",
     "日志文件",
 ]
 
@@ -193,11 +200,18 @@ class SweepProgress:
         dynamic_cv_pipeline: bool,
         multibuffer_num: int,
         merge: int,
+        attempt: int = 1,
+        max_attempts: int = 1,
     ) -> None:
         pipeline_display = "N/A" if pipeline_value is None else pipeline_value
         short_axis = "intra" if pipeline_axis == "intra_cache_num" else pipeline_axis
+        attempt_display = f" attempt={attempt}/{max_attempts}" if attempt > 1 else ""
         self.current = (f"{key} dyn={'on' if dynamic_cv_pipeline else 'off'} "
-                        f"{short_axis}={pipeline_display} mb={multibuffer_num} vf={merge}")
+                        f"{short_axis}={pipeline_display} mb={multibuffer_num} vf={merge}{attempt_display}")
+        self.render()
+
+    def defer_timeout(self, key: str, retry_number: int, retry_limit: int) -> None:
+        self.current = f"deferred {key} after timeout; retry {retry_number}/{retry_limit} queued"
         self.render()
 
     def finish_candidate(self, key: str, status: str) -> None:
@@ -430,8 +444,12 @@ def compact_diagnostic(status: str, output: str, default: str) -> str:
 def simple_reason(row: dict) -> str:
     status = row["status"]
     if status == "measured":
+        if row.get("initial_timed_out"):
+            return f"首轮超时，补测后成功（共{row['attempt_count']}次尝试）"
         return "编译成功、结果正确，且已记录性能和UB"
     if row["timed_out"]:
+        if row.get("initial_timed_out") and row.get("attempt_count", 1) > 1:
+            return f"补测后仍执行超时（共{row['attempt_count']}次尝试）"
         return "执行超时"
     if status == "incorrect":
         if row["diagnostic"].startswith("mismatch="):
@@ -475,6 +493,9 @@ def write_simple_table(rows: list[dict], result_dir: Path, pipeline_axis: str) -
                 "运行延迟_ms": row["latency_ms"],
                 "UB使用_KiB": row["required_ub_kib"],
                 "本轮总耗时_s": row["wall_time_s"],
+                "尝试次数": row["attempt_count"],
+                "首轮是否超时": row["initial_timed_out"],
+                "最终是否超时": row["timed_out"],
                 "日志文件": str(Path("logs") / Path(row["log_path"]).name),
             })
     return csv_path
@@ -547,6 +568,12 @@ def parse_args():
         type=float,
         default=120.0,
         help="maximum seconds allowed for one candidate subprocess",
+    )
+    parser.add_argument(
+        "--timeout-retries",
+        type=int,
+        default=1,
+        help="retry timed-out candidates after every initial candidate has run",
     )
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument(
@@ -623,6 +650,8 @@ def main() -> int:
     args = parse_args()
     if args.warmup < 1 or args.active < 1 or args.timeout <= 0:
         raise SystemExit("--warmup, --active, and --timeout must be positive")
+    if args.timeout_retries < 0:
+        raise SystemExit("--timeout-retries must be non-negative")
     operator, candidate, pass_marker, correctness_evidence = resolve_operator(args)
     is_a5 = os.environ.get("BISHENGIR_NATIVE_A5_REGBASE") == "1"
     pipeline_axis = "intra_cache_num" if is_a5 else "depth"
@@ -673,6 +702,10 @@ def main() -> int:
         args.active,
         "timeout_s":
         args.timeout,
+        "timeout_retries":
+        args.timeout_retries,
+        "timeout_retry_order":
+        "after_initial_sweep",
         "benchmark_method":
         os.environ.get("TRITON_BENCH_METHOD", "npu/default"),
         "requested_configuration_count":
@@ -708,9 +741,17 @@ def main() -> int:
     if not args.simple_output:
         (result_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
-    rows = []
+    row_slots: list[dict | None] = [None] * len(configs)
+    attempt_queue = deque((index, config, 1) for index, config in enumerate(configs, 1))
+    max_attempts = 1 + args.timeout_retries
     progress = SweepProgress(operator, len(configs))
-    for index, config in enumerate(configs, 1):
+    retry_phase_announced = False
+    while attempt_queue:
+        index, config, attempt = attempt_queue.popleft()
+        if attempt > 1 and not retry_phase_announced:
+            pending_retry_count = 1 + sum(queued_attempt > 1 for _, _, queued_attempt in attempt_queue)
+            progress.log(f"initial sweep complete; retrying {pending_retry_count} timed-out configuration(s)")
+            retry_phase_announced = True
         dynamic_cv_pipeline = config.dynamic_cv_pipeline
         pipeline_value = config.pipeline_value
         multibuffer_num = config.multibuffer_num
@@ -728,6 +769,8 @@ def main() -> int:
             dynamic_cv_pipeline,
             multibuffer_num,
             merge,
+            attempt,
+            max_attempts,
         )
         log_path = logs_dir / f"{key}.log"
         env = os.environ.copy()
@@ -765,6 +808,8 @@ def main() -> int:
             "warmup": args.warmup,
             "active": args.active,
             "timeout_s": args.timeout,
+            "attempt": attempt,
+            "max_attempts": max_attempts,
         }
         if is_a5 and dynamic_cv_pipeline:
             requested_parameters.update({
@@ -778,15 +823,21 @@ def main() -> int:
                 "inter_cache_num": None,
                 "load_cache_num": None,
             })
-        progress.log(f"[{index}/{len(configs)}] {key} requested_parameters=" +
+        attempt_label = (f"retry {attempt - 1}/{args.timeout_retries}" if attempt > 1 else "initial")
+        progress.log(f"[{index}/{len(configs)} {attempt_label}] {key} requested_parameters=" +
                      json.dumps(requested_parameters, sort_keys=True) + f" log={log_path}")
         started_epoch_ns = time.time_ns()
         started = time.monotonic()
         timed_out = False
-        log_header = ("[EXPERIMENT] requested_parameters=" + json.dumps(requested_parameters, sort_keys=True) + "\n")
-        with log_path.open("w", encoding="utf-8") as log_handle:
-            log_handle.write(log_header)
+        log_header = (f"{'=' * 24} attempt {attempt}/{max_attempts} ({attempt_label}) {'=' * 24}\n"
+                      "[EXPERIMENT] requested_parameters=" + json.dumps(requested_parameters, sort_keys=True) + "\n")
+        if attempt > 1:
+            log_header = "\n" + log_header
+        log_mode = "wb" if attempt == 1 else "ab"
+        with log_path.open(log_mode) as log_handle:
+            log_handle.write(log_header.encode("utf-8"))
             log_handle.flush()
+            output_start = log_handle.tell()
             process = subprocess.Popen(
                 [sys.executable, "-u", str(candidate)],
                 cwd=ROOT,
@@ -804,8 +855,10 @@ def main() -> int:
             except KeyboardInterrupt:
                 terminate_process_group(process)
                 raise
-        wall_time = time.monotonic() - started
-        output = log_path.read_text(encoding="utf-8", errors="replace")
+        attempt_wall_time = time.monotonic() - started
+        with log_path.open("rb") as log_handle:
+            log_handle.seek(output_start)
+            output = log_handle.read().decode("utf-8", errors="replace")
         audit_lines = tuple(
             dict.fromkeys(line for line in output.splitlines() if line.startswith("[EXPERIMENT] operator_parameters=")
                           or line.startswith("[EXPERIMENT] resolved_npu_options=") or line.startswith(
@@ -851,8 +904,9 @@ def main() -> int:
             status = "measured"
 
         diagnostic = compact_diagnostic(status, output, diagnostic)
+        will_retry = timed_out and attempt < max_attempts
 
-        if status != "measured" and not args.simple_output:
+        if status != "measured" and not args.simple_output and not will_retry:
             print_candidate_failure(
                 key=key,
                 status=status,
@@ -863,6 +917,20 @@ def main() -> int:
                 emit=progress.log,
             )
 
+        previous_row = row_slots[index - 1]
+        previous_history = list(previous_row.get("attempt_history", [])) if previous_row is not None else []
+        previous_wall_time = float(previous_row.get("wall_time_s", 0.0)) if previous_row is not None else 0.0
+        initial_timed_out = bool(previous_row.get("initial_timed_out")) if previous_row is not None else timed_out
+        attempt_history = [
+            *previous_history, {
+                "attempt": attempt,
+                "status": status,
+                "diagnostic": diagnostic,
+                "timed_out": timed_out,
+                "returncode": returncode,
+                "wall_time_s": round(attempt_wall_time, 6),
+            }
+        ]
         row = {
             "operator": operator,
             "experiment_schema": manifest["experiment_schema"],
@@ -883,43 +951,66 @@ def main() -> int:
             "warmup": int(benchmark.group("warmup")) if benchmark else args.warmup,
             "active": int(benchmark.group("active")) if benchmark else args.active,
             **artifacts,
-            "wall_time_s": round(wall_time, 6),
+            "wall_time_s": round(previous_wall_time + attempt_wall_time, 6),
+            "last_attempt_wall_time_s": round(attempt_wall_time, 6),
+            "attempt_count": attempt,
+            "timeout_retries_used": attempt - 1,
+            "initial_timed_out": initial_timed_out,
+            "attempt_history": attempt_history,
             "timed_out": timed_out,
             "returncode": returncode,
             "log_path": str(log_path),
         }
-        rows.append(row)
+        row_slots[index - 1] = row
+        rows = [stored_row for stored_row in row_slots if stored_row is not None]
         if args.simple_output:
+            display_result = "待重试" if will_retry else simple_result(status)
+            display_status = "timeout_pending" if will_retry else status
             case_fields = [
                 f"CASE {index}/{len(configs)}",
                 f"key={key}",
+                f"attempt={attempt}/{max_attempts}",
                 f"dynamic_cv={str(dynamic_cv_pipeline).lower()}",
                 f"{pipeline_axis}={pipeline_value if pipeline_value is not None else 'N/A'}",
                 f"multibuffer_num={multibuffer_num}",
                 f"vf_merge_level={merge}",
-                f"结果={simple_result(status)}",
-                f"status={status}",
+                f"结果={display_result}",
+                f"status={display_status}",
                 f"latency_ms={row['latency_ms'] if row['latency_ms'] is not None else '-'}",
                 f"ub_kib={row['required_ub_kib'] if row['required_ub_kib'] is not None else '-'}",
                 f"wall_time_s={row['wall_time_s']}",
                 f"log=logs/{log_path.name}",
             ]
-            if status != "measured":
+            if will_retry:
+                case_fields.append(f"原因=超时，已排队等待补测 {attempt}/{args.timeout_retries}")
+            elif status != "measured":
                 case_fields.append(f"原因={simple_reason(row)}")
             progress.log(" ".join(case_fields))
             result_path = write_simple_table(rows, result_dir, pipeline_axis)
         else:
             write_tables(rows, result_dir)
-        progress.finish_candidate(key, status)
+        if will_retry:
+            attempt_queue.append((index, config, attempt + 1))
+            progress.defer_timeout(key, attempt, args.timeout_retries)
+        else:
+            progress.finish_candidate(key, status)
 
     progress.close()
 
+    rows = [row for row in row_slots if row is not None]
+
     if args.simple_output:
         result_counts = Counter(simple_result(row["status"]) for row in rows)
+        retried_count = sum(bool(row["initial_timed_out"]) for row in rows)
+        recovered_timeout_count = sum(bool(row["initial_timed_out"]) and not row["timed_out"] for row in rows)
+        final_timeout_count = sum(bool(row["timed_out"]) for row in rows)
         print("实验完成："
               f"成功={result_counts['成功']} "
               f"失败={result_counts['失败']} "
-              f"不支持={result_counts['不支持']}")
+              f"不支持={result_counts['不支持']} "
+              f"超时补测={retried_count} "
+              f"补测后不再超时={recovered_timeout_count} "
+              f"最终仍超时={final_timeout_count}")
         print(f"result_file={result_path}")
         print(f"case_logs={logs_dir}")
         return 0 if len(rows) == len(configs) else 1
@@ -932,6 +1023,10 @@ def main() -> int:
         "expected_row_count": requested_configuration_count,
         "complete": len(rows) == requested_configuration_count,
         "status_counts": dict(sorted(status_counts.items())),
+        "total_attempt_count": sum(row["attempt_count"] for row in rows),
+        "retried_configuration_count": sum(bool(row["initial_timed_out"]) for row in rows),
+        "recovered_timeout_count": sum(bool(row["initial_timed_out"]) and not row["timed_out"] for row in rows),
+        "final_timeout_count": sum(bool(row["timed_out"]) for row in rows),
         "distinct_ttir_hashes": len(ttir_hashes),
         "distinct_binary_hashes": len(binary_hashes),
         "ttir_frozen": len(ttir_hashes) == 1,
