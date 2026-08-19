@@ -219,6 +219,8 @@ docker exec -u root -it triton-ascend_container /bin/bash
 
 - [Performance Tuning Guide](./docs/zh/debug_guide/profiling.md#)
 
+- [A3/A5 Three-axis Experiment Guide](./experiment_operators/EXECUTION_GUIDE.md)
+
 - [Environment Variables Reference](./docs/zh/environment_variable_and_compiler_options_reference.md)
 
 - [FAQ](./docs/zh/FAQ.md)

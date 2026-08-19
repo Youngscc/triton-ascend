@@ -269,41 +269,29 @@ usage; never keep only the fastest configuration.
   currently classified as dynamically insensitive rather than proof that every
   optimization changes generated code.
 - `experiment_operators/run_sweep.py` is the standalone step-4 controller. A3
-  uses schema `native-cv-depth+no-dynamic-cv+independent-local-multibuffer-v4`;
-  A5 uses `dynamic-cv-off-first+intra-cache+independent-local-multibuffer-v2`.
-  A3 enumerates four depth values. A5 first enumerates the eight DynamicCV-off
-  combinations at static depth 1, then four enabled intra-cache values. Both
-  vary four ordinary multibuffer values and VF levels 0/1 by default. The
-  ordinary MIX strategy is fixed to `no-limit`. It rejects
-  cache metadata that does not resolve all three fixed conditions.
-  It writes incremental JSONL/CSV rows and per-row logs, records compiler time,
-  cache/artifact hashes, correctness, timing, and UB metadata, and never
-  chooses a winner. A row is `measured` only when correctness, timing, and a
-  nonzero UB observation are all present.
+  uses schema `native-cv-depth+no-dynamic-cv+independent-local-multibuffer-v5`;
+  A5 uses `dynamic-cv-off-first+intra-cache+independent-local-multibuffer-v3`.
+  All three axis value lists and the benchmark/timeout policy live only in
+  `experiment_operators/experiment_config.py`. A5 runs its DynamicCV-off
+  controls first. The ordinary MIX strategy is fixed to `no-limit`. The
+  controller rejects cache metadata that does not resolve the requested
+  values, writes every row incrementally, and never chooses a winner. A row is
+  `measured` only when correctness, timing, and a nonzero UB observation are
+  all present.
 - The repository-root `run_all_sweeps.sh` is the container-side entry point for
   one complete operator run: pass exactly one Python wrapper path. It activates
   the isolated development venv, selects the repository-built BishengIR,
-  creates a fresh Triton cache, and runs all 32 A3 or 40 A5 default configurations for that
-  operator. It then scans every complete result under `.codex-remote/results`,
-  selects the latest run independently for each operator, and refreshes the
-  aggregate tables and HTML. Use `DRY_RUN=1` to validate the command without
-  launching the NPU; `SWEEP_LIMIT` is smoke-only and cannot displace a complete
-  run. The full server-side operator, build, run, and reporting procedure is in
-  `experiment_operators/EXECUTION_GUIDE.md`.
-- User-facing measurement CSVs expose `depth` on A3 or `intra_cache_num` on A5,
-  followed by `multibuffer_num`, `vf_merge_level`, latency, and UB. Resolved
-  fields remain in detailed JSONL/cache metadata for auditing. The latest-run
-  summarizer additionally emits `effects.{csv,json,md,svg}` using controlled
-  matched comparisons against the architecture-specific first axis. Do not replace
-  these controlled views with marginal averages that hide factor interactions.
-- Every sweep row prints auditable `requested_parameters` and fixed
-  `operator_parameters` records, the full final `resolved_npu_options`
-  snapshot after defaults/frontend adjustments, and the exact BishengIR
-  `cmd_list` to both the aggregate run log and the row-specific log. The latter
-  also retains complete candidate stdout/stderr. BishengIR subprocess failures
-  are reformatted with their return code, command, and captured streams, while
-  sweep candidates disable full IR printing so the actual pass diagnostic
-  remains readable.
+  creates a fresh Triton cache, runs the configuration in
+  `experiment_config.py`, and refreshes the HTML. There are no simple,
+  detailed, dry-run, limited, or progress modes. The `--case` form accepts one
+  existing first-axis/multibuffer/VF triple and updates that row in the latest
+  complete result. A final timeout row is rerun directly; replacing any other
+  status requires interactive confirmation.
+- Each run has one readable `results.csv`, one complete machine record
+  `measurements.jsonl`, `manifest.json`, and one log per case. Artifact hashes
+  appear only in `measurements.jsonl`. Requested parameters, resolved backend
+  options, the exact BishengIR command, compiler diagnostics, correctness
+  output, and benchmark output remain in the corresponding case log.
 - `experiment_operators/generate_latest_report.sh` selects each operator's
   latest complete result and generates the self-contained offline report at
   `.codex-remote/results/latest-summary/experiment-report.html` from
@@ -364,17 +352,10 @@ usage; never keep only the fastest configuration.
   settings as under investigation, not supported, until their
   synchronization/data-lifetime failure is resolved without changing operator
   semantics.
-- `run_sweep.py` now gives each candidate an explicit timeout (default 120
-  seconds) and records a timeout as an `unsupported` row with return code 124,
+- `run_sweep.py` gives each candidate the timeout configured in
+  `experiment_config.py` and records a timeout as an `unsupported` row with return code 124,
   so a non-returning NPU kernel cannot prevent the remaining configurations
   from being observed.
-- `experiment_operators/summarize_latest.py` compares both historical UTC
-  (`...Z`) and current fixed UTC+8 (`...+0800`) run IDs, selects the newest
-  complete artifact directory for each operator, and writes a supported-only
-  CSV/Markdown table plus per-operator coverage, failure, latency, UB, and
-  artifact-diversity statistics. It labels schema versions so old CV-split
-  `numBuf` rows cannot be mistaken for the new ordinary-local
-  `multibuffer_num`. It never ranks or selects a configuration.
 
 ### Operator-corpus screening
 
@@ -520,13 +501,12 @@ silently substituted.
 
 Write one experiment directory under `.codex-remote/results/<run-id>/` with:
 
-- `manifest.json`: parent/submodule commits and dirty state, TTIR hash, tool and
-  device versions, input specification/seed, environment, and benchmark policy;
-- `measurements.jsonl` and `measurements.csv`: one row per requested triple,
-  including unsuccessful or unsupported triples;
-- `summary.json`: coverage counts and sensitivity classifications only, with no
-  best/winner field;
-- `ir/` and `logs/`: TTIR plus opt-in failed/intermediate IR and diagnostics.
+- `manifest.json`: parent/submodule commits, exact axis values, operator hash,
+  environment, and benchmark policy;
+- `measurements.jsonl`: the single complete machine table, with one row per
+  requested triple including unsuccessful or unsupported triples;
+- `results.csv`: the readable status, latency, UB, retry, and log-path table;
+- `logs/`: one complete compiler, correctness, and benchmark log per case.
 
 The stable candidate key must include operator case, TTIR hash, target, all
 three parameter values, and compiler version so Triton cache entries cannot

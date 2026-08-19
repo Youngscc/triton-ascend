@@ -3,238 +3,108 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
-
 DEV_VENV="${TRITON_ASCEND_DEV_VENV:-$PROJECT_ROOT/.codex-remote/venv}"
 DEV_COMPILER_DIR="${TRITON_ASCEND_COMPILER_DIR:-$PROJECT_ROOT/.codex-remote/ascendnpu-ir-build-explicit/bin}"
-WARMUP="${SWEEP_WARMUP:-5}"
-ACTIVE="${SWEEP_ACTIVE:-30}"
-CANDIDATE_TIMEOUT="${SWEEP_TIMEOUT:-120}"
-TIMEOUT_RETRIES="${SWEEP_TIMEOUT_RETRIES:-1}"
-RUN_TAG="${SWEEP_RUN_TAG:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
-DRY_RUN="${DRY_RUN:-0}"
-LIMIT="${SWEEP_LIMIT:-}"
-DETAILED_OUTPUT="${SWEEP_DETAILED_OUTPUT:-0}"
-INCLUDE_VF_MERGE_LEVEL_2="${SWEEP_INCLUDE_VF_MERGE_LEVEL_2:-0}"
 
 usage() {
   cat >&2 <<'EOF'
-Usage: ./run_all_sweeps.sh /path/to/operator.py
+Usage:
+  ./run_all_sweeps.sh operator.py
+  ./run_all_sweeps.sh --case operator.py FIRST_AXIS MULTIBUFFER VF_MERGE
 
-Runs 32 A3 or 40 A5 compiler configurations for one Python operator wrapper.
-A3 varies static CV depth. A5 runs 8 DynamicCV-disabled baselines first, then
-enables DynamicCV and runs 32 intra_cache_num configurations.
-Both environments vary ordinary multibuffer_num and vf_merge_level.
-vf_merge_level=2 is temporarily excluded unless explicitly enabled.
-By default, results.csv summarizes the run and logs/<case>.log retains each
-configuration's complete compiler, correctness, and benchmark output.
-
-Useful overrides:
-  DRY_RUN=1
-  SWEEP_WARMUP=5
-  SWEEP_ACTIVE=30
-  SWEEP_TIMEOUT=120
-  SWEEP_TIMEOUT_RETRIES=1  # timed-out cases are retried after the initial sweep
-  SWEEP_LIMIT=N       # smoke test only; incomplete runs are ignored by summary
-  SWEEP_PROGRESS_MODE=auto  # auto, terminal, plain, or off
-  SWEEP_DETAILED_OUTPUT=0   # set to 1 only for compiler debugging artifacts
-  SWEEP_INCLUDE_VF_MERGE_LEVEL_2=0  # set to 1 for 48 A3 or 60 A5 configurations
+The first form runs the complete experiment defined in experiment_config.py.
+The second reruns one row in the latest complete result. On A5, FIRST_AXIS may
+be "off" for the DynamicCV-disabled baseline or an intra_cache_num value.
 EOF
 }
 
-if [[ "$INCLUDE_VF_MERGE_LEVEL_2" != "0" \
-  && "$INCLUDE_VF_MERGE_LEVEL_2" != "1" ]]; then
-  printf '%s\n' 'SWEEP_INCLUDE_VF_MERGE_LEVEL_2 must be 0 or 1' >&2
-  exit 2
-fi
-
-if [[ $# -ne 1 ]]; then
+if [[ $# -eq 1 ]]; then
+  operator_file="$1"
+elif [[ $# -eq 5 && "$1" == "--case" ]]; then
+  operator_file="$2"
+else
   usage
   exit 2
 fi
 
-OPERATOR_FILE="$1"
-if [[ "$OPERATOR_FILE" != /* ]]; then
-  OPERATOR_FILE="$PWD/$OPERATOR_FILE"
+if [[ "$operator_file" != /* ]]; then
+  operator_file="$PWD/$operator_file"
 fi
-if [[ ! -f "$OPERATOR_FILE" ]]; then
-  printf 'operator file not found: %s\n' "$OPERATOR_FILE" >&2
-  exit 1
-fi
-if [[ "$OPERATOR_FILE" != *.py ]]; then
-  printf 'operator file must end in .py: %s\n' "$OPERATOR_FILE" >&2
+if [[ ! -f "$operator_file" || "$operator_file" != *.py ]]; then
+  printf 'operator must be an existing Python file: %s\n' "$operator_file" >&2
   exit 1
 fi
 
-OPERATOR_BASENAME="${OPERATOR_FILE##*/}"
-OPERATOR_BASENAME="${OPERATOR_BASENAME%.py}"
-OPERATOR_TAG="$(printf '%s' "$OPERATOR_BASENAME" | tr -cs '[:alnum:]_.-' '_')"
-LOG_DIR="$PROJECT_ROOT/.codex-remote/logs"
-RESULTS_DIR="$PROJECT_ROOT/.codex-remote/results"
-SESSION_LOG="$LOG_DIR/$RUN_TAG-$OPERATOR_TAG-sweep.log"
+REMOTE_VENV="$DEV_VENV"
+REMOTE_COMPILER_BUILD="${DEV_COMPILER_DIR%/bin}"
+export REMOTE_VENV REMOTE_COMPILER_BUILD
+# shellcheck source=tools/remote_experiment/activate-dev-environment.sh
+source "$PROJECT_ROOT/tools/remote_experiment/activate-dev-environment.sh"
 
-if [[ "$DRY_RUN" != "1" && "$DETAILED_OUTPUT" == "1" ]]; then
-  mkdir -p "$LOG_DIR" "$RESULTS_DIR"
-  exec > >(tee -a "$SESSION_LOG") 2>&1
-else
-  SESSION_LOG="(disabled)"
-fi
-
-if [[ "$DRY_RUN" != "1" ]]; then
-  REMOTE_VENV="$DEV_VENV"
-  REMOTE_COMPILER_BUILD="${DEV_COMPILER_DIR%/bin}"
-  # shellcheck source=tools/remote_experiment/activate-dev-environment.sh
-  source "$PROJECT_ROOT/tools/remote_experiment/activate-dev-environment.sh"
-  experiment_soc="$TRITON_ASCEND_SOC_NAME"
-  experiment_bitcode_arch="$TRITON_ASCEND_BITCODE_ARCH"
-  if ! "$DEV_VENV/bin/python" - <<'PY'
+"$DEV_VENV/bin/python" - <<'PY'
 import numpy
 import pandas
 import torch
 import torch_npu
 PY
-  then
-    printf '%s\n' \
-      'missing experiment Python dependencies; install numpy, pandas, torch, and torch-npu in the project venv before launching a sweep' >&2
+
+compiler_lib="${DEV_COMPILER_DIR%/bin}/lib"
+for file in \
+  "meta_op.aic.$TRITON_ASCEND_BITCODE_ARCH.bc" \
+  "meta_op.aiv.$TRITON_ASCEND_BITCODE_ARCH.bc" \
+  "meta_op.mix.aic.$TRITON_ASCEND_BITCODE_ARCH.bc" \
+  "meta_op.mix.aiv.$TRITON_ASCEND_BITCODE_ARCH.bc" \
+  host.bc; do
+  if [[ ! -s "$compiler_lib/$file" ]]; then
+    printf 'missing experiment bitcode: %s\n' "$compiler_lib/$file" >&2
     exit 1
   fi
-  compiler_lib="${DEV_COMPILER_DIR%/bin}/lib"
-  for file in \
-    "meta_op.aic.$experiment_bitcode_arch.bc" \
-    "meta_op.aiv.$experiment_bitcode_arch.bc" \
-    "meta_op.mix.aic.$experiment_bitcode_arch.bc" \
-    "meta_op.mix.aiv.$experiment_bitcode_arch.bc" \
-    host.bc; do
-    if [[ ! -s "$compiler_lib/$file" ]]; then
-      printf 'missing experiment bitcode for %s: %s\n' \
-        "$experiment_soc" "$compiler_lib/$file" >&2
-      exit 1
-    fi
-  done
-fi
+done
 
-if [[ "$DRY_RUN" == "1" ]]; then
-  export PYTHONPATH="$PROJECT_ROOT/python${PYTHONPATH:+:$PYTHONPATH}"
-  export PATH="$DEV_COMPILER_DIR:$PATH"
-  export TRITON_NPU_COMPILER_PATH="$DEV_COMPILER_DIR"
-fi
-export TRITON_BENCH_METHOD="${TRITON_BENCH_METHOD:-npu}"
-export TRITON_CACHE_DIR="${SWEEP_CACHE_DIR:-$PROJECT_ROOT/.codex-remote/triton-cache/formal-$RUN_TAG}"
-
-if [[ "$DRY_RUN" != "1" ]]; then
-  mkdir -p "$TRITON_CACHE_DIR"
-
-  expected_bishengir_compile="$(realpath "$DEV_COMPILER_DIR/bishengir-compile")"
-  expected_bishengir_opt="$(realpath "$DEV_COMPILER_DIR/bishengir-opt")"
-  EXPECTED_BISHENGIR_COMPILE="$expected_bishengir_compile" \
-    EXPECTED_BISHENGIR_OPT="$expected_bishengir_opt" \
-    PROJECT_ROOT="$PROJECT_ROOT" "$DEV_VENV/bin/python" - <<'PY'
+expected_compile="$(realpath "$DEV_COMPILER_DIR/bishengir-compile")"
+expected_opt="$(realpath "$DEV_COMPILER_DIR/bishengir-opt")"
+EXPECTED_BISHENGIR_COMPILE="$expected_compile" \
+EXPECTED_BISHENGIR_OPT="$expected_opt" \
+PROJECT_ROOT="$PROJECT_ROOT" "$DEV_VENV/bin/python" - <<'PY'
 import os
 from pathlib import Path
 
 from triton.backends.ascend import utils
 
-project_root = Path(os.environ["PROJECT_ROOT"]).resolve()
-utils_file = Path(utils.__file__).resolve()
-expected = Path(os.environ["EXPECTED_BISHENGIR_COMPILE"]).resolve()
-selected = Path(utils._get_npucompiler_path()[0]).resolve()
-expected_opt = Path(os.environ["EXPECTED_BISHENGIR_OPT"]).resolve()
+root = Path(os.environ["PROJECT_ROOT"]).resolve()
+backend = Path(utils.__file__).resolve()
+selected_compile = Path(utils._get_npucompiler_path()[0]).resolve()
 selected_opt = Path(utils._get_bishengir_opt_path()[0]).resolve()
+expected_compile = Path(os.environ["EXPECTED_BISHENGIR_COMPILE"]).resolve()
+expected_opt = Path(os.environ["EXPECTED_BISHENGIR_OPT"]).resolve()
 
-if not utils_file.is_relative_to(project_root):
-    raise RuntimeError(f"Ascend backend is not from this checkout: {utils_file}")
-if selected != expected:
-    raise RuntimeError(f"wrong bishengir-compile: {selected}; expected: {expected}")
+if not backend.is_relative_to(root):
+    raise RuntimeError(f"Ascend backend is not from this checkout: {backend}")
+if selected_compile != expected_compile:
+    raise RuntimeError(
+        f"wrong bishengir-compile: {selected_compile}; expected: {expected_compile}"
+    )
 if selected_opt != expected_opt:
     raise RuntimeError(f"wrong bishengir-opt: {selected_opt}; expected: {expected_opt}")
-
 PY
 
-  actual_bishengir_opt="$expected_bishengir_opt"
-  actual_hivmc="$(command -v hivmc || true)"
-  if [[ -z "$actual_bishengir_opt" || -z "$actual_hivmc" ]]; then
-    printf 'missing required tools: bishengir-opt=%s hivmc=%s\n' \
-      "${actual_bishengir_opt:-not found}" "${actual_hivmc:-not found}" >&2
-    exit 1
-  fi
-fi
+command -v hivmc >/dev/null
+export TRITON_BENCH_METHOD=npu
+run_tag="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+export TRITON_CACHE_DIR="$PROJECT_ROOT/.codex-remote/triton-cache/$run_tag"
+mkdir -p "$TRITON_CACHE_DIR"
 
-PYTHON_BIN="$(command -v python3 || command -v python)"
-if [[ "$DRY_RUN" != "1" ]]; then
-  PYTHON_BIN="$(command -v python)"
-fi
-
-printf 'operator_file=%s\n' "$OPERATOR_FILE"
-if [[ "$DETAILED_OUTPUT" == "1" ]]; then
-  printf 'project=%s\n' "$PROJECT_ROOT"
-  printf 'python=%s\n' "$PYTHON_BIN"
-  if [[ "$DRY_RUN" == "1" ]]; then
-    printf 'bishengir_compile=%s\n' "$DEV_COMPILER_DIR/bishengir-compile"
-  else
-    printf 'bitcode_package=soc:%s arch:%s (project build; required)\n' \
-      "$experiment_soc" "$experiment_bitcode_arch"
-    printf 'bishengir_opt=%s (project MLIR 19 bytecode reader; required)\n' \
-      "$(realpath "$actual_bishengir_opt")"
-    printf 'hivmc=%s (CANN binary backend; expected)\n' \
-      "$(realpath "$actual_hivmc")"
-  fi
-  printf 'triton_cache=%s\n' "$TRITON_CACHE_DIR"
-  printf 'results_root=%s\n' "$RESULTS_DIR"
-  printf 'session_log=%s\n' "$SESSION_LOG"
-fi
-printf 'benchmark_policy=warmup:%s active:%s timeout:%s\n' \
-  "$WARMUP" "$ACTIVE" "$CANDIDATE_TIMEOUT"
-printf 'timeout_retry_policy=retries:%s order:after-initial-sweep\n' \
-  "$TIMEOUT_RETRIES"
-
-command=(
-  "$PYTHON_BIN" -u "$SCRIPT_DIR/run_sweep.py"
-  --operator-file "$OPERATOR_FILE"
-  --warmup "$WARMUP"
-  --active "$ACTIVE"
-  --timeout "$CANDIDATE_TIMEOUT"
-  --timeout-retries "$TIMEOUT_RETRIES"
-)
-if [[ -n "$LIMIT" ]]; then
-  command+=(--limit "$LIMIT")
-fi
-if [[ "$DETAILED_OUTPUT" != "1" ]]; then
-  command+=(--simple-output)
-fi
-if [[ "$INCLUDE_VF_MERGE_LEVEL_2" == "1" ]]; then
-  command+=(--include-vf-merge-level-2)
-fi
-
-if [[ "$DRY_RUN" == "1" ]]; then
-  printf 'dry_run command='
-  printf '%q ' "${command[@]}"
-  printf '\n'
-  printf 'dry run complete; no experiment was launched\n'
-  exit 0
-fi
-
-printf '\nstarting single-operator sweep\n'
-"${command[@]}"
-printf 'completed operator_file=%s\n' "$OPERATOR_FILE"
-
-if [[ "$DETAILED_OUTPUT" != "1" ]]; then
-  printf '%s\n' 'sweep complete; see results.csv and logs/<case>.log'
-  if [[ -z "$LIMIT" ]]; then
-    PYTHON_BIN="$PYTHON_BIN" "$SCRIPT_DIR/generate_latest_report.sh"
-  fi
-  exit 0
-fi
-
-printf '\nselecting the latest complete result for every operator\n'
-if "$PYTHON_BIN" -u "$SCRIPT_DIR/summarize_latest.py"; then
-  PYTHON_BIN="$PYTHON_BIN" "$SCRIPT_DIR/generate_latest_report.sh"
-elif [[ -n "$LIMIT" ]]; then
-  printf 'No complete sweep is available yet; skipped latest-summary generation.\n'
+if [[ "$1" == "--case" ]]; then
+  command=(
+    "$DEV_VENV/bin/python" -u "$SCRIPT_DIR/run_sweep.py"
+    --case "$operator_file" "$3" "$4" "$5"
+  )
 else
-  printf 'Latest-result aggregation failed after a complete sweep.\n' >&2
-  exit 1
+  command=("$DEV_VENV/bin/python" -u "$SCRIPT_DIR/run_sweep.py" "$operator_file")
 fi
 
-printf '\nsweep and aggregate report complete\n'
-printf 'HTML report: %s/latest-summary/experiment-report.html\n' "$RESULTS_DIR"
-printf 'From the local checkout, pull all server results with:\n'
-printf './tools/remote_experiment/pull-results.sh\n'
+"${command[@]}"
+PYTHON_BIN="$DEV_VENV/bin/python" "$SCRIPT_DIR/generate_latest_report.sh"
+
+printf 'HTML report: %s\n' \
+  "$PROJECT_ROOT/.codex-remote/results/latest-summary/experiment-report.html"
