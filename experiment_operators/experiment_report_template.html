@@ -585,13 +585,18 @@
         const warning = currentRows.length < allAxisValues.length ? " warning" : "";
 
         elements.runMeta.replaceChildren();
-        [
+        const runMetadata = [
           `run ${operator.run_id}`,
           operator.schema,
-          `${operator.measured_count}/${operator.row_count} measured`,
-          `${operator.distinct_binary_hashes} binaries`,
-          `${operator.distinct_ttir_hashes} TTIR`
-        ].forEach(text => {
+          `${operator.measured_count}/${operator.row_count} measured`
+        ];
+        if (operator.distinct_binary_hashes !== null) {
+          runMetadata.push(`${operator.distinct_binary_hashes} binaries`);
+        }
+        if (operator.distinct_ttir_hashes !== null) {
+          runMetadata.push(`${operator.distinct_ttir_hashes} TTIR`);
+        }
+        runMetadata.forEach(text => {
           const span = document.createElement("span");
           span.textContent = text;
           elements.runMeta.appendChild(span);

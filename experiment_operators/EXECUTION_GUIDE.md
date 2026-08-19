@@ -863,6 +863,8 @@ python experiment_operators/summarize_latest.py
 页面底部会显示当前所选算子实验所记录的 Triton Ascend commit 和
 AscendNPU-IR gitlink。离线 rsync 环境通过 `.codex-remote/top-git` 解析版本，
 项目根目录不需要 `.git`，也不需要传输 submodule 的 Git 仓库。
+报告生成器可以直接读取完整的简洁版 `results.csv`。旧简洁结果未记录源码版本时
+会显示“未记录”，无需为生成图表重新运行实验；新结果会保留一个内部 manifest。
 
 ## 12. 何时需要重新构建
 

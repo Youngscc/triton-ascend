@@ -264,7 +264,9 @@ fix the other two variables to compare latency and UB side by side. Absolute
 and relative-to-first-point modes, hover details, coverage, binary-count, run
 provenance, and a configuration table are included. A subdued footer records
 the Triton Ascend commit and AscendNPU-IR gitlink captured for the selected
-operator run. Override paths when needed:
+operator run. Complete lightweight `results.csv` runs are accepted directly;
+older lightweight runs display unrecorded source versions, while new runs keep
+a small internal manifest for exact provenance. Override paths when needed:
 
 ```bash
 EXPERIMENT_RESULTS_DIR=/path/to/results \
