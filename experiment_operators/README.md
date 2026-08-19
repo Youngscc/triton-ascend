@@ -7,12 +7,15 @@ This directory contains the operator wrappers and controller for measuring every
 Edit `experiment_config.py` before a full run:
 
 ```python
-FIRST_AXIS_VALUES = (1, 2, 3, 4)
-MULTIBUFFER_NUM_VALUES = (1, 2, 3, 4)
+A3_DEPTH_VALUES = (1, 2, 3, 4)
+A5_INTRA_CACHE_NUM_VALUES = ("off", 1, 2, 3, 4)
+MULTIBUFFER_NUM_VALUES = ("off", 1, 2, 3, 4)
 VF_MERGE_LEVEL_VALUES = (0, 1)
 ```
 
-On A3, the first axis is static CV `depth` and DynamicCV is disabled. On A5, the first axis is DynamicCV `intra_cache_num`; a DynamicCV-disabled baseline for every `(multibuffer_num, vf_merge_level)` pair runs first. The A5 inter/load cache counts remain fixed at 1.
+On A3, the first axis is static CV `depth` and DynamicCV is always disabled. On A5, `"off"` disables DynamicCV and numeric values enable it with that `intra_cache_num`; the A5 inter/load cache counts remain fixed at 1. For the second axis, `"off"` passes `multibuffer=False` and omits the explicit local count, while `1` keeps the pass enabled with one buffer. `vf_merge_level=0` disables VF merge.
+
+The default order runs disabled states first. It produces 40 A3 rows and 50 A5 rows.
 
 The same file contains warmup, active measurement, timeout, and timeout-retry values. These settings are not duplicated as command-line switches.
 
@@ -47,6 +50,10 @@ To rerun one existing row in the latest complete result:
 # A5 DynamicCV-off baseline
 ./run_all_sweeps.sh --case \
   experiment_operators/candidates/fused_attention.py off 2 1
+
+# A5: both DynamicCV and ordinary MultiBuffer disabled
+./run_all_sweeps.sh --case \
+  experiment_operators/candidates/fused_attention.py off off 0
 ```
 
 A timed-out row is refilled directly. Replacing any other row requires interactive confirmation.

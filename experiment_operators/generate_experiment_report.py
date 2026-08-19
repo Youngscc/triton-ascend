@@ -23,6 +23,7 @@ OPERATOR_LABELS = {
     "unified_attention": "Unified attention",
     "hstu_attention": "HSTU attention",
 }
+OFF = "off"
 
 
 def parse_args() -> argparse.Namespace:
@@ -113,6 +114,19 @@ def optional_int(value: str | None) -> int | None:
     return int(value) if value not in (None, "") else None
 
 
+def optional_axis_value(value: str | None) -> int | str | None:
+    normalized = (value or "").strip().lower()
+    if not normalized:
+        return None
+    return OFF if normalized == OFF else int(normalized)
+
+
+def axis_sort_key(value) -> tuple[int, int]:
+    if value == OFF:
+        return (0, 0)
+    return (1, int(value))
+
+
 def optional_float(value: str | None) -> float | None:
     return float(value) if value not in (None, "") else None
 
@@ -127,7 +141,11 @@ def csv_bool(value: str | None) -> bool:
 
 
 def normalize_csv_row(raw: dict[str, str], axis: str) -> dict:
-    value = optional_int(raw.get(axis))
+    requested_axis = optional_axis_value(raw.get(axis))
+    value = requested_axis if isinstance(requested_axis, int) else None
+    multibuffer = optional_axis_value(raw.get("multibuffer_num"))
+    auto_multibuffer = (csv_bool(raw.get("enable_auto_multi_buffer"))
+                        if "enable_auto_multi_buffer" in raw else multibuffer != OFF)
     result = raw.get("结果", "")
     diagnostic = raw.get("原因", "")
     if result == "成功":
@@ -142,7 +160,9 @@ def normalize_csv_row(raw: dict[str, str], axis: str) -> dict:
         "depth": value if axis == "depth" else None,
         "intra_cache_num": value if axis == "intra_cache_num" else None,
         "enable_dynamic_cv_pipeline": csv_bool(raw.get("enable_dynamic_cv_pipeline")),
-        "multibuffer_num": optional_int(raw.get("multibuffer_num")),
+        "enable_auto_multi_buffer": auto_multibuffer,
+        "multibuffer_num": multibuffer,
+        "resolved_local_multibuffer_num": (multibuffer if isinstance(multibuffer, int) else None),
         "vf_merge_level": optional_int(raw.get("vf_merge_level")),
         "status": status,
         "correctness_status": correctness,
@@ -180,13 +200,18 @@ def load_csv_run(result_dir: Path) -> dict | None:
         "requested_configuration_count": manifest.get("requested_configuration_count", len(rows)),
         "executed_configuration_count": manifest.get("executed_configuration_count", len(rows)),
         "axes": manifest.get("axes") or {
-            axis: sorted({row[axis]
-                          for row in rows
-                          if row.get(axis) is not None}),
-            "multibuffer_num": sorted({row["multibuffer_num"]
-                                       for row in rows}),
-            "vf_merge_level": sorted({row["vf_merge_level"]
-                                      for row in rows}),
+            axis:
+            sorted(
+                {
+                    OFF if axis == "intra_cache_num" and not row["enable_dynamic_cv_pipeline"] else row[axis]
+                    for row in rows
+                }, key=axis_sort_key),
+            "multibuffer_num":
+            sorted({row["multibuffer_num"]
+                    for row in rows}, key=axis_sort_key),
+            "vf_merge_level":
+            sorted({row["vf_merge_level"]
+                    for row in rows}),
         },
     })
     unique_configs = {(
@@ -220,12 +245,17 @@ def compact_row(row: dict) -> dict:
     ub_kib = row.get("required_ub_kib")
     if ub_kib is None and row.get("required_ub_bits") not in (None, 0):
         ub_kib = float(row["required_ub_bits"]) / 8192
+    auto_multibuffer = row.get("enable_auto_multi_buffer")
+    multibuffer_num = row.get("multibuffer_num", row.get("resolved_local_multibuffer_num"))
+    if auto_multibuffer is False:
+        multibuffer_num = OFF
     return {
         "depth": row_depth(row),
         "intra_cache_num":
         (row.get("intra_cache_num") if row.get("enable_dynamic_cv_pipeline") is not False else "off"),
         "enable_dynamic_cv_pipeline": row.get("enable_dynamic_cv_pipeline"),
-        "multibuffer_num": row.get("multibuffer_num"),
+        "enable_auto_multi_buffer": auto_multibuffer,
+        "multibuffer_num": multibuffer_num,
         "vf_merge_level": row.get("vf_merge_level"),
         "status": row.get("status", "missing"),
         "correctness_status": row.get("correctness_status", "missing"),

@@ -198,18 +198,18 @@ The independent variables are:
 | Public experiment name | Requested values | Intended compiler control |
 | --- | --- | --- |
 | A3: `depth`; A5: DynamicCV state plus `intra_cache_num` | A3 `1, 2, 3, 4`; A5 `off`, then `1, 2, 3, 4` | A3 uses native static CV workspace/depth with DynamicCV disabled; A5 first runs a disabled baseline with static depth 1, then enables DynamicCV and varies its intra-cache count while fixing inter/load to 1 |
-| `multibuffer_num` | `1, 2, 3, 4` | independently replace the ordinary local `MarkMultiBuffer` default of 2 through `--set-local-multibuffer`, with the MIX strategy fixed to `no-limit` |
+| ordinary MultiBuffer state plus `multibuffer_num` | `off`, then `1, 2, 3, 4` | `off` sets `NPUOptions.multibuffer=False`; numeric values enable the pass, replace the ordinary local `MarkMultiBuffer` default through `--set-local-multibuffer`, and set the MIX strategy to `no-limit` |
 | `vf_merge_level` | `0, 1, 2` | existing `NPUOptions.vf_merge_level` and `--enable-vf-merge-level` |
 
-The default search space has 32 A3 or 40 A5 combinations because VF merge
-level 2 is temporarily excluded; the explicit diagnostic opt-in has 48 A3 or
-60 A5 combinations. A5 always executes its eight DynamicCV-disabled baseline
-combinations before the 32 enabled combinations. There is no
+The default search space has 40 A3 or 50 A5 combinations because VF merge
+level 2 is temporarily excluded; adding level 2 gives 60 A3 or 75 A5
+combinations. A5 always executes its ten DynamicCV-disabled combinations
+before the 40 enabled combinations. There is no
 ordering constraint between ordinary `multibuffer_num` and the first axis. Do not silently
 coerce or drop a combination. Record it as `unsupported`, `compile_failed`,
 `ub_overflow`, `incorrect`, or `measured` with a diagnostic.
 
-Every default accepted operator case must therefore produce 32 A3 or 40 A5
+Every default accepted operator case must therefore produce 40 A3 or 50 A5
 rows. A failed or unsupported configuration is still an observation and must remain in the
 dataset. Successful rows require both latency statistics and non-missing UB
 usage; never keep only the fastest configuration.
@@ -227,9 +227,10 @@ usage; never keep only the fastest configuration.
   `do_bench_npu` performs warmup, synchronization, repeated launches, and
   kernel-name-filtered timing.
 - On A3, CV scheduling depth and workspace-buffer count use BishengIR's native
-  `set_workspace_multibuffer` value and DynamicCV is disabled. On A5, DynamicCV
-  is enabled, static workspace multibuffer is zero, `intra_cache_num` is the
-  first axis, and `inter_cache_num` plus `load_cache_num` are fixed to 1.
+  `set_workspace_multibuffer` value and DynamicCV is disabled. On A5, `off`
+  disables DynamicCV with static workspace depth 1; numeric first-axis values
+  enable DynamicCV, set static workspace multibuffer to zero, and use the value
+  as `intra_cache_num`, with `inter_cache_num` plus `load_cache_num` fixed to 1.
   DynamicCV fallback resolves the metadata switch to false and is rejected as
   unsupported rather than mixed into measurements.
 - DynamicCV return code 2 is `ERRCODE_IGNORED`, meaning the pass is not
@@ -243,12 +244,13 @@ usage; never keep only the fastest configuration.
   `MarkMultiBufferOptions.localMultiBufferNum` when materializing ordinary
   Load/Store/ND2NZ/Fixpipe local buffers. It does not replace the independently
   inferred preload-local count or the native CV workspace/depth value.
-  An explicit count also resolves `limit_auto_multi_buffer_buffer` to
+  The experiment's `off` value sets `multibuffer=False`, omits
+  `multibuffer_num`, and does not override the MIX strategy. An explicit count
+  sets `multibuffer=True` and resolves `limit_auto_multi_buffer_buffer` to
   `no-limit`, enabling ordinary multibuffering for the Vector-side UB buffers
-  of MIX functions as well as Cube-side L1/L0C buffers. When the count is
-  omitted, the upstream `only-cube` strategy and command-line/pass count
-  default 2 remain unchanged. The internal `mark()` helper has no implicit
-  default.
+  of MIX functions as well as Cube-side L1/L0C buffers. Thus `off` is a real
+  pass-disabled control and is not equivalent to numeric value 1. The internal
+  `mark()` helper has no implicit default.
 - Historical schemas contain experiments with separate CV depth and physical
   buffer values. That split/ring implementation was removed after unequal
   configurations showed correctness failures and hangs. New experiments use
@@ -279,11 +281,11 @@ usage; never keep only the fastest configuration.
   currently classified as dynamically insensitive rather than proof that every
   optimization changes generated code.
 - `experiment_operators/run_sweep.py` is the standalone step-4 controller. A3
-  uses schema `native-cv-depth+no-dynamic-cv+independent-local-multibuffer-v5`;
-  A5 uses `dynamic-cv-off-first+intra-cache+independent-local-multibuffer-v3`.
+  uses schema `native-cv-depth+no-dynamic-cv+local-multibuffer-off-v6`;
+  A5 uses `dynamic-cv-and-local-multibuffer-off-v4`.
   All three axis value lists and the benchmark/timeout policy live only in
-  `experiment_operators/experiment_config.py`. A5 runs its DynamicCV-off
-  controls first. The ordinary MIX strategy is fixed to `no-limit`. The
+  `experiment_operators/experiment_config.py`. Disabled values run first. The
+  ordinary MIX strategy is `no-limit` only for numeric MultiBuffer values. The
   controller rejects cache metadata that does not resolve the requested
   values, writes every row incrementally, and never chooses a winner. A row is
   `measured` only when correctness, timing, and a nonzero UB observation are
@@ -295,7 +297,8 @@ usage; never keep only the fastest configuration.
   `experiment_config.py`, and refreshes the HTML. There are no simple,
   detailed, dry-run, limited, or progress modes. The `--case` form accepts one
   existing first-axis/multibuffer/VF triple and updates that row in the latest
-  complete result. A final timeout row is rerun directly; replacing any other
+  complete result; `off` is accepted for A5 DynamicCV and ordinary MultiBuffer.
+  A final timeout row is rerun directly; replacing any other
   status requires interactive confirmation.
 - Each run has one readable `results.csv`, one complete machine record
   `measurements.jsonl`, `manifest.json`, and one log per case. Artifact hashes
@@ -426,9 +429,10 @@ JIT compilation but assert and record the TTIR hash for every candidate.
 ### 3. Select the architecture-specific CV axis and retain independent ordinary multibuffering
 
 On A3, pass `depth` through `NPUOptions.set_workspace_multibuffer` and disable
-DynamicCV. On A5, enable DynamicCV, vary `NPUOptions.intra_cache_num`, fix
+DynamicCV. On A5, include a DynamicCV-disabled `off` control, then enable
+DynamicCV for numeric `NPUOptions.intra_cache_num` values, fix
 `inter_cache_num=1` and `load_cache_num=1`, and leave static workspace
-multibuffer at zero. Retain the validated
+multibuffer at zero for enabled rows. Retain the validated
 `NPUOptions.multibuffer_num`, propagate it through
 `third_party/ascend/backend/compiler.py` as `--set-local-multibuffer`, then into
 both `HFusionPipelineOptions` and `HIVMPipelineOptions`. HFusion must use the
@@ -438,14 +442,15 @@ value to `MarkMultiBufferOptions.localMultiBufferNum`.
 The resulting controls must obey these boundaries:
 
 - on A3, `depth` controls both CV schedule/unroll depth and CV physical-buffer count;
-- on A5, `intra_cache_num` is the DynamicCV first axis and inter/load counts stay fixed at 1;
+- on A5, `off` disables DynamicCV; numeric `intra_cache_num` values enable it and inter/load counts stay fixed at 1;
+- ordinary MultiBuffer `off` sets `NPUOptions.multibuffer=False`, omits the explicit local count, and does not force the MIX strategy;
 - `multibuffer_num` replaces only the ordinary local default 2 used for
   HFusion estimation and automatically marked Load/Store/ND2NZ/Fixpipe
   buffers, and an explicit value fixes
   `limit_auto_multi_buffer_buffer=no-limit` so MIX Vector-side UB buffers are
   included;
-- omitting `multibuffer_num` retains the upstream `only-cube` strategy, so an
-  omitted/default run is not a count-only comparison with an explicit value;
+- numeric `1` remains pass-enabled and must not be treated as equivalent to
+  the explicit `off` control;
 - the independently inferred preload-local count and native CV
   workspace/depth value remain unchanged by `multibuffer_num`;
 - neither field changes TTIR or the meaning of `vf_merge_level`.
@@ -457,7 +462,7 @@ for HFusion counts 1, 2, and 4 while proving the tiling estimate changes.
 
 ### 4. Extend autotune configuration and result capture
 
-Generate candidates for the 32 A3 or 40 A5 default architecture-specific configurations and pass the
+Generate candidates for the 40 A3 or 50 A5 default architecture-specific configurations and pass the
 three values as backend compile options, not `tl.constexpr` kernel arguments.
 Extend the Ascend autotuner (or initially a thin controller around its compile
 and benchmark primitives) to retain, for each candidate:
@@ -529,7 +534,7 @@ collapse distinct experiments.
 2. **Compiler gate:** fix the current custom BishengIR-to-`hivmc` failure.
 3. **Plumbing gate:** one hand-written TTIR case proves each option reaches the
    intended pass and distinct triples create distinct cache keys/artifacts.
-4. **Compile-only gate:** enumerate all 32 A3 or 40 A5 default configurations and classify every result,
+4. **Compile-only gate:** enumerate all 40 A3 or 50 A5 default configurations and classify every result,
    with UB captured or an explicit reason it is unavailable.
 5. **Measurement gate:** run correctness and stable NPU timing for every
    successfully compiled configuration and verify the output has exactly one
@@ -537,7 +542,7 @@ collapse distinct experiments.
 6. **Corpus gate:** dynamically classify sensitivity for each copied candidate,
    exclude wholly insensitive kernels, and retain the reason for every rejected
    or deferred source.
-7. **Generalization gate:** complete the 32-row A3 or 40-row A5 default table for multiple accepted
+7. **Generalization gate:** complete the 40-row A3 or 50-row A5 default table for multiple accepted
    mixed Cube/Vector operators; use vector-only and Cube-only cases only as
    labeled negative controls.
 
