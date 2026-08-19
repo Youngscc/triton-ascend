@@ -31,6 +31,22 @@ Script roles:
 
 Build products, caches, temporary files, and experiment results remain under `.codex-remote/` or `tmp/`; they are not written into tracked source directories.
 
+## Offline source sync
+
+For an rsync-managed environment machine, preview the deletion-enabled transfer first:
+
+```bash
+RSYNC_DELETE=1 RSYNC_DRY_RUN=1 ./tools/remote_experiment/sync.sh
+```
+
+After checking the itemized output, run it without the preview flag:
+
+```bash
+RSYNC_DELETE=1 ./tools/remote_experiment/sync.sh
+```
+
+Deletion is restricted to `experiment_operators/` and `tools/remote_experiment/`. Candidate kernels, archived originals, `config.local.sh`, caches, logs, results, profiles, artifacts, and temporary files are protected. The project root, `python/`, `third_party/`, AscendNPU-IR, `.codex-remote/`, and every other directory are additive-only. The `.codex-remote/top-git` metadata mirror remains independently replaceable and cannot remove build or experiment output.
+
 ## Run the experiment
 
 ```bash
