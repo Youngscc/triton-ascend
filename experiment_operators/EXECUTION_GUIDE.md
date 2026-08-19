@@ -735,8 +735,8 @@ SWEEP_LIMIT=1 SWEEP_WARMUP=1 SWEEP_ACTIVE=1 \
 
 ## 10. 运行完整实验
 
-每条命令只运行一个算子，默认每组 5 次 warmup、30 次 active 测量和 120 秒
-超时：
+每条命令只运行一个算子，默认每组 5 次 warmup、30 次 active 测量、120 秒
+超时和 1 次超时补测：
 
 ```bash
 ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
@@ -760,7 +760,10 @@ case 的完整 stdout/stderr 都会单独保存到同一结果目录下的 `logs
 编译错误、pipeline 诊断、正确性 mismatch 和 benchmark 输出都在该文件中。
 日志从 case 启动时开始流式写入，终端的 `requested_parameters` 行会显示其绝对
 路径，因此运行疑似卡住时可以在另一个终端直接 `tail -f`。case 超时后 runner
-会终止该候选及其启动的编译器/runtime 子进程，再继续下一组配置。
+会终止该候选及其启动的编译器/runtime 子进程，再继续下一组配置。所有配置的
+首轮都结束后，runner 会按原顺序补测超时项。每个配置在 `results.csv` 中仍只有
+一行，但会显示尝试次数、首轮是否超时和最终是否超时；同一 case 的各次输出
+按 attempt 分段追加在同一个 `logs/<case>.log` 中。
 
 若日志出现 `ERR9999` 且显示 `bishengir-opt` 返回 1，真正原因位于同一 case
 日志中随后输出的 `bishengir-opt failed` 段。该段会记录实际 executable、返回码
@@ -817,6 +820,10 @@ SWEEP_PROGRESS_MODE=plain \
   ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py \
   2>&1 | tee fused_attention.log
 
+# 调整超时补测次数；设为 0 可禁用补测
+SWEEP_TIMEOUT_RETRIES=2 \
+  ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
+
 # 仅诊断时恢复 vf_merge_level=2：A3 共 48 组，A5 共 60 组
 SWEEP_INCLUDE_VF_MERGE_LEVEL_2=1 \
   ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
@@ -852,6 +859,10 @@ python experiment_operators/summarize_latest.py
 ```text
 .codex-remote/results/latest-summary/experiment-report.html
 ```
+
+页面底部会显示当前所选算子实验所记录的 Triton Ascend commit 和
+AscendNPU-IR gitlink。离线 rsync 环境通过 `.codex-remote/top-git` 解析版本，
+项目根目录不需要 `.git`，也不需要传输 submodule 的 Git 仓库。
 
 ## 12. 何时需要重新构建
 

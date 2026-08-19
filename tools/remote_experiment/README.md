@@ -45,7 +45,10 @@ locally built binaries under `python/triton/_C`. Tracked Python sources are
 transferred, including `python/build_helpers.py` and the Triton package source.
 The cache/build exclusion policy is also applied to AscendNPU-IR. The fallback
 still transfers the Git metadata needed by the build without replacing server
-experiment artifacts. Set
+experiment artifacts. In rsync mode that metadata lives under
+`.codex-remote/top-git`; experiment manifests use it to record the top-level
+commit and the pinned AscendNPU-IR gitlink without placing `.git` in the server
+project root or transferring nested submodule repositories. Set
 `REMOTE_SOURCE_MODE="rsync"` in the workstation's `config.local.sh` for this
 fallback; a normal server clone uses the default `auto` mode and its own `.git`.
 

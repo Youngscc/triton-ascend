@@ -161,9 +161,14 @@ The custom memory-based PlanMemory pipeline reports the maximum successfully
 allocated UB address span; when mixed AIC/AIV functions emit multiple values,
 the backend records their maximum. Use a fresh cache after rebuilding the
 compiler so metadata generated before UB reporting is not reused.
-Each candidate also has a subprocess timeout. A kernel that does not return is
-retained as an `unsupported` row with `timed_out=true`; it cannot block the
-remaining configurations indefinitely.
+Each candidate also has a subprocess timeout. A timed-out configuration is
+deferred while every other initial configuration runs, then retried once by
+default. Set `--timeout-retries 0` to disable this or use a larger integer for
+additional end-of-sweep attempts. The final tables still contain exactly one
+row per requested configuration and record `attempt_count`,
+`initial_timed_out`, and the final `timed_out` state. All attempts append to
+the same `logs/<case>.log`. A configuration that exhausts its retries remains
+an `unsupported` row and cannot block the sweep indefinitely.
 
 Set `SWEEP_DETAILED_OUTPUT=1` only when debugging the compiler. That optional
 mode writes the full parameter audit, per-row stdout/stderr, hashes, cache
@@ -195,6 +200,8 @@ DRY_RUN=1 ./run_all_sweeps.sh \
   experiment_operators/candidates/fused_attention.py
 SWEEP_WARMUP=2 SWEEP_ACTIVE=5 SWEEP_TIMEOUT=60 \
   ./run_all_sweeps.sh experiment_operators/candidates/hstu_attention.py
+SWEEP_TIMEOUT_RETRIES=2 \
+  ./run_all_sweeps.sh experiment_operators/candidates/fused_attention.py
 SWEEP_LIMIT=2 SWEEP_WARMUP=1 SWEEP_ACTIVE=1 \
   ./run_all_sweeps.sh experiment_operators/candidates/unified_attention.py
 ```
@@ -233,8 +240,9 @@ than using confounded marginal averages:
 The chart and tables report median latency/UB plus percentage change from the
 lowest value of the selected variable. Negative latency change means faster;
 positive UB change means more memory. `summary.json` retains per-operator
-row/status counts, correctness/latency/UB coverage, timeout counts, distinct
-cache/TTIR/binary counts, and range/mean/median statistics. No output ranks
+row/status counts, correctness/latency/UB coverage, initial/recovered/final
+timeout counts, total attempt count, distinct cache/TTIR/binary counts, and
+range/mean/median statistics. No output ranks
 configurations or chooses a winner. Incomplete and `--limit` smoke runs are
 ignored, so they cannot displace the latest complete sweep. Current default
 formal runs contain 32 rows per operator.
@@ -254,7 +262,9 @@ the selected result data directly, so it can be copied or opened without a web
 server or network connection. Select an operator and one x-axis variable, then
 fix the other two variables to compare latency and UB side by side. Absolute
 and relative-to-first-point modes, hover details, coverage, binary-count, run
-provenance, and a configuration table are included. Override paths when needed:
+provenance, and a configuration table are included. A subdued footer records
+the Triton Ascend commit and AscendNPU-IR gitlink captured for the selected
+operator run. Override paths when needed:
 
 ```bash
 EXPERIMENT_RESULTS_DIR=/path/to/results \

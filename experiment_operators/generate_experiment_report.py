@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +20,7 @@ OPERATOR_LABELS = {
     "unified_attention": "Unified attention",
     "hstu_attention": "HSTU attention",
 }
+ASCEND_NPU_IR_PATH = "third_party/ascend/AscendNPU-IR"
 
 
 def parse_args() -> argparse.Namespace:
@@ -53,10 +55,31 @@ def compact_row(row: dict) -> dict:
     }
 
 
+def git_value(*args: str) -> str | None:
+    command = ["git"]
+    top_git = ROOT / ".codex-remote/top-git"
+    if not (ROOT / ".git").exists() and (top_git / "HEAD").is_file():
+        command.extend([f"--git-dir={top_git}", f"--work-tree={ROOT}"])
+    result = subprocess.run([*command, *args], cwd=ROOT, text=True, capture_output=True, check=False)
+    value = result.stdout.strip()
+    return value if result.returncode == 0 and value else None
+
+
+def source_commits(manifest: dict) -> tuple[str | None, str | None]:
+    triton_ascend_commit = manifest.get("git_commit")
+    ascend_npu_ir_commit = manifest.get("ascend_npu_ir_commit")
+    if not ascend_npu_ir_commit and triton_ascend_commit:
+        # Older manifests did not always retain the gitlink. Resolve it from
+        # that run's top-level commit, never from the report generator's HEAD.
+        ascend_npu_ir_commit = git_value("rev-parse", f"{triton_ascend_commit}:{ASCEND_NPU_IR_PATH}")
+    return triton_ascend_commit, ascend_npu_ir_commit
+
+
 def report_data(latest: dict[str, dict]) -> dict:
     operators = []
     for operator, run in sorted(latest.items()):
         rows = [compact_row(row) for row in run["rows"]]
+        triton_ascend_commit, ascend_npu_ir_commit = source_commits(run["manifest"])
         operators.append({
             "id":
             operator,
@@ -66,6 +89,10 @@ def report_data(latest: dict[str, dict]) -> dict:
             run["run_id"],
             "schema":
             run["manifest"].get("experiment_schema", "legacy-cv-split-v0"),
+            "triton_ascend_commit":
+            triton_ascend_commit,
+            "ascend_npu_ir_commit":
+            ascend_npu_ir_commit,
             "pipeline_axis":
             pipeline_axis(run),
             "result_dir":

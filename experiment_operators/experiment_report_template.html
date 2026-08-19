@@ -180,6 +180,7 @@
     .status-measured { color: var(--ok); }
     .status-failed { color: var(--bad); }
     .footnote { margin: 14px 2px 0; font-size: 12px; }
+    .source-versions { margin-top: 4px; font-size: 11px; overflow-wrap: anywhere; }
     @media (max-width: 920px) {
       .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .charts { grid-template-columns: 1fr; }
@@ -246,6 +247,7 @@
     </section>
 
     <p class="footnote">相对变化以当前切片中横轴最小且成功测量的配置为基线。负的性能变化表示更快；正的 UB 变化表示使用更多片上内存。页面不选择或推荐最佳配置。</p>
+    <p id="source-versions" class="footnote source-versions" aria-live="polite"></p>
   </main>
 
   <script id="experiment-data" type="application/json">__EXPERIMENT_REPORT_DATA__</script>
@@ -273,7 +275,8 @@
         latencyUnit: document.getElementById("latency-unit"),
         ubUnit: document.getElementById("ub-unit"),
         tableAxis: document.getElementById("table-axis"),
-        detailsBody: document.getElementById("details-body")
+        detailsBody: document.getElementById("details-body"),
+        sourceVersions: document.getElementById("source-versions")
       };
       const svgNS = "http://www.w3.org/2000/svg";
       let fixedKeys = [];
@@ -593,6 +596,10 @@
           span.textContent = text;
           elements.runMeta.appendChild(span);
         });
+        elements.sourceVersions.textContent = [
+          `源码版本：Triton Ascend ${operator.triton_ascend_commit || "未记录"}`,
+          `AscendNPU-IR ${operator.ascend_npu_ir_commit || "未记录"}`
+        ].join(" · ");
 
         const range = values => values.length ? `${Math.min(...values).toFixed(3)}–${Math.max(...values).toFixed(3)}` : "—";
         elements.summary.className = `selection-summary${warning}`;
