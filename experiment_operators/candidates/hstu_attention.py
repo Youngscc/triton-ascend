@@ -50,6 +50,9 @@ def _experiment_compile_options():
         depth = os.getenv("EXPERIMENT_DEPTH")
         if depth is not None:
             options["set_workspace_multibuffer"] = int(depth)
+    multibuffer = os.getenv("EXPERIMENT_MULTIBUFFER")
+    if multibuffer is not None:
+        options["multibuffer"] = multibuffer == "1"
     multibuffer_num = os.getenv("EXPERIMENT_MULTIBUFFER_NUM")
     if multibuffer_num is not None:
         options["multibuffer_num"] = int(multibuffer_num)

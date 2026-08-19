@@ -34,6 +34,9 @@ def _experiment_compile_options():
         depth = os.getenv("EXPERIMENT_DEPTH")
         if depth is not None:
             options["set_workspace_multibuffer"] = int(depth)
+    multibuffer = os.getenv("EXPERIMENT_MULTIBUFFER")
+    if multibuffer is not None:
+        options["multibuffer"] = multibuffer == "1"
     multibuffer_num = os.getenv("EXPERIMENT_MULTIBUFFER_NUM")
     if multibuffer_num is not None:
         options["multibuffer_num"] = int(multibuffer_num)
@@ -1086,6 +1089,7 @@ class FlashAttentionFunc(torch.autograd.Function):
         extra_kern_args = _experiment_compile_options()
         if "set_workspace_multibuffer" not in extra_kern_args:
             extra_kern_args["set_workspace_multibuffer"] = 2
+        extra_kern_args.setdefault("multibuffer", True)
         fwd_kernel[grid](
             q, k, v, o, l,
             q_attn_arg, k_attn_arg, mask_tensor,
@@ -1102,7 +1106,6 @@ class FlashAttentionFunc(torch.autograd.Function):
             BATCH_SIZE=batch_size,
             BLOCK_M=BLOCK_M,
             BLOCK_N=BLOCK_N,
-            multibuffer=True,
             enable_mixed_cv=True,
             enable_auto_bind_sub_block=True,
             sync_solver=True,

@@ -35,11 +35,13 @@ DOMINANCE_ERROR_RE = re.compile(
 OPERATOR_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 SOURCE_BENCHMARK_OPERATOR_RE = re.compile(r"BENCHMARK\s+operator=([A-Za-z0-9][A-Za-z0-9_.-]*)")
 OPERATOR_ALIASES = {"hstu_attention_fwd": "hstu_attention"}
-A3_EXPERIMENT_SCHEMA = ("native-cv-depth+no-dynamic-cv+independent-local-multibuffer-v5")
-A5_EXPERIMENT_SCHEMA = ("dynamic-cv-off-first+intra-cache+independent-local-multibuffer-v3")
+A3_EXPERIMENT_SCHEMA = ("native-cv-depth+no-dynamic-cv+local-multibuffer-off-v6")
+A5_EXPERIMENT_SCHEMA = ("dynamic-cv-and-local-multibuffer-off-v4")
+OFF = "off"
 RESULTS_CSV_SUFFIX_FIELDS = [
     "序号",
     "enable_dynamic_cv_pipeline",
+    "enable_auto_multi_buffer",
     "multibuffer_num",
     "vf_merge_level",
     "结果",
@@ -59,26 +61,52 @@ RESULTS_CSV_SUFFIX_FIELDS = [
 class SweepConfig(NamedTuple):
     dynamic_cv_pipeline: bool
     pipeline_value: int | None
-    multibuffer_num: int
+    multibuffer_num: int | None
     vf_merge_level: int
 
+    @property
+    def auto_multibuffer(self) -> bool:
+        return self.multibuffer_num is not None
 
-def validate_axis(name: str, values, minimum: int) -> tuple[int, ...]:
-    normalized = tuple(values)
+
+def axis_value(value: int | None) -> int | str:
+    return OFF if value is None else value
+
+
+def validate_axis(name: str, values, minimum: int, *, allow_off: bool = False) -> tuple[int | str, ...]:
+    normalized = tuple(OFF if isinstance(value, str) and value.lower() == OFF else value for value in values)
     if not normalized:
         raise SystemExit(f"{name} must contain at least one value")
-    if any(isinstance(value, bool) or not isinstance(value, int) for value in normalized):
-        raise SystemExit(f"{name} must contain integers")
-    if any(value < minimum for value in normalized):
+    invalid = [
+        value for value in normalized if (value == OFF and not allow_off) or (
+            value != OFF and (isinstance(value, bool) or not isinstance(value, int)))
+    ]
+    if invalid:
+        expected = f"integers or {OFF!r}" if allow_off else "integers"
+        raise SystemExit(f"{name} must contain {expected}")
+    if any(value != OFF and value < minimum for value in normalized):
         raise SystemExit(f"{name} values must be >= {minimum}")
     if len(set(normalized)) != len(normalized):
         raise SystemExit(f"{name} must not contain duplicate values")
     return normalized
 
 
-def configured_values() -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
-    first = validate_axis("FIRST_AXIS_VALUES", experiment.FIRST_AXIS_VALUES, 1)
-    multibuffer = validate_axis("MULTIBUFFER_NUM_VALUES", experiment.MULTIBUFFER_NUM_VALUES, 1)
+def configured_values(is_a5: bool) -> tuple[tuple[int | str, ...], tuple[int | str, ...], tuple[int, ...]]:
+    if is_a5:
+        first = validate_axis(
+            "A5_INTRA_CACHE_NUM_VALUES",
+            experiment.A5_INTRA_CACHE_NUM_VALUES,
+            1,
+            allow_off=True,
+        )
+    else:
+        first = validate_axis("A3_DEPTH_VALUES", experiment.A3_DEPTH_VALUES, 1)
+    multibuffer = validate_axis(
+        "MULTIBUFFER_NUM_VALUES",
+        experiment.MULTIBUFFER_NUM_VALUES,
+        1,
+        allow_off=True,
+    )
     vf_merge = validate_axis("VF_MERGE_LEVEL_VALUES", experiment.VF_MERGE_LEVEL_VALUES, 0)
     if (isinstance(experiment.WARMUP, bool) or not isinstance(experiment.WARMUP, int) or experiment.WARMUP < 1):
         raise SystemExit("WARMUP must be a positive integer")
@@ -94,28 +122,27 @@ def configured_values() -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ..
 
 def requested_configs(
     is_a5: bool,
-    first_values: tuple[int, ...],
-    multibuffer_values: tuple[int, ...],
+    first_values: tuple[int | str, ...],
+    multibuffer_values: tuple[int | str, ...],
     vf_merge_values: tuple[int, ...],
 ):
-    if is_a5:
-        # The DynamicCV-off controls always run first on A5.
-        for multibuffer_num in multibuffer_values:
+    for requested_pipeline in first_values:
+        dynamic_cv = is_a5 and requested_pipeline != OFF
+        pipeline_value = None if requested_pipeline == OFF else requested_pipeline
+        for requested_multibuffer in multibuffer_values:
+            multibuffer_num = None if requested_multibuffer == OFF else requested_multibuffer
             for merge in vf_merge_values:
-                yield SweepConfig(False, None, multibuffer_num, merge)
-    for pipeline_value in first_values:
-        for multibuffer_num in multibuffer_values:
-            for merge in vf_merge_values:
-                yield SweepConfig(is_a5, pipeline_value, multibuffer_num, merge)
+                yield SweepConfig(dynamic_cv, pipeline_value, multibuffer_num, merge)
 
 
 def config_key(config: SweepConfig, is_a5: bool) -> str:
+    multibuffer = axis_value(config.multibuffer_num)
     if is_a5 and not config.dynamic_cv_pipeline:
-        return f"dynoff-b{config.multibuffer_num}-m{config.vf_merge_level}"
+        return f"dynoff-b{multibuffer}-m{config.vf_merge_level}"
     if is_a5:
-        return (f"dynon-i{config.pipeline_value}-b{config.multibuffer_num}"
+        return (f"dynon-i{config.pipeline_value}-b{multibuffer}"
                 f"-m{config.vf_merge_level}")
-    return (f"d{config.pipeline_value}-b{config.multibuffer_num}"
+    return (f"d{config.pipeline_value}-b{multibuffer}"
             f"-m{config.vf_merge_level}")
 
 
@@ -153,10 +180,10 @@ class SweepProgress:
         attempt_number: int,
         attempt_kind: str,
     ) -> None:
-        value = config.pipeline_value if config.pipeline_value is not None else "off"
+        value = axis_value(config.pipeline_value)
         line = (f"[{self.operator}] [{self._bar()}] {self.completed}/{self.total} "
                 f"running {index}/{self.total} {pipeline_axis}={value} "
-                f"multibuffer_num={config.multibuffer_num} "
+                f"multibuffer_num={axis_value(config.multibuffer_num)} "
                 f"vf_merge_level={config.vf_merge_level} "
                 f"attempt={attempt_number}({attempt_kind})")
         if self.interactive:
@@ -234,9 +261,10 @@ def matching_metadata(
     matches = []
     closest_mismatch = None
     expected = {
+        "multibuffer": config.auto_multibuffer,
         "multibuffer_num": config.multibuffer_num,
         "vf_merge_level": config.vf_merge_level,
-        "limit_auto_multi_buffer_buffer": "no-limit",
+        "limit_auto_multi_buffer_buffer": ("no-limit" if config.auto_multibuffer else None),
     }
     if pipeline_axis == "intra_cache_num" and config.dynamic_cv_pipeline:
         expected.update({
@@ -411,10 +439,14 @@ def write_results(rows: list[dict], result_dir: Path, pipeline_axis: str) -> Pat
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for number, row in enumerate(rows, 1):
+            pipeline_value = row.get(pipeline_axis)
+            if pipeline_axis == "intra_cache_num" and not row.get("enable_dynamic_cv_pipeline", False):
+                pipeline_value = OFF
             writer.writerow({
                 "序号": number,
                 "enable_dynamic_cv_pipeline": row.get("enable_dynamic_cv_pipeline", False),
-                pipeline_axis: row.get(pipeline_axis),
+                pipeline_axis: pipeline_value,
+                "enable_auto_multi_buffer": row.get("enable_auto_multi_buffer", True),
                 "multibuffer_num": row.get("multibuffer_num"),
                 "vf_merge_level": row.get("vf_merge_level"),
                 "结果": result_label(row.get("status", "missing")),
@@ -468,11 +500,12 @@ def requested_parameters(
         "operator": operator,
         "candidate": str(candidate),
         "experiment_schema": experiment_schema,
-        pipeline_axis: config.pipeline_value,
-        "multibuffer_num": config.multibuffer_num,
+        pipeline_axis: axis_value(config.pipeline_value),
+        "enable_auto_multi_buffer": config.auto_multibuffer,
+        "multibuffer_num": axis_value(config.multibuffer_num),
         "vf_merge_level": config.vf_merge_level,
         "enable_dynamic_cv_pipeline": config.dynamic_cv_pipeline,
-        "limit_auto_multi_buffer_buffer": "no-limit",
+        "limit_auto_multi_buffer_buffer": ("no-limit" if config.auto_multibuffer else None),
         "enable_print_ub_bits": True,
         "warmup": experiment.WARMUP,
         "active": experiment.ACTIVE,
@@ -499,17 +532,20 @@ def candidate_environment(config: SweepConfig, is_a5: bool) -> dict[str, str]:
     env = os.environ.copy()
     env.pop("EXPERIMENT_DEPTH", None)
     env.pop("EXPERIMENT_INTRA_CACHE_NUM", None)
+    env.pop("EXPERIMENT_MULTIBUFFER_NUM", None)
     env.update({
         "ENABLE_PRINT_UB_BITS": "true",
         "TRITON_ALWAYS_COMPILE": "1",
         "TRITON_PRINT_AUTOTUNING": "1",
         "TRITON_PRINT_IR_AFTER_FAILURE": "0",
         "EXPERIMENT_DYNAMIC_CV": "1" if config.dynamic_cv_pipeline else "0",
-        "EXPERIMENT_MULTIBUFFER_NUM": str(config.multibuffer_num),
+        "EXPERIMENT_MULTIBUFFER": "1" if config.auto_multibuffer else "0",
         "EXPERIMENT_VF_MERGE_LEVEL": str(config.vf_merge_level),
         "EXPERIMENT_WARMUP": str(experiment.WARMUP),
         "EXPERIMENT_ACTIVE": str(experiment.ACTIVE),
     })
+    if config.auto_multibuffer:
+        env["EXPERIMENT_MULTIBUFFER_NUM"] = str(config.multibuffer_num)
     if is_a5 and config.dynamic_cv_pipeline:
         env["EXPERIMENT_INTRA_CACHE_NUM"] = str(config.pipeline_value)
     elif is_a5:
@@ -627,7 +663,11 @@ def execute_case(
         "depth":
         None if is_a5 else config.pipeline_value,
         "intra_cache_num": (config.pipeline_value if is_a5 and config.dynamic_cv_pipeline else None),
+        "enable_auto_multi_buffer":
+        config.auto_multibuffer,
         "multibuffer_num":
+        axis_value(config.multibuffer_num),
+        "resolved_local_multibuffer_num":
         config.multibuffer_num,
         "set_workspace_multibuffer":
         (0 if is_a5 and config.dynamic_cv_pipeline else 1 if is_a5 else config.pipeline_value),
@@ -638,7 +678,7 @@ def execute_case(
         "load_cache_num":
         1 if is_a5 and config.dynamic_cv_pipeline else None,
         "limit_auto_multi_buffer_buffer":
-        "no-limit",
+        "no-limit" if config.auto_multibuffer else None,
         "vf_merge_level":
         config.vf_merge_level,
         "status":
@@ -727,11 +767,23 @@ def build_manifest(
     schema: str,
     pipeline_axis: str,
     is_a5: bool,
-    first_values: tuple[int, ...],
-    multibuffer_values: tuple[int, ...],
+    first_values: tuple[int | str, ...],
+    multibuffer_values: tuple[int | str, ...],
     vf_merge_values: tuple[int, ...],
     configuration_count: int,
 ) -> dict:
+    dynamic_cv_values = [False]
+    if is_a5:
+        dynamic_cv_values = []
+        if OFF in first_values:
+            dynamic_cv_values.append(False)
+        if any(value != OFF for value in first_values):
+            dynamic_cv_values.append(True)
+    auto_multibuffer_values = []
+    if OFF in multibuffer_values:
+        auto_multibuffer_values.append(False)
+    if any(value != OFF for value in multibuffer_values):
+        auto_multibuffer_values.append(True)
     return {
         "run_id":
         run_id,
@@ -775,7 +827,8 @@ def build_manifest(
         configuration_count,
         "axes": {
             pipeline_axis: list(first_values),
-            "enable_dynamic_cv_pipeline": [False, True] if is_a5 else [False],
+            "enable_dynamic_cv_pipeline": dynamic_cv_values,
+            "enable_auto_multi_buffer": auto_multibuffer_values,
             "multibuffer_num": list(multibuffer_values),
             "vf_merge_level": list(vf_merge_values),
         },
@@ -783,17 +836,17 @@ def build_manifest(
                                    "set_workspace_multibuffer=0; DynamicCV off: "
                                    "intra_cache_num is N/A and set_workspace_multibuffer=1"
                                    if is_a5 else "static CV: set_workspace_multibuffer=depth"),
-        "ordinary_multibuffer_strategy":
-        "limit_auto_multi_buffer_buffer=no-limit",
+        "ordinary_multibuffer_strategy": ("off: enable-auto-multi-buffer=false and no explicit count; "
+                                          "numeric: limit_auto_multi_buffer_buffer=no-limit"),
         "fixed_dynamic_cv_buffer_counts": ({"inter_cache_num": 1, "load_cache_num": 1} if is_a5 else None),
-        "configuration_order": (["dynamic_cv_disabled", "dynamic_cv_enabled"] if is_a5 else ["static_cv"]),
+        "configuration_order": ("config-file axis order; off precedes numeric values by default"),
     }
 
 
 def run_full_sweep(operator_file: Path) -> int:
-    first_values, multibuffer_values, vf_merge_values = configured_values()
     operator, candidate = resolve_operator(operator_file)
     is_a5, pipeline_axis, schema = experiment_context()
+    first_values, multibuffer_values, vf_merge_values = configured_values(is_a5)
     configs = list(requested_configs(is_a5, first_values, multibuffer_values, vf_merge_values))
     run_id = now_run_id()
     result_dir = (RESULTS_ROOT / f"{run_id}-{operator}").resolve()
@@ -872,6 +925,13 @@ def optional_int(value: str | None) -> int | None:
     return int(value) if value not in (None, "") else None
 
 
+def optional_axis_value(value: str | None) -> int | str | None:
+    normalized = (value or "").strip().lower()
+    if not normalized:
+        return None
+    return OFF if normalized == OFF else int(normalized)
+
+
 def optional_float(value: str | None) -> float | None:
     return float(value) if value not in (None, "") else None
 
@@ -899,7 +959,11 @@ def load_legacy_results(result_dir: Path, manifest: dict) -> list[dict]:
             else:
                 status = "incorrect" if "正确性" in reason else "compile_failed"
                 correctness = "failed" if status == "incorrect" else "missing"
-            value = optional_int(raw.get(pipeline_axis))
+            requested_pipeline = optional_axis_value(raw.get(pipeline_axis))
+            value = requested_pipeline if isinstance(requested_pipeline, int) else None
+            multibuffer = optional_axis_value(raw.get("multibuffer_num"))
+            enable_auto_multibuffer = (csv_bool(raw.get("enable_auto_multi_buffer"))
+                                       if "enable_auto_multi_buffer" in raw else multibuffer != OFF)
             ub_kib = optional_float(raw.get("UB使用_KiB"))
             timed_out = csv_bool(raw.get("最终是否超时"))
             rows.append({
@@ -908,7 +972,9 @@ def load_legacy_results(result_dir: Path, manifest: dict) -> list[dict]:
                 "depth": value if pipeline_axis == "depth" else None,
                 "intra_cache_num": value if pipeline_axis == "intra_cache_num" else None,
                 "enable_dynamic_cv_pipeline": csv_bool(raw.get("enable_dynamic_cv_pipeline")),
-                "multibuffer_num": optional_int(raw.get("multibuffer_num")),
+                "enable_auto_multi_buffer": enable_auto_multibuffer,
+                "multibuffer_num": multibuffer,
+                "resolved_local_multibuffer_num": (multibuffer if isinstance(multibuffer, int) else None),
                 "vf_merge_level": optional_int(raw.get("vf_merge_level")),
                 "status": status,
                 "correctness_status": correctness,
@@ -987,7 +1053,7 @@ def find_latest_operator_run(operator: str, pipeline_axis: str) -> tuple[Path, d
 
 
 def parse_manual_config(first_axis: str, multibuffer: str, vf_merge: str, is_a5: bool) -> SweepConfig:
-    if is_a5 and first_axis.lower() == "off":
+    if is_a5 and first_axis.lower() == OFF:
         dynamic_cv = False
         pipeline_value = None
     else:
@@ -998,20 +1064,31 @@ def parse_manual_config(first_axis: str, multibuffer: str, vf_merge: str, is_a5:
         if pipeline_value < 1:
             raise SystemExit("first axis must be positive")
         dynamic_cv = is_a5
+    if multibuffer.lower() == OFF:
+        multibuffer_num = None
+    else:
+        try:
+            multibuffer_num = int(multibuffer)
+        except ValueError as error:
+            raise SystemExit("multibuffer must be 'off' or a positive integer") from error
+        if multibuffer_num < 1:
+            raise SystemExit("multibuffer must be 'off' or a positive integer")
     try:
-        multibuffer_num = int(multibuffer)
         vf_merge_level = int(vf_merge)
     except ValueError as error:
-        raise SystemExit("multibuffer_num and vf_merge_level must be integers") from error
-    if multibuffer_num < 1 or vf_merge_level < 0:
-        raise SystemExit("multibuffer_num must be positive and vf_merge_level >= 0")
+        raise SystemExit("vf_merge_level must be an integer") from error
+    if vf_merge_level < 0:
+        raise SystemExit("vf_merge_level must be >= 0")
     return SweepConfig(dynamic_cv, pipeline_value, multibuffer_num, vf_merge_level)
 
 
 def row_matches_config(row: dict, config: SweepConfig, is_a5: bool) -> bool:
     pipeline_value = row.get("intra_cache_num") if is_a5 else row.get("depth")
+    row_multibuffer = row.get("multibuffer_num")
+    if row_multibuffer is None and row.get("enable_auto_multi_buffer") is False:
+        row_multibuffer = OFF
     return (bool(row.get("enable_dynamic_cv_pipeline")) == config.dynamic_cv_pipeline
-            and pipeline_value == config.pipeline_value and row.get("multibuffer_num") == config.multibuffer_num
+            and pipeline_value == config.pipeline_value and row_multibuffer == axis_value(config.multibuffer_num)
             and row.get("vf_merge_level") == config.vf_merge_level)
 
 
@@ -1023,9 +1100,9 @@ def row_is_timeout(row: dict) -> bool:
 
 
 def rerun_case(operator_file: Path, first_axis: str, multibuffer: str, vf_merge: str) -> int:
-    configured_values()
     operator, candidate = resolve_operator(operator_file)
     is_a5, pipeline_axis, schema = experiment_context()
+    configured_values(is_a5)
     config = parse_manual_config(first_axis, multibuffer, vf_merge, is_a5)
     result_dir, manifest, rows = find_latest_operator_run(operator, pipeline_axis)
     matching_indexes = [index for index, row in enumerate(rows) if row_matches_config(row, config, is_a5)]
@@ -1099,12 +1176,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "case_values",
         nargs="*",
         metavar="VALUE",
-        help="--case only: first_axis multibuffer_num vf_merge_level",
+        help="--case only: first_axis multibuffer vf_merge_level; the first two accept 'off' where supported",
     )
     args = parser.parse_args(argv)
     expected = 3 if args.case else 0
     if len(args.case_values) != expected:
-        parser.error("--case requires exactly: first_axis multibuffer_num vf_merge_level" if args.
+        parser.error("--case requires exactly: first_axis multibuffer vf_merge_level" if args.
                      case else "a full sweep accepts only the operator file")
     return args
 
