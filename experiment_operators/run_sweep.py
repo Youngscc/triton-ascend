@@ -738,8 +738,7 @@ def main() -> int:
         } if is_a5 else None),
         "configuration_order": (["dynamic_cv_disabled", "dynamic_cv_enabled"] if is_a5 else ["static_cv"]),
     }
-    if not args.simple_output:
-        (result_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    (result_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
     row_slots: list[dict | None] = [None] * len(configs)
     attempt_queue = deque((index, config, 1) for index, config in enumerate(configs, 1))

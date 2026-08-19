@@ -218,6 +218,9 @@ printf 'completed operator_file=%s\n' "$OPERATOR_FILE"
 
 if [[ "$DETAILED_OUTPUT" != "1" ]]; then
   printf '%s\n' 'sweep complete; see results.csv and logs/<case>.log'
+  if [[ -z "$LIMIT" ]]; then
+    PYTHON_BIN="$PYTHON_BIN" "$SCRIPT_DIR/generate_latest_report.sh"
+  fi
   exit 0
 fi
 

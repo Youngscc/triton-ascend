@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-from summarize_latest import find_latest_runs, is_supported, pipeline_axis, row_depth
+from summarize_latest import find_latest_runs, is_supported, parse_run_time, pipeline_axis, row_depth
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RESULTS_DIR = ROOT / ".codex-remote/results"
@@ -21,6 +23,7 @@ OPERATOR_LABELS = {
     "hstu_attention": "HSTU attention",
 }
 ASCEND_NPU_IR_PATH = "third_party/ascend/AscendNPU-IR"
+SIMPLE_RUN_DIR_RE = re.compile(r"^(?P<run_id>\d{8}T\d{6}(?:Z|[+-]\d{4}))-(?P<operator>.+)$")
 
 
 def parse_args() -> argparse.Namespace:
@@ -75,11 +78,144 @@ def source_commits(manifest: dict) -> tuple[str | None, str | None]:
     return triton_ascend_commit, ascend_npu_ir_commit
 
 
+def optional_int(value: str | None) -> int | None:
+    return int(value) if value not in (None, "") else None
+
+
+def optional_float(value: str | None) -> float | None:
+    return float(value) if value not in (None, "") else None
+
+
+def csv_bool(value: str | None) -> bool:
+    normalized = (value or "").strip().lower()
+    if normalized in {"true", "1", "yes"}:
+        return True
+    if normalized in {"false", "0", "no"}:
+        return False
+    raise ValueError(f"invalid boolean in simple results: {value!r}")
+
+
+def normalize_simple_row(raw: dict[str, str], pipeline_axis_name: str) -> dict:
+    pipeline_value = optional_int(raw.get(pipeline_axis_name))
+    dynamic_cv = csv_bool(raw.get("enable_dynamic_cv_pipeline"))
+    result = raw.get("结果", "")
+    diagnostic = raw.get("原因", "")
+    if result == "成功":
+        status = "measured"
+        correctness_status = "passed"
+    elif result == "不支持":
+        status = "unsupported"
+        correctness_status = "missing"
+    else:
+        status = "incorrect" if "正确性" in diagnostic else "compile_failed"
+        correctness_status = "failed" if status == "incorrect" else "missing"
+    ub_kib = optional_float(raw.get("UB使用_KiB"))
+    return {
+        "depth": pipeline_value if pipeline_axis_name == "depth" else None,
+        "intra_cache_num": pipeline_value if pipeline_axis_name == "intra_cache_num" else None,
+        "enable_dynamic_cv_pipeline": dynamic_cv,
+        "multibuffer_num": optional_int(raw.get("multibuffer_num")),
+        "vf_merge_level": optional_int(raw.get("vf_merge_level")),
+        "status": status,
+        "correctness_status": correctness_status,
+        "latency_ms": optional_float(raw.get("运行延迟_ms")),
+        "required_ub_kib": ub_kib,
+        "required_ub_bits": round(ub_kib * 8192) if ub_kib is not None else None,
+        "binary_hash": None,
+        "diagnostic": diagnostic,
+    }
+
+
+def simple_rows_are_complete(rows: list[dict], pipeline_axis_name: str) -> bool:
+    if not rows:
+        return False
+    multibuffer_values = {row["multibuffer_num"] for row in rows}
+    vf_values = {row["vf_merge_level"] for row in rows}
+    if multibuffer_values != {1, 2, 3, 4} or vf_values not in ({0, 1}, {0, 1, 2}):
+        return False
+    if pipeline_axis_name == "intra_cache_num":
+        expected = {(False, None, mb, vf) for mb in multibuffer_values for vf in vf_values}
+        expected.update((True, intra, mb, vf) for intra in (1, 2, 3, 4) for mb in multibuffer_values
+                        for vf in vf_values)
+    else:
+        expected = {(False, depth, mb, vf) for depth in (1, 2, 3, 4) for mb in multibuffer_values
+                    for vf in vf_values}
+    actual = {(row["enable_dynamic_cv_pipeline"], row[pipeline_axis_name], row["multibuffer_num"],
+               row["vf_merge_level"]) for row in rows}
+    return actual == expected and len(rows) == len(expected)
+
+
+def load_simple_run(result_dir: Path) -> dict | None:
+    csv_path = result_dir / "results.csv"
+    if not csv_path.is_file():
+        return None
+    with csv_path.open(newline="", encoding="utf-8-sig") as stream:
+        reader = csv.DictReader(stream)
+        fieldnames = set(reader.fieldnames or ())
+        if "intra_cache_num" in fieldnames:
+            pipeline_axis_name = "intra_cache_num"
+        elif "depth" in fieldnames:
+            pipeline_axis_name = "depth"
+        else:
+            return None
+        rows = [normalize_simple_row(row, pipeline_axis_name) for row in reader]
+    if not simple_rows_are_complete(rows, pipeline_axis_name):
+        return None
+
+    manifest_path = result_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else {}
+    match = SIMPLE_RUN_DIR_RE.fullmatch(result_dir.name)
+    run_id = manifest.get("run_id") or (match.group("run_id") if match else None)
+    operator = manifest.get("operator") or (match.group("operator") if match else None)
+    if not run_id or not operator:
+        return None
+    manifest.update({
+        "run_id": run_id,
+        "operator": operator,
+        "experiment_schema": manifest.get("experiment_schema", "simple-results-csv-v1"),
+        "requested_configuration_count": len(rows),
+        "executed_configuration_count": len(rows),
+        "limited_smoke_run": False,
+        "axes": {
+            pipeline_axis_name: [1, 2, 3, 4],
+            "multibuffer_num": [1, 2, 3, 4],
+            "vf_merge_level": sorted({row["vf_merge_level"] for row in rows}),
+        },
+    })
+    return {
+        "operator": operator,
+        "run_id": run_id,
+        "run_time": parse_run_time(run_id),
+        "result_dir": result_dir.resolve(),
+        "manifest": manifest,
+        "rows": rows,
+        "source_format": "results.csv",
+    }
+
+
+def find_latest_report_runs(results_dir: Path) -> dict[str, dict]:
+    latest = find_latest_runs(results_dir)
+    for run in latest.values():
+        run["source_format"] = "measurements.jsonl"
+    for result_dir in sorted(results_dir.iterdir()):
+        if not result_dir.is_dir():
+            continue
+        candidate = load_simple_run(result_dir)
+        if candidate is None:
+            continue
+        previous = latest.get(candidate["operator"])
+        if previous is None or (candidate["run_time"], result_dir.name) > (
+                previous["run_time"], previous["result_dir"].name):
+            latest[candidate["operator"]] = candidate
+    return latest
+
+
 def report_data(latest: dict[str, dict]) -> dict:
     operators = []
     for operator, run in sorted(latest.items()):
         rows = [compact_row(row) for row in run["rows"]]
         triton_ascend_commit, ascend_npu_ir_commit = source_commits(run["manifest"])
+        detailed = run.get("source_format") != "results.csv"
         operators.append({
             "id":
             operator,
@@ -104,13 +240,13 @@ def report_data(latest: dict[str, dict]) -> dict:
             "measured_count":
             sum(is_supported(row) for row in run["rows"]),
             "distinct_binary_hashes":
-            len({row["binary_hash"]
-                 for row in rows
-                 if row.get("binary_hash")}),
+            (len({row["binary_hash"]
+                  for row in rows
+                  if row.get("binary_hash")}) if detailed else None),
             "distinct_ttir_hashes":
-            len({row.get("ttir_hash")
-                 for row in run["rows"]
-                 if row.get("ttir_hash")}),
+            (len({row.get("ttir_hash")
+                  for row in run["rows"]
+                  if row.get("ttir_hash")}) if detailed else None),
             "rows":
             rows,
         })
@@ -135,7 +271,7 @@ def main() -> int:
     if not template_path.is_file():
         raise SystemExit(f"report template does not exist: {template_path}")
 
-    latest = find_latest_runs(results_dir)
+    latest = find_latest_report_runs(results_dir)
     if not latest:
         raise SystemExit(f"no complete full-sweep results found under {results_dir}")
     data = report_data(latest)
