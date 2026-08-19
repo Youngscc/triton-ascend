@@ -555,15 +555,19 @@ source directories. The project path must remain identical on the server host
 and inside the container.
 
 Offline source synchronization is additive and excludes `.git`,
-`.codex-remote`, venvs, build/cache directories, and generated experiment
-output. `config.local.sh` is intentionally synchronized although it is ignored
-by Git. The top-level Git metadata, excluding `.git/modules`, is mirrored
-separately to `.codex-remote/top-git` so `setup.py` can apply the Triton patches
-when the destination is not a real clone. Offline worktrees explicitly set
-`REMOTE_SOURCE_MODE=rsync`; normal server clones use `auto` and their own
-`.git`. `RSYNC_DELETE=1` enables deletion under the server source target and is
-used only when an exact source mirror is intended. Result retrieval is additive
-unless deletion is explicitly enabled.
+`.codex-remote`, `tmp`, venvs, build/cache directories, and generated experiment
+output. `RSYNC_DELETE=1` enables deletion only inside the allowlisted
+`experiment_operators/` and `tools/remote_experiment/` source directories;
+candidate kernels, archived originals, `config.local.sh`, and conventional
+generated-output directories inside them remain protected. Use
+`RSYNC_DRY_RUN=1` with it first to inspect the itemized changes. The project
+root, `python/`, `third_party/`, and AscendNPU-IR are never deletion targets.
+The top-level Git metadata, excluding `.git/modules`, is mirrored separately to
+the replaceable `.codex-remote/top-git` directory so `setup.py` can apply the
+Triton patches when the destination is not a real clone. Offline worktrees
+explicitly set `REMOTE_SOURCE_MODE=rsync`; normal server clones use `auto` and
+their own `.git`. Result retrieval is additive unless deletion is explicitly
+enabled.
 
 ## Submodule caution
 
