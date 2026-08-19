@@ -163,16 +163,6 @@ LLVM must match the top-level repository gitlinks in the server checkout.
   stale TableGen output cannot retain an old HIVM schema.
   The rebuild prints `HIVM_TABLEGEN_SSBUF_OK` only after the generated enum
   implementation itself contains `ssbuf`, before testing either executable.
-  The RegBase compile driver keeps the native SSBUF representation through all
-  HIVM optimization and memory-planning passes, then lowers rank-0 SSBUF
-  pointer casts and zero-index loads/stores to volatile LLVM accesses through
-  `!llvm.ptr<11>` immediately before invoking external `hivmc-a5`. Unsupported
-  SSBUF users fail explicitly. The focused `hivmc-a5.mlir` test requires the
-  external tool, rejects residual SSBUF syntax, and requires a nonempty object;
-  CANN 9.0's `hivmc-a5` produced a 2584-byte object in the A3 container. This
-  validates the SSBUF boundary representation, not the complete A5 toolchain:
-  the A3 container's older `hivmc-a5` rejects current typed bitcode attributes
-  when handed a full custom-compiler A5 module.
 - `dev-compatible` has completed Python-to-benchmark smoke tests for fused
   attention, unified attention, and HSTU forward attention. Initial 2-warmup,
   5-active means were approximately 2.839409 ms, 57.708093 ms, and 0.044769 ms
