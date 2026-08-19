@@ -21,7 +21,6 @@
  */
 
 #include "ascend/include/DynamicCVPipeline/AddControlFlowCondition.h"
-#include "DynamicCVPipeline/AddControlFlowCondition/UpdateConditionInfoLegacy.h"
 #include "ascend/include/DynamicCVPipeline/AddControlFlowCondition/CloneOps.h"
 #include "ascend/include/DynamicCVPipeline/AddControlFlowCondition/CreateIfOps.h"
 #include "ascend/include/DynamicCVPipeline/AddControlFlowCondition/InitDependentMap.h"
@@ -32,11 +31,8 @@
 #include "ascend/include/DynamicCVPipeline/Common/Utils.h"
 #include "bishengir/Dialect/HIVM/IR/HIVM.h"
 #include "bishengir/Dialect/Scope/IR/Scope.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Pass/PassManager.h"
-#include "mlir/Pass/PassRegistry.h"
 #include "llvm/Support/Debug.h"
-#include <memory>
 
 static constexpr const char *DEBUG_TYPE = "AddControlFlowCondition";
 #define DBGS() (llvm::dbgs() << '[' << DEBUG_TYPE << "] ")
@@ -114,30 +110,8 @@ void AddControlFlowConditionPass::runOnOperation() {
 
   // Step5:Update the conditions of ifOp based on the intraCoreDependentMap and
   // crossCoreDependentMap
-
-  constexpr llvm::StringLiteral legacyKernel[] = {
-      "chunk_gated_delta_rule_fwd_kernel_h_blockdim128"};
-  bool useLegacyConditions = false;
-  for (auto &op : module.getOps()) {
-    auto funcOp = llvm::dyn_cast<func::FuncOp>(&op);
-    if (funcOp && llvm::is_contained(legacyKernel, funcOp.getSymName())) {
-      useLegacyConditions = true;
-      break;
-    }
-  }
-
-  std::unique_ptr<Pass> updatePass;
-
-  if (useLegacyConditions) {
-    auto pass = std::make_unique<UpdateConditionInfoPassLegacy>();
-    pass->setConditionInfo(&info);
-    updatePass = std::move(pass);
-  } else {
-    auto pass = std::make_unique<UpdateConditionInfoPass>();
-    pass->setConditionInfo(&info);
-    updatePass = std::move(pass);
-  }
-
+  auto updatePass = std::make_unique<UpdateConditionInfoPass>();
+  updatePass->setConditionInfo(&info);
   pm.addPass(std::move(updatePass));
 
   // Step6: Update for loop iteration times based on intraCoreDependentMap
