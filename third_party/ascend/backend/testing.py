@@ -83,8 +83,10 @@ def do_bench_npu(
         torch.npu.synchronize()  # shake out of any npu error
 
     total = warmup + active
+    profile_steps = len(funcs) * total
     with torch_npu.profiler.profile(
             activities=[torch_npu.profiler.ProfilerActivity.NPU],
+            schedule=torch_npu.profiler.schedule(wait=0, warmup=0, active=profile_steps, repeat=1),
             on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(torch_path),
             record_shapes=False,
             profile_memory=False,
@@ -100,6 +102,7 @@ def do_bench_npu(
                     torch.npu.synchronize()
                 fn()
                 torch.npu.synchronize()
+                prof.step()
     if clear_l2_cache:
         del buffer
 
