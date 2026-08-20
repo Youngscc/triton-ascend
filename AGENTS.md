@@ -290,6 +290,10 @@ usage; never keep only the fastest configuration.
   complete result; `off` is accepted for A5 DynamicCV and ordinary MultiBuffer.
   A final timeout row is rerun directly; replacing any other
   status requires interactive confirmation.
+- Foreground TTY runs render one fixed two-line progress dashboard: aggregate
+  counts above and the current parameter triple below. Non-TTY detached logs
+  append `CASE_START` and `CASE_RESULT` records instead of repeated progress
+  bars, so `tail -F` remains readable without terminal-control artifacts.
 - Each run has one readable `results.csv`, one complete machine record
   `measurements.jsonl`, `manifest.json`, and one log per case. Artifact hashes
   appear only in `measurements.jsonl`. Requested parameters, resolved backend
