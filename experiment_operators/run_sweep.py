@@ -16,7 +16,7 @@ import signal
 import subprocess
 import sys
 import time
-from typing import NamedTuple
+from typing import NamedTuple, TextIO
 
 try:
     from . import experiment_config as experiment
@@ -147,7 +147,7 @@ def config_key(config: SweepConfig, is_a5: bool) -> str:
 
 
 class SweepProgress:
-    """Print one stable progress line per case, with no output-mode switches."""
+    """Render one two-line dashboard, or append plain events without a TTY."""
 
     BAR_WIDTH = 24
 
@@ -158,19 +158,56 @@ class SweepProgress:
         self.success = 0
         self.failed = 0
         self.unsupported = 0
-        self.interactive = sys.stdout.isatty()
-        self.current_line = False
+        self.current = "waiting"
+        self.stream, self.interactive = self._select_stream()
+        self.rendered = False
 
-    def _bar(self) -> str:
+    @staticmethod
+    def _select_stream() -> tuple[TextIO, bool]:
+        if sys.stdout.isatty():
+            return sys.stdout, True
+        if sys.stderr.isatty():
+            return sys.stderr, True
+        return sys.stdout, False
+
+    def _terminal_columns(self) -> int:
+        try:
+            return max(40, os.get_terminal_size(self.stream.fileno()).columns)
+        except (AttributeError, OSError, ValueError):
+            return 120
+
+    @staticmethod
+    def _fit_line(value: str, columns: int) -> str:
+        if len(value) <= columns:
+            return value
+        return value[:max(0, columns - 3)] + "..."
+
+    def _lines(self) -> tuple[str, str]:
         ratio = self.completed / self.total if self.total else 1.0
-        filled = min(self.BAR_WIDTH, round(ratio * self.BAR_WIDTH))
-        return "#" * filled + "-" * (self.BAR_WIDTH - filled)
+        columns = self._terminal_columns()
+        counts = (f"{self.completed}/{self.total} {ratio * 100:5.1f}% "
+                  f"ok={self.success} fail={self.failed} unsupported={self.unsupported}")
+        fixed_width = len(self.operator) + len(counts) + 6
+        bar_width = min(self.BAR_WIDTH, max(4, columns - fixed_width))
+        filled = min(bar_width, round(ratio * bar_width))
+        bar = "#" * filled + "-" * (bar_width - filled)
+        progress = self._fit_line(f"[{self.operator}] [{bar}] {counts}", columns)
+        details = self._fit_line(f"current: {self.current}", columns)
+        return progress, details
 
-    def _clear(self) -> None:
-        if self.interactive and self.current_line:
-            sys.stdout.write("\r\033[2K")
-            sys.stdout.flush()
-            self.current_line = False
+    def _clear_dashboard(self) -> None:
+        if not self.interactive or not self.rendered:
+            return
+        self.stream.write("\r\033[2K\033[1A\r\033[2K")
+        self.stream.flush()
+        self.rendered = False
+
+    def _render_dashboard(self) -> None:
+        progress, details = self._lines()
+        self._clear_dashboard()
+        self.stream.write(f"{progress}\n{details}")
+        self.stream.flush()
+        self.rendered = True
 
     def begin(
         self,
@@ -181,28 +218,24 @@ class SweepProgress:
         attempt_kind: str,
     ) -> None:
         value = axis_value(config.pipeline_value)
-        line = (f"[{self.operator}] [{self._bar()}] {self.completed}/{self.total} "
-                f"running {index}/{self.total} {pipeline_axis}={value} "
-                f"multibuffer_num={axis_value(config.multibuffer_num)} "
-                f"vf_merge_level={config.vf_merge_level} "
-                f"attempt={attempt_number}({attempt_kind})")
+        self.current = (f"running {index}/{self.total} {pipeline_axis}={value} "
+                        f"multibuffer_num={axis_value(config.multibuffer_num)} "
+                        f"vf_merge_level={config.vf_merge_level} "
+                        f"attempt={attempt_number}({attempt_kind})")
         if self.interactive:
-            sys.stdout.write("\r\033[2K" + line)
-            sys.stdout.flush()
-            self.current_line = True
+            self._render_dashboard()
         else:
-            print(line, flush=True)
+            print(f"CASE_START {self.current}", flush=True)
 
     def note(self, message: str) -> None:
-        self._clear()
-        print(message, flush=True)
+        self._clear_dashboard()
+        print(message, file=self.stream, flush=True)
 
     def defer_timeout(self, key: str, retry_number: int) -> None:
         self.note(f"{key}: timeout; queued automatic retry "
                   f"{retry_number}/{experiment.TIMEOUT_RETRIES} after the initial sweep")
 
     def finish(self, key: str, row: dict) -> None:
-        self._clear()
         status = row["status"]
         self.completed += 1
         if status == "measured":
@@ -217,13 +250,21 @@ class SweepProgress:
                    f"ub_kib={ub_kib if ub_kib is not None else '-'}")
         if status != "measured":
             details += f" reason={simple_reason(row)}"
-        print(
-            f"[{self.operator}] [{self._bar()}] {self.completed}/{self.total} "
-            f"ok={self.success} fail={self.failed} unsupported={self.unsupported} "
-            f"case={key} status={status} {details} "
-            f"log=logs/{Path(row['log_path']).name}",
-            flush=True,
-        )
+        self.current = (f"finished case={key} status={status} {details} "
+                        f"log=logs/{Path(row['log_path']).name}")
+        if self.interactive:
+            self._render_dashboard()
+        else:
+            print(
+                f"CASE_RESULT {self.completed}/{self.total} "
+                f"ok={self.success} fail={self.failed} unsupported={self.unsupported} "
+                f"{self.current}", flush=True)
+
+    def close(self) -> None:
+        if self.interactive and self.rendered:
+            self.stream.write("\n")
+            self.stream.flush()
+            self.rendered = False
 
 
 def sha256(path: Path | None) -> str | None:
@@ -906,6 +947,7 @@ def run_full_sweep(operator_file: Path) -> int:
         else:
             progress.finish(key, row)
 
+    progress.close()
     rows = [row for row in row_slots if row is not None]
     counts = Counter(result_label(row["status"]) for row in rows)
     retried = sum(bool(row.get("initial_timed_out")) for row in rows)
@@ -1151,6 +1193,7 @@ def rerun_case(operator_file: Path, first_axis: str, multibuffer: str, vf_merge:
     rows[index] = row
     write_run_files(rows, result_dir, pipeline_axis)
     progress.finish(key, row)
+    progress.close()
 
     event = {
         "time": datetime.now(timezone.utc).isoformat(),

@@ -16,6 +16,15 @@ from experiment_operators import generate_experiment_report
 from experiment_operators import run_sweep
 
 
+class TtyBuffer(io.StringIO):
+
+    def isatty(self):
+        return True
+
+    def fileno(self):
+        raise OSError("test stream has no file descriptor")
+
+
 class SweepRetryTest(unittest.TestCase):
 
     @staticmethod
@@ -33,6 +42,27 @@ class SweepRetryTest(unittest.TestCase):
             "timed_out": False,
             "diagnostic": "曾超时，补测后成功",
         }))
+
+    def test_interactive_progress_reuses_two_terminal_lines(self):
+        stream = TtyBuffer()
+        row = {
+            "status": "measured",
+            "latency_ms": 1.25,
+            "required_ub_kib": 64.0,
+            "log_path": "logs/d1-boff-m0.log",
+        }
+        with patch.object(run_sweep.sys, "stdout", stream):
+            progress = run_sweep.SweepProgress("retry_test", 2)
+            progress.begin(1, run_sweep.SweepConfig(False, 1, None, 0), "depth", 1, "initial")
+            progress.finish("d1-boff-m0", row)
+            progress.close()
+
+        output = stream.getvalue()
+        self.assertIn("current: running 1/2 depth=1 multibuffer_num=off", output)
+        self.assertIn("\033[1A", output)
+        self.assertIn("current: finished case=d1-boff-m0 status=measured", output)
+        self.assertNotIn("CASE_START", output)
+        self.assertTrue(output.endswith("\n"))
 
     def write_candidate(self, root: Path) -> Path:
         candidate = root / "retry_candidate.py"
@@ -67,6 +97,7 @@ class SweepRetryTest(unittest.TestCase):
         stack.enter_context(patch.object(experiment_config, "CASE_TIMEOUT_SECONDS", 0.2))
         stack.enter_context(patch.object(experiment_config, "TIMEOUT_RETRIES", retries))
         stack.enter_context(patch.object(run_sweep, "RESULTS_ROOT", root / "results"))
+        stack.enter_context(patch.object(run_sweep.sys, "stderr", io.StringIO()))
         stack.enter_context(
             patch.dict(
                 os.environ,
@@ -165,6 +196,9 @@ class SweepRetryTest(unittest.TestCase):
 
             text = output.getvalue()
             retry_message = ("initial sweep complete; retrying 1 timed-out configuration(s)")
+            self.assertEqual(text.count("CASE_START "), 3)
+            self.assertEqual(text.count("CASE_RESULT "), 2)
+            self.assertNotIn("[retry_test] [", text)
             self.assertLess(text.index("running 1/2"), text.index("running 2/2"))
             self.assertLess(text.index("running 2/2"), text.index(retry_message))
             self.assertLess(text.index(retry_message), text.index("attempt=2(automatic_retry)"))

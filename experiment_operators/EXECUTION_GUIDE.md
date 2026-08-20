@@ -141,7 +141,7 @@ TIMEOUT_RETRIES = 1
 ./run_all_sweeps.sh experiment_operators/candidates/hstu_attention.py
 ```
 
-每个 case 的进度行会显示三项参数、成功数、失败数和不支持数。超时 case 会先排队，等其他初始 case 全部结束后再补测。
+前台终端固定使用两行显示：第一行是总进度及成功、失败、不支持数量，第二行是当前参数；两行会原地刷新，不会为每个 case 新建进度条。无 TTY 的后台日志使用 `CASE_START` 和 `CASE_RESULT` 追加事件，便于 `tail -F` 查看。超时 case 会先排队，等其他初始 case 全部结束后再补测。
 
 一次完整运行默认生成所有报告所需内容：
 
