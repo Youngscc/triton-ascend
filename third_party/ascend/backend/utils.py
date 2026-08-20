@@ -36,17 +36,30 @@ import pybind11
 _is_compile_on_910_95 = None
 
 
+def _is_910_95_name(name):
+    name_lower = str(name).lower()
+    return ("ascend910_95" in name_lower or "ascend950" in name_lower or "910_958" in name_lower)
+
+
 def is_compile_on_910_95():
     global _is_compile_on_910_95
     if _is_compile_on_910_95 is None:
-        try:
-            import acl
-            name = acl.get_soc_name()
-            name_lower = name.lower()
-            _is_compile_on_910_95 = ("ascend910_95" in name_lower or "ascend950" in name_lower
-                                     or "910_958b" in name_lower)
-        except (ImportError, AttributeError):
-            _is_compile_on_910_95 = False
+        arch = os.getenv("TRITON_ASCEND_ARCH", "")
+        if arch:
+            _is_compile_on_910_95 = _is_910_95_name(arch)
+        else:
+            name = ""
+            try:
+                import acl
+                name = acl.get_soc_name()
+            except (ImportError, AttributeError, RuntimeError):
+                try:
+                    import torch
+                    import torch_npu  # noqa: F401
+                    name = torch.npu.get_device_name(torch.npu.current_device())
+                except (ImportError, AttributeError, RuntimeError):
+                    pass
+            _is_compile_on_910_95 = _is_910_95_name(name)
     return _is_compile_on_910_95
 
 
@@ -235,12 +248,15 @@ def _get_bishengir_opt_path() -> str:
         npuir_env_path = os.path.dirname(bishengir_opt_path)
         env["PATH"] = npuir_env_path + ":" + env["PATH"]
     else:
-        bishengir_opt_path = shutil.which("bishengir-opt")
-        if bishengir_opt_path is None:
-            bishengir_opt_root = os.getenv("TRITON_NPU_COMPILER_PATH", "")
-            if bishengir_opt_root is None:
+        bishengir_opt_root = os.getenv("TRITON_NPU_COMPILER_PATH")
+        explicit_path = os.path.join(bishengir_opt_root, "bishengir-opt") if bishengir_opt_root else None
+        if explicit_path and os.path.isfile(explicit_path) and os.access(explicit_path, os.X_OK):
+            bishengir_opt_path = explicit_path
+            env["PATH"] = bishengir_opt_root + ":" + env["PATH"]
+        else:
+            bishengir_opt_path = shutil.which("bishengir-opt")
+            if bishengir_opt_path is None:
                 raise EnvironmentError("Couldn't find executable bishengir-opt or TRITON_NPU_COMPILER_PATH")
-            bishengir_opt_path = os.path.join(bishengir_opt_root, "bishengir-opt")
     return bishengir_opt_path, env
 
 

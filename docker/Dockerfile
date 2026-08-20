@@ -23,6 +23,7 @@ RUN sed -i 's|http://archive.ubuntu.com|http://mirrors.huaweicloud.com|g' /etc/a
     lld-15 \
     make \
     ninja-build \
+    python3-venv \
     sudo \
     unzip \
     vim \

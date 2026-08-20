@@ -29,6 +29,7 @@ import re
 import shlex
 import subprocess
 import tempfile
+import time
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,6 +75,19 @@ from triton.backends.compiler import (
     GPUTarget,
 )
 from triton.runtime.cache import get_dump_manager
+
+
+def _print_resolved_npu_options(metadata, opt):
+    if os.getenv("TRITON_PRINT_AUTOTUNING") != "1" and not opt.debug:
+        return
+    resolved = {
+        name: metadata.get(name, getattr(opt, name))
+        for name in opt.__dataclass_fields__
+    }
+    print(
+        "[EXPERIMENT] resolved_npu_options="
+        + json.dumps(resolved, default=str, sort_keys=True)
+    )
 
 
 # TODO: materialize the concrete min shape
@@ -132,6 +146,7 @@ def _export_coalesce_metadata(mod, metadata, *, require_row_contract=False):
 
 def _adjust_metadata_by_module_result(mod, metadata, opt, **kwargs):
     rc = _get_then_remove_rc(mod, "triton_ascend.dynamic_cv_pipeline.rc")
+    metadata["dynamic_cv_pipeline_return_code"] = rc if rc != -1 else None
     if rc != -1 and rc > 0:
         # When the option dynamic_cv_pipeline is set to False,
         # these options should also reverted.
@@ -139,8 +154,14 @@ def _adjust_metadata_by_module_result(mod, metadata, opt, **kwargs):
         metadata["enable_mixed_cv"] = kwargs["enable_mixed_cv"]
         metadata["disable_auto_inject_block_sync"] = kwargs["disable_auto_inject_block_sync"]
         metadata["set_workspace_multibuffer"] = kwargs["set_workspace_multibuffer"]
-        if opt.debug:
-            print(f"SSBUFFER return code={rc}, will fallback to enable_dynamic_cv_pipeline=False")
+        if opt.debug or os.getenv("TRITON_PRINT_AUTOTUNING") == "1":
+            print(
+                "[EXPERIMENT] dynamic_cv_pipeline_fallback="
+                + json.dumps({
+                    "return_code": rc,
+                    "enable_dynamic_cv_pipeline": False,
+                }, sort_keys=True)
+            )
 
 
 def _get_dump_paths(hash_key: str, src_path: str, dst_path: str) -> Tuple[str, str]:
@@ -351,6 +372,11 @@ def linalg_to_bc_by_triton_mlir_opt(linalg: str, metadata, opt):
             triton_mlir_opt_path,
             ttadapter_path,
             "--emit-bytecode",
+            # BishengIR's standalone compiler is pinned to MLIR 19. MLIR 22
+            # bytecode versions 5 and 6 encode native operation properties
+            # that its reader cannot consume; version 4 is the newest format
+            # accepted by both sides.
+            "--emit-bytecode-version=4",
             "-o",
             bc_path,
         ], check=True, capture_output=True, text=True)
@@ -386,13 +412,23 @@ def bc_to_linalg_by_bishengir_opt(bc_data: bytes, metadata, opt):
 
         bishengir_opt_path, env = _get_bishengir_opt_path()
 
-        subprocess.run([
+        result = subprocess.run([
             bishengir_opt_path,
             bc_path,
             "--mlir-print-debuginfo",
             "-o",
             mlir_path,
-        ], env=env, capture_output=True, check=True, text=True)
+        ], env=env, capture_output=True, check=False, text=True)
+        if result.returncode != 0:
+            stdout = result.stdout.strip() or "<empty>"
+            stderr = result.stderr.strip() or "<empty>"
+            raise RuntimeError(
+                "bishengir-opt failed while decoding Triton MLIR bytecode\n"
+                f"executable: {bishengir_opt_path}\n"
+                f"returncode: {result.returncode}\n"
+                f"stdout:\n{stdout}\n"
+                f"stderr:\n{stderr}"
+            )
 
         # Read the generated MLIR text
         linalg_text = Path(mlir_path).read_text()
@@ -402,6 +438,26 @@ def bc_to_linalg_by_bishengir_opt(bc_data: bytes, metadata, opt):
             dump_manager.put(linalg_text, "kernel.mlir", binary=False)
 
         return linalg_text
+
+
+def _format_bishengir_compile_failure(error: subprocess.CalledProcessError) -> str:
+    def decode(value) -> str:
+        if not value:
+            return "<empty>"
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace").strip() or "<empty>"
+        return str(value).strip() or "<empty>"
+
+    command = error.cmd
+    if isinstance(command, (list, tuple)):
+        command = shlex.join(str(arg) for arg in command)
+    return (
+        "bishengir-compile failed\n"
+        f"returncode: {error.returncode}\n"
+        f"command: {command}\n"
+        f"stdout:\n{decode(error.stdout)}\n"
+        f"stderr:\n{decode(error.stderr)}"
+    )
 
 
 def __get_metadata_attr_by_callback(lib, postfix: str, metadata, meta_key: str):
@@ -697,6 +753,10 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
         if set_workspace_multibuffer is not None:
             _compile_option_list += \
                 [f"--set-workspace-multibuffer={set_workspace_multibuffer}"]
+        multibuffer_num = metadata.get("multibuffer_num")
+        if multibuffer_num is not None:
+            _compile_option_list += \
+                [f"--set-local-multibuffer={multibuffer_num}"]
 
         auto_multi_buffer = metadata["limit_auto_multi_buffer_of_local_buffer"]
         if auto_multi_buffer is None:
@@ -777,7 +837,8 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
         if mix_mode in ["aic"]:
             _compile_option_list += ["--disable-hfusion-vectorize=true"]
 
-        _compile_option_list += ["--mlir-print-ir-after-failure"]
+        if os.getenv("TRITON_PRINT_IR_AFTER_FAILURE", "1") != "0":
+            _compile_option_list += ["--mlir-print-ir-after-failure"]
         _compile_option_list += ["--mlir-print-stacktrace-on-diagnostic"]
         if opt.debug:
             _compile_option_list += ["--bishengir-print-ir-after=hivm-graph-sync-solver"]
@@ -803,25 +864,28 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
         cmd_list = ([npu_compiler_path, ttadapter_path] + _compile_option_list + ["-o", bin_file])
 
         if opt.debug or os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
+            _print_resolved_npu_options(metadata, opt)
             print_cmd_list = cmd_list.copy()
             print_cmd_list[1], print_cmd_list[-1] = _get_dump_paths(metadata["hash"], ttadapter_path, bin_file)
             print(f"[DEBUG] cmd_list: {shlex.join(print_cmd_list)}")
 
+        compile_started = time.perf_counter()
         try:
             ret = subprocess.run(cmd_list, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
         except subprocess.CalledProcessError as e:
             if opt.debug:
                 _save_npuir_debug_output(e.stdout, e.stderr, tmpdir, metadata["hash"])
-            raise
+            raise RuntimeError(_format_bishengir_compile_failure(e)) from e
+        metadata["compile_time_ms"] = (time.perf_counter() - compile_started) * 1000
 
         if opt.debug:
             _save_npuir_debug_output(ret.stdout, ret.stderr, tmpdir, metadata["hash"])
 
         stdout_str = ret.stdout.decode('utf-8') if ret.stdout else ''
-        match = re.search(r'UB\s+size\s*=\s*(\d+)\s*bits', stdout_str)
-        if match:
+        matches = re.findall(r'UB\s+size\s*=\s*(\d+)\s*bits', stdout_str)
+        if matches:
             # get the ub bits of triton kernel from bisheng for inductor autotune using
-            metadata["required_ub_bits"] = int(match.group(1))
+            metadata["required_ub_bits"] = max(map(int, matches))
 
         if not Path(bin_path).exists():
             error_msg = ret.stderr.decode('utf-8') if ret.stderr else ''
@@ -970,6 +1034,23 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
         if set_workspace_multibuffer is not None:
             _compile_option_list += \
                 [f"--set-workspace-multibuffer={set_workspace_multibuffer}"]
+        multibuffer_num = metadata.get("multibuffer_num")
+        if multibuffer_num is not None:
+            _compile_option_list += \
+                [f"--set-local-multibuffer={multibuffer_num}"]
+        # Forward the MIX multi-buffer strategy for the ordinary (Vector-side,
+        # UB) Load/Store buffers.  The 910/95 path already forwards it; the
+        # A2/A3 path previously dropped it, so an explicit multibuffer_num
+        # could only change Cube-side L1/L0C buffers and never the UB usage
+        # reported by PlanMemory.
+        auto_multi_buffer_buffer = metadata.get("limit_auto_multi_buffer_buffer")
+        if auto_multi_buffer_buffer is not None:
+            _compile_option_list += \
+                [f"--limit-auto-multi-buffer-buffer={auto_multi_buffer_buffer}"]
+
+        vf_merge_level = metadata["vf_merge_level"]
+        if vf_merge_level is not None:
+            _compile_option_list += [f"--enable-vf-merge-level={vf_merge_level}"]
 
         tile_mix_vector_loop = metadata["tile_mix_vector_loop"]
         if tile_mix_vector_loop is not None:
@@ -1016,7 +1097,8 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
                 "--enable-triton-kernel-compile=true",
             ]
 
-        _compile_option_list += ["--mlir-print-ir-after-failure"]
+        if os.getenv("TRITON_PRINT_IR_AFTER_FAILURE", "1") != "0":
+            _compile_option_list += ["--mlir-print-ir-after-failure"]
         _compile_option_list += ["--mlir-print-stacktrace-on-diagnostic"]
         if opt.debug:
             _compile_option_list += ["--bishengir-print-ir-after=hivm-graph-sync-solver"]
@@ -1024,24 +1106,27 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
         cmd_list = ([npu_compiler_path, ttadapter_path] + _compile_option_list + ["-o", bin_file])
 
         if opt.debug or os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
+            _print_resolved_npu_options(metadata, opt)
             print_cmd_list = cmd_list.copy()
             print_cmd_list[1], print_cmd_list[-1] = _get_dump_paths(metadata["hash"], ttadapter_path, bin_file)
             print(f"[DEBUG] cmd_list: {shlex.join(print_cmd_list)}")
 
+        compile_started = time.perf_counter()
         try:
             ret = subprocess.run(cmd_list, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
         except subprocess.CalledProcessError as e:
             if opt.debug:
                 _save_npuir_debug_output(e.stdout, e.stderr, tmpdir, metadata["hash"])
-            raise
+            raise RuntimeError(_format_bishengir_compile_failure(e)) from e
+        metadata["compile_time_ms"] = (time.perf_counter() - compile_started) * 1000
 
         if opt.debug:
             _save_npuir_debug_output(ret.stdout, ret.stderr, tmpdir, metadata["hash"])
 
         stdout_str = ret.stdout.decode('utf-8') if ret.stdout else ''
-        match = re.search(r'UB\s+size\s*=\s*(\d+)\s*bits', stdout_str)
-        if match:
-            metadata["required_ub_bits"] = int(match.group(1))
+        matches = re.findall(r'UB\s+size\s*=\s*(\d+)\s*bits', stdout_str)
+        if matches:
+            metadata["required_ub_bits"] = max(map(int, matches))
 
         if not Path(bin_path).exists():
             error_msg = ret.stderr.decode('utf-8') if ret.stderr else ''
@@ -1099,7 +1184,6 @@ class NPUOptions:
     graph_optimize_ub_capacity_bytes: Optional[int] = None
     allow_fp8e4nv: bool = False
     auto_tile_and_bind_subblock: bool = True
-    vf_merge_level: int = 0
     supported_fp8_dtypes: Tuple[str] = ("fp8e5", "fp8e4b15", "fp8e4nv", "fp8e4b8", "fp8e5b16")
     deprecated_fp8_dtypes: Tuple[str] = ()
     vf_merge_level: int = 1
@@ -1135,6 +1219,10 @@ class NPUOptions:
     limit_auto_multi_buffer_only_for_local_buffer: bool = None
     limit_auto_multi_buffer_of_local_buffer: str = None
     limit_auto_multi_buffer_buffer: str = None
+    # Number of versions used by the ordinary local-buffer path in
+    # MarkMultiBuffer.  This does not control CVPipeline workspace buffers or
+    # the independently inferred preload-local value.
+    multibuffer_num: int = None
     set_workspace_multibuffer: int = None
     tile_mix_vector_loop: int = None
     tile_mix_cube_loop: int = None
@@ -1199,6 +1287,30 @@ class NPUOptions:
         from triton.backends.ascend import _apply_ascend_patch
 
         _apply_ascend_patch()
+        if self.vf_merge_level not in (0, 1, 2):
+            raise ValueError(
+                f"vf_merge_level must be one of 0, 1, or 2; got {self.vf_merge_level}"
+            )
+
+        if self.multibuffer_num is not None and self.multibuffer_num not in (1, 2, 3, 4):
+            raise ValueError(
+                "multibuffer_num must be one of 1, 2, 3, or 4; "
+                f"got {self.multibuffer_num}"
+            )
+
+        # An explicitly requested ordinary-local multibuffer count is only
+        # observable on mixed AIC/AIV kernels if the compiler's ordinary
+        # Load/Store marking is enabled.  AscendNPU-IR's default for
+        # `limitMixAutoMultiBufferBuffer` (--limit-auto-multi-buffer-buffer)
+        # is ONLY_CUBE, which disables the Vector-side (UB) ordinary buffers
+        # for MIX function parts, so --set-local-multibuffer alone only
+        # changes Cube-side L1/L0C buffers and never the UB usage reported by
+        # PlanMemory.  Treat an explicit `multibuffer_num` as intent to apply
+        # ordinary multibuffering and forward `no-limit` unless the user
+        # already picked a strategy.
+        if self.multibuffer_num is not None and self.limit_auto_multi_buffer_buffer is None:
+            object.__setattr__(self, "limit_auto_multi_buffer_buffer", "no-limit")
+
         graph_ub_budget_bytes = graph_ub_budget_bytes_for_arch(self.arch)
         requested_graph_ub_capacity_bytes = self.graph_optimize_ub_capacity_bytes
         if requested_graph_ub_capacity_bytes is None:

@@ -116,6 +116,8 @@ The OSs supported by Triton-Ascend are the same as those supported by CANN. Down
 
 - [Environment Variables and Compiler Options](docs/en/environment_variable_and_compiler_options_reference.md)
 
+- [A3/A5 Three-axis Experiment Guide](./experiment_operators/EXECUTION_GUIDE.md)
+
 ## FAQ
 
 For details about the FAQ encountered when using Triton-Ascend, see [FAQ](./docs/en/FAQ.md#).

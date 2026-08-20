@@ -39,6 +39,13 @@ class ProfilerResultMismatchError(RuntimeError):
             f"target_kernel_name={target_kernel_name!r}, expected_rows={expected_rows}, actual_rows={actual_rows}")
 
 
+class ProfilerDataUnavailableError(RuntimeError):
+
+    def __init__(self, profile_path: str):
+        self.profile_path = profile_path
+        super().__init__(f"NPU profiler did not produce kernel_details.csv; profile data preserved at {profile_path}")
+
+
 def do_bench_npu(
     funcs,
     warmup=5,
@@ -83,8 +90,10 @@ def do_bench_npu(
         torch.npu.synchronize()  # shake out of any npu error
 
     total = warmup + active
+    profile_steps = len(funcs) * total
     with torch_npu.profiler.profile(
             activities=[torch_npu.profiler.ProfilerActivity.NPU],
+            schedule=torch_npu.profiler.schedule(wait=0, warmup=1, active=profile_steps, repeat=1),
             on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(torch_path),
             record_shapes=False,
             profile_memory=False,
@@ -93,6 +102,12 @@ def do_bench_npu(
             with_modules=False,
             experimental_config=experimental_config,
     ) as prof:
+        # Give torch_npu's profiler state machine a real warmup step before it
+        # starts recording. These launches are not present in kernel_details.csv.
+        for fn in funcs:
+            fn()
+            torch.npu.synchronize()
+        prof.step()
         for fn in funcs:
             for _ in builtins.range(total):
                 if clear_l2_cache:
@@ -100,11 +115,13 @@ def do_bench_npu(
                     torch.npu.synchronize()
                 fn()
                 torch.npu.synchronize()
+                prof.step()
     if clear_l2_cache:
         del buffer
 
+    collected = False
     try:
-        return _collect_prof_result(
+        result = _collect_prof_result(
             torch_path,
             funcs,
             warmup,
@@ -112,8 +129,10 @@ def do_bench_npu(
             target_kernel_name=target_kernel_name,
             clear_l2_cache=clear_l2_cache,
         )
+        collected = True
+        return result
     finally:
-        _rm_dic(keep_res, torch_path)
+        _rm_dic(keep_res or not collected, torch_path)
 
 
 def _rm_dic(keep_res, torch_path):
@@ -160,10 +179,7 @@ def _collect_prof_result(
                 break
     num_funcs = len(funcs)
     if kernel_details_file is None:
-        if num_funcs == 1:
-            return float("inf")
-        else:
-            return [float("inf")] * num_funcs
+        raise ProfilerDataUnavailableError(base_dir)
 
     df = pd.read_csv(kernel_details_file)
     # filter out l2 cache clearing operation

@@ -420,8 +420,9 @@ class CompiledKernel:
         # stores the text of each level of IR that was generated during compilation
         asm_files = [Path(p) for c, p in metadata_group.items() if not c.endswith(".json")]
         binary_ext = backend.binary_ext
+        binary_extensions = getattr(backend, "binary_extensions", {binary_ext})
         self.asm = AsmDict({
-            file.suffix[1:]: file.read_bytes() if file.suffix[1:] == binary_ext else file.read_text()
+            file.suffix[1:]: file.read_bytes() if file.suffix[1:] in binary_extensions else file.read_text()
             for file in asm_files
         })
         self.metadata_group = metadata_group
@@ -462,8 +463,11 @@ class CompiledKernel:
         if knobs.runtime.kernel_load_start_hook is not None:
             knobs.runtime.kernel_load_start_hook(self.module, self.function, self.name, self.metadata_group, self.hash)
         # TODO: n_regs, n_spills should be metadata generated when calling `ptxas`
-        self.module, self.function, self.n_regs, self.n_spills, self.n_max_threads = driver.active.utils.load_binary(
-            self.name, self.kernel, self.metadata.shared, device)
+        load_binary_args = [self.name, self.kernel, self.metadata.shared, device]
+        if hasattr(self.metadata, "mix_mode"):
+            load_binary_args.append(self.metadata.mix_mode)
+        self.module, self.function, self.n_regs, self.n_spills, self.n_max_threads = \
+            driver.active.utils.load_binary(*load_binary_args)
         warp_size = driver.active.get_current_target().warp_size
         if self.metadata.num_warps * warp_size > self.n_max_threads:
             raise_(OutOfResources(self.metadata.num_warps * warp_size, self.n_max_threads, "threads"))

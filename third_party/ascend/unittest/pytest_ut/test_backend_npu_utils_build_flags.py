@@ -1,5 +1,7 @@
 import importlib.util
 import os
+import sys
+import types
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -63,6 +65,49 @@ def _assert_npu_utils_uses_special_flags(utils, monkeypatch, tmp_path):
 def test_npu_utils_build_uses_special_flags(monkeypatch, tmp_path):
     utils = _load_utils_module()
     _assert_npu_utils_uses_special_flags(utils, monkeypatch, tmp_path)
+
+
+def test_a5_detection_uses_explicit_arch_without_acl(monkeypatch):
+    utils = _load_utils_module()
+    monkeypatch.setattr(utils, "_is_compile_on_910_95", None)
+    monkeypatch.setenv("TRITON_ASCEND_ARCH", "Ascend910_9599")
+    monkeypatch.setitem(sys.modules, "acl", None)
+
+    assert utils.is_compile_on_910_95()
+
+
+def test_a5_detection_falls_back_to_torch_device_name(monkeypatch):
+    utils = _load_utils_module()
+    monkeypatch.setattr(utils, "_is_compile_on_910_95", None)
+    monkeypatch.delenv("TRITON_ASCEND_ARCH", raising=False)
+    monkeypatch.setitem(sys.modules, "acl", None)
+
+    fake_torch = types.ModuleType("torch")
+    fake_torch.npu = SimpleNamespace(
+        current_device=lambda: 0,
+        get_device_name=lambda _device: "Ascend910_9581",
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "torch_npu", types.ModuleType("torch_npu"))
+
+    assert utils.is_compile_on_910_95()
+
+
+def test_a3_detection_falls_back_to_torch_device_name(monkeypatch):
+    utils = _load_utils_module()
+    monkeypatch.setattr(utils, "_is_compile_on_910_95", None)
+    monkeypatch.delenv("TRITON_ASCEND_ARCH", raising=False)
+    monkeypatch.setitem(sys.modules, "acl", None)
+
+    fake_torch = types.ModuleType("torch")
+    fake_torch.npu = SimpleNamespace(
+        current_device=lambda: 0,
+        get_device_name=lambda _device: "Ascend910B3",
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "torch_npu", types.ModuleType("torch_npu"))
+
+    assert not utils.is_compile_on_910_95()
 
 
 @pytest.mark.parametrize(

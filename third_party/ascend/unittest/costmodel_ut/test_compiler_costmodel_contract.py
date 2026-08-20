@@ -1,8 +1,10 @@
 import importlib.util
+import subprocess
 import sys
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 class CompilerCostmodelContractTest(unittest.TestCase):
@@ -24,12 +26,17 @@ class CompilerCostmodelContractTest(unittest.TestCase):
         triton_mod = types.ModuleType("triton")
         triton_c_mod = types.ModuleType("triton._C")
         ascend_backend_mod = types.ModuleType("triton.backends.ascend")
+        ascend_backend_mod.__path__ = []
         ascend_backend_mod._apply_ascend_patch = lambda: None
+        debug_line_rewriter_mod = types.ModuleType("triton.backends.ascend.debug_line_rewriter")
+        debug_line_rewriter_mod.rewrite_debug_line = lambda artifact, **_kwargs: artifact
         libtriton_mod = types.ModuleType("triton._C.libtriton")
         libtriton_mod.ir = Dummy()
         libtriton_mod.passes = Dummy()
         libtriton_mod.ascend = Dummy()
         libtriton_mod.buffer_ir = Dummy()
+        libtriton_ascend_mod = types.ModuleType("triton._C.libtriton.ascend")
+        libtriton_ascend_mod.ir = Dummy()
 
         utils_mod = types.ModuleType("triton.backends.ascend.utils")
         for name in [
@@ -108,7 +115,9 @@ class CompilerCostmodelContractTest(unittest.TestCase):
             "triton": triton_mod,
             "triton._C": triton_c_mod,
             "triton._C.libtriton": libtriton_mod,
+            "triton._C.libtriton.ascend": libtriton_ascend_mod,
             "triton.backends.ascend": ascend_backend_mod,
+            "triton.backends.ascend.debug_line_rewriter": debug_line_rewriter_mod,
             "triton.backends.ascend.utils": utils_mod,
             "triton.backends.ascend.driver": driver_mod,
             "triton.backends.compiler": compiler_base_mod,
@@ -117,9 +126,11 @@ class CompilerCostmodelContractTest(unittest.TestCase):
         })
 
         module_path = Path(__file__).resolve().parents[2] / "backend" / "compiler.py"
-        spec = importlib.util.spec_from_file_location("ascend_compiler_under_test", module_path)
+        module_name = "triton.backends.ascend.compiler_under_test"
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
         module = importlib.util.module_from_spec(spec)
         assert spec and spec.loader
+        sys.modules[module_name] = module
         spec.loader.exec_module(module)
         return module, dump_mgr, GPUTarget
 
@@ -134,6 +145,69 @@ class CompilerCostmodelContractTest(unittest.TestCase):
         opt_costmodel = backend.parse_options({"enable_costmodel_backend": True})
         self.assertTrue(opt_costmodel.enable_costmodel_backend)
         self.assertFalse(opt_costmodel.use_bytecode)
+
+    def test_experiment_options_preserve_main_dev_controls(self):
+        cmplr, _dump_mgr, _GPUTarget = self._load_compiler_module()
+
+        options = cmplr.NPUOptions(
+            arch="Ascend950PR_9579",
+            compile_on_910_95=True,
+            enable_dynamic_cv_pipeline=True,
+            intra_cache_num=4,
+            multibuffer_num=3,
+            vf_merge_level=1,
+        )
+
+        self.assertTrue(options.enable_dynamic_cv_pipeline)
+        self.assertEqual(options.intra_cache_num, 4)
+        self.assertEqual(options.multibuffer_num, 3)
+        self.assertEqual(options.limit_auto_multi_buffer_buffer, "no-limit")
+        self.assertEqual(options.vf_merge_level, 1)
+
+        with self.assertRaises(ValueError):
+            cmplr.NPUOptions(multibuffer_num=0)
+        with self.assertRaises(ValueError):
+            cmplr.NPUOptions(vf_merge_level=3)
+
+    def test_bytecode_writer_targets_bishengir_compatible_version(self):
+        cmplr, _dump_mgr, _GPUTarget = self._load_compiler_module()
+
+        def fake_run(command, **_kwargs):
+            output_path = Path(command[command.index("-o") + 1])
+            output_path.write_bytes(b"MLIR-bytecode")
+
+        with mock.patch.object(
+                cmplr,
+                "_get_triton_mlir_opt_path",
+                return_value="/llvm22/bin/triton-mlir-opt",
+        ), mock.patch.object(cmplr.subprocess, "run", side_effect=fake_run) as run:
+            result = cmplr.linalg_to_bc_by_triton_mlir_opt(
+                "module {}\n",
+                {"hash": "test"},
+                types.SimpleNamespace(debug=False),
+            )
+
+        self.assertEqual(result, b"MLIR-bytecode")
+        command = run.call_args.args[0]
+        self.assertEqual(command[0], "/llvm22/bin/triton-mlir-opt")
+        self.assertIn("--emit-bytecode", command)
+        self.assertIn("--emit-bytecode-version=4", command)
+
+    def test_bishengir_failure_includes_captured_diagnostics(self):
+        cmplr, _dump_mgr, _GPUTarget = self._load_compiler_module()
+        error = subprocess.CalledProcessError(
+            7,
+            ["/project/bin/bishengir-compile", "kernel.mlir"],
+            output=b"compiler stdout",
+            stderr=b"actual pass diagnostic",
+        )
+
+        message = cmplr._format_bishengir_compile_failure(error)
+
+        self.assertIn("returncode: 7", message)
+        self.assertIn("bishengir-compile kernel.mlir", message)
+        self.assertIn("compiler stdout", message)
+        self.assertIn("actual pass diagnostic", message)
 
 
 if __name__ == "__main__":
