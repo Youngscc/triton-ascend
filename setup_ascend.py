@@ -238,7 +238,7 @@ def _ensure_distributed_submodule():
     if os.getenv("TRITON_BUILD_TD", "OFF").upper() not in ["ON", "1", "YES", "TRUE", "Y"]:
         return
     distributed_dir = _THIS_DIR / "third_party" / "ascend" / "Triton-distributed-ascend"
-    commit_id = "d2ac268c7ab4dc09865ed51638104ee1b97dc460"
+    commit_id = "7786ae06d5cf16fc232d3ccfeb4a18f5d6a9e26e"
     if not distributed_dir.is_dir():
         subprocess.check_call([
             "git",
@@ -249,6 +249,11 @@ def _ensure_distributed_submodule():
         ], cwd=_THIS_DIR / "third_party" / "ascend")
     if _is_git_repo():
         add_git_safe_dir(str(distributed_dir))
+        subprocess.check_call([
+            "git",
+            "fetch",
+            "origin",
+        ], cwd=distributed_dir)
         subprocess.check_call([
             "git",
             "checkout",
@@ -300,11 +305,12 @@ def _get_install_requirements():
         "scipy==1.15.1;python_version>='3.13'",
         "decorator==5.1.1",
         "psutil==6.0.0",
-        "pytest==8.3.2",
+        "pytest>=8.3.2,<9.0.0",
         "pytest-xdist==3.6.1",
         "pyyaml",
         "pybind11",
         "pandas",
+        "pyelftools>=0.29",
         "triton==3.6.0",
     ]
     return [*install_requires]

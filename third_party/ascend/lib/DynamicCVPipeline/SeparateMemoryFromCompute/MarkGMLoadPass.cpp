@@ -183,7 +183,7 @@ static int resolveBufferCount(scope::ScopeOp scopeOp) {
   }
   bool isCube = false;
   bool isVector = false;
-  if (failed(triton::getScopeType(scopeOp, isCube, isVector))) {
+  if (failed(getScopeType(scopeOp, isCube, isVector))) {
     return buffer_num;
   }
   if (isVector) {
@@ -300,21 +300,6 @@ void MarkGMLoadPass::runOnOperation() {
   ModuleOp module = getOperation();
 
   if (CVPipeline::hasFallbackAttr(module)) {
-    return;
-  }
-
-  // Skip marking for the sdpa infer kernel.
-  bool isSdpaInferKernel = false;
-  module.walk([&](func::FuncOp funcOp) -> WalkResult {
-    if (funcOp.getSymName() == "_sdpa_infer_kernel" ||
-        funcOp.getSymName() == "kernel_sdpa_fwd") {
-      isSdpaInferKernel = true;
-      return WalkResult::interrupt();
-    }
-    return WalkResult::advance();
-  });
-  if (isSdpaInferKernel) {
-    LOG_DEBUG("kernel _sdpa_infer_kernel: skip GM load marking");
     return;
   }
 

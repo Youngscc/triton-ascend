@@ -5,6 +5,7 @@
 Triton kernel example with SIMT compilation mode
 
 ```python
+# Enable libdevice SIMT compilation
 import triton
 import triton.language as tl
 import triton.language.extra.cann.libdevice as libdevice

@@ -208,16 +208,16 @@ docker exec -u root -it triton-ascend_container /bin/bash
 
 ## 运行样例
 
-**运行tutorials中向量加法实例验证结果**
+**运行tutorials中向量加法示例验证结果**
 
-向量加法实例：<a href="https://github.com/triton-lang/triton-ascend/blob/main/third_party/ascend/tutorials/01-vector-add.py" style="text-decoration: none; color: #0066cc;">01-vector-add.py </a>
+向量加法示例：<a href="https://github.com/triton-lang/triton-ascend/blob/main/third_party/ascend/tutorials/01-vector-add.py" style="text-decoration: none; color: #0066cc;">01-vector-add.py </a>
 
 ```bash
 # 设置CANN环境变量（以root用户默认安装路径`/usr/local/Ascend`为例）
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 # 拉取triton-ascend源码仓及用例（使用源码安装Triton-Ascend的无需重复拉取）
 git clone https://github.com/triton-lang/triton-ascend.git
-# 运行tutorials实例
+# 运行tutorials示例
 python3 ./third_party/ascend/tutorials/01-vector-add.py
 ```
 
@@ -227,6 +227,50 @@ python3 ./third_party/ascend/tutorials/01-vector-add.py
 tensor([0.8329, 1.0024, 1.3639,  ..., 1.0796, 1.0406, 1.5811], device='npu:0')
 tensor([0.8329, 1.0024, 1.3639,  ..., 1.0796, 1.0406, 1.5811], device='npu:0')
 The maximum difference between torch and triton is 0.0
+```
+
+## 运行Pytest UT
+
+源码仓中提供了单op测试用例，位于`third_party/ascend/unittest/pytest_ut`目录下。执行前需完成Triton-Ascend安装，并设置CANN环境变量。
+
+```bash
+# 设置CANN环境变量（默认安装路径`/usr/local/Ascend`为例）
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+# 安装pytest
+pip install pytest pytest-xdist
+```
+
+**运行单个测试用例**
+
+```bash
+# 以向量加法测试用例为例
+python -m pytest third_party/ascend/unittest/pytest_ut/test_add.py
+```
+
+**运行全部测试用例**
+
+```bash
+# 串行执行全部用例
+python -m pytest third_party/ascend/unittest/pytest_ut
+```
+
+如需加速测试，可通过`-n`指定并行worker数（并行执行需安装pytest-xdist）：
+
+```bash
+python -m pytest -n 8 third_party/ascend/unittest/pytest_ut
+```
+
+如需要打印测试过程详细信息，添加`-sv`参数：
+
+```bash
+python -m pytest -sv -n 8 third_party/ascend/unittest/pytest_ut
+```
+
+执行完成后输出示例如下：
+
+```text
+collected 6 items
+third_party/ascend/unittest/pytest_ut/test_add.py ......
 ```
 
 ## 安装常见问题
