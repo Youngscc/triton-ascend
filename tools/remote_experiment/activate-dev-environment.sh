@@ -12,6 +12,11 @@ source "$_remote_activate_dir/load-cann-environment.sh"
 # shellcheck source=tools/remote_experiment/config.sh
 source "$_remote_activate_dir/config.sh"
 
+# Sourcing this script always selects the repository development toolchain.
+# Keep the mode visible to commands started from the activated shell as well.
+REMOTE_MODE=dev
+export REMOTE_MODE
+
 if [[ ! -x "$REMOTE_VENV/bin/python" ]]; then
   printf 'development venv not found: %s\n' "$REMOTE_VENV" >&2
   return 1

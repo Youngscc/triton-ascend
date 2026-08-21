@@ -36,9 +36,8 @@ if [[ ! -f "$operator_file" || "$operator_file" != *.py ]]; then
   exit 1
 fi
 
-REMOTE_VENV="$DEV_VENV"
-REMOTE_COMPILER_BUILD="${DEV_COMPILER_DIR%/bin}"
-export REMOTE_VENV REMOTE_COMPILER_BUILD
+export TRITON_ASCEND_DEV_VENV="$DEV_VENV"
+export TRITON_ASCEND_COMPILER_DIR="$DEV_COMPILER_DIR"
 # shellcheck source=tools/remote_experiment/activate-dev-environment.sh
 source "$PROJECT_ROOT/tools/remote_experiment/activate-dev-environment.sh"
 
