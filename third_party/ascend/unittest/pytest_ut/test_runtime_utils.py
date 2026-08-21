@@ -93,6 +93,12 @@ def test_deprecated_simt_option_warns_only_once_after_in_place_normalization():
     assert options == {"compile_mode": "simt_only"}
 
 
+def test_vf_merge_level_remains_available_to_experiment_options():
+    options = {"vf_merge_level": 2}
+
+    assert utils._remove_deprecated_npu_options(options) == options
+
+
 def test_get_byte_per_numel_supports_unsigned_integer_dtypes():
     assert runtime_utils.get_byte_per_numel(torch.uint16) == 2
     assert runtime_utils.get_byte_per_numel(torch.uint32) == 4

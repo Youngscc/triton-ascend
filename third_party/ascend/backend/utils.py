@@ -81,7 +81,6 @@ _DEPRECATED_NPU_OPTIONS = frozenset({
     "storage_align",
     "stream",
     "use_bytecode",
-    "vf_merge_level",
     "warp_size",
 })
 
