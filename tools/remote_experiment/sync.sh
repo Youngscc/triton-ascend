@@ -110,13 +110,35 @@ rsync_args=(
 rsync "${rsync_args[@]}" "$PROJECT_ROOT/" "$REMOTE_HOST:$REMOTE_PROJECT/"
 
 # Deletion is deliberately limited to source-only directories. Candidate
-# kernels, archived originals, local configuration, and generated artifacts
-# remain protected even inside these scopes. Every other project directory is
-# always additive.
+# kernels, archived originals, local configuration, third-party dependencies,
+# and generated artifacts remain protected even inside these scopes. Every
+# other project directory is always additive.
 if [[ "${RSYNC_DELETE:-0}" == "1" ]]; then
+  top_level_safe_delete_paths=(
+    third_party/ascend/include/DynamicCVPipeline
+    third_party/ascend/lib/DynamicCVPipeline
+  )
+  npuir_safe_delete_paths=(
+    bishengir/cmake
+    bishengir/include
+    bishengir/lib
+    bishengir/python
+    bishengir/test
+    bishengir/tools
+    bishengir/triton/bin
+    bishengir/triton/cmake
+    bishengir/triton/include
+    bishengir/triton/lib
+    bishengir/triton/test
+    bishengir/triton/unittest
+    bishengir/triton/utils
+    bishengir/unittests
+  )
   printf '%s\n' \
     'Safe delete scope: experiment_operators/ (excluding candidates/ and origin/)' \
-    'Safe delete scope: tools/remote_experiment/ (excluding config.local.sh)'
+    'Safe delete scope: tools/remote_experiment/ (excluding config.local.sh)' \
+    'Safe delete scope: top-level DynamicCVPipeline include/lib source' \
+    'Safe delete scope: AscendNPU-IR bishengir source (excluding third-party)'
 
   safe_delete_args=(
     -az
@@ -136,6 +158,16 @@ if [[ "${RSYNC_DELETE:-0}" == "1" ]]; then
     --exclude=/config.local.sh \
     "$PROJECT_ROOT/tools/remote_experiment/" \
     "$REMOTE_HOST:$REMOTE_PROJECT/tools/remote_experiment/"
+  for relative_path in "${top_level_safe_delete_paths[@]}"; do
+    rsync "${safe_delete_args[@]}" \
+      "$PROJECT_ROOT/$relative_path/" \
+      "$REMOTE_HOST:$REMOTE_PROJECT/$relative_path/"
+  done
+  for relative_path in "${npuir_safe_delete_paths[@]}"; do
+    rsync "${safe_delete_args[@]}" \
+      "$PROJECT_ROOT/third_party/ascend/AscendNPU-IR/$relative_path/" \
+      "$REMOTE_HOST:$REMOTE_PROJECT/third_party/ascend/AscendNPU-IR/$relative_path/"
+  done
 fi
 
 # setup.py restores and reapplies the repository's Triton patches with Git.
@@ -149,9 +181,9 @@ rsync -az --delete "${dry_run_args[@]}" \
   "$PROJECT_ROOT/.git/" \
   "$REMOTE_HOST:$REMOTE_PROJECT/.codex-remote/top-git/"
 
-# AscendNPU-IR is outside the safe deletion allowlist. Transfer its source and
-# matching LLVM additively; use Git on the environment machine when its gitlink
-# changes so removed dependency files are handled by Git rather than rsync.
+# Transfer the rest of AscendNPU-IR and its matching LLVM additively. The
+# deletion-enabled pass above mirrors only explicitly allowlisted bishengir
+# source directories and never deletes nested dependencies.
 rsync -az "${dry_run_args[@]}" \
   --exclude=.git \
   "${generated_excludes[@]}" \
