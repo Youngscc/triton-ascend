@@ -149,10 +149,11 @@ LLVM must match the top-level repository gitlinks in the server checkout.
   19.1.7. Bytecode version 4 is the shared format. CANN's older `bishengir-opt`
   cannot decode DynamicCV's `HIVM_AddressSpaceAttr<ssbuf>`, so the rebuild
   produces the repository-matched MLIR 19 `bishengir-opt` as the compatibility
-  reader. `rebuild-compiler.sh` verifies an MLIR 22-to-19 SSBUF round trip and
-  then verifies that the project `bishengir-compile` parses the decoded text.
-  It prints `HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK` and
-  `BISHENGIR_COMPILE_SSBUF_PARSE_OK`. Development activation must clear
+  reader. `rebuild-compiler.sh` verifies an MLIR 22-to-19 SSBUF round trip with
+  the project-built `bishengir-opt` and prints
+  `HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK`. It does not run a post-build SSBUF input
+  through the full compiler or use downstream `hivmc-a5` as an SSBUF parsing
+  gate. Development activation must clear
   `BISHENGIR_LEGACY_A5_REGBASE`; otherwise the wrapper delegates to CANN's old
   A5 compiler, which lacks SSBUF. Do not globally disable bytecode: direct
   TTAdapter text changes the input path and regresses Vector Add.
