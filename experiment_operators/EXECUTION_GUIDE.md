@@ -37,7 +37,24 @@ git rev-parse --short HEAD
 git rev-parse --short HEAD:third_party/ascend/AscendNPU-IR
 ```
 
-## 3. 首次构建
+## 3. 维护环境配置
+
+首次使用或项目绝对路径发生变化时，编辑本机配置：
+
+```bash
+vi tools/remote_experiment/config.local.sh
+```
+
+确保 `REMOTE_PROJECT` 是当前项目的绝对路径：
+
+```bash
+REMOTE_PROJECT="<当前项目绝对路径>"
+```
+
+`config.sh` 会根据它重新生成 `REMOTE_VENV`、`REMOTE_COMPILER_BUILD`、缓存和
+临时目录等路径。若不创建 `config.local.sh`，则自动使用当前 checkout。
+
+## 4. 首次构建
 
 仍在容器内执行：
 
@@ -92,7 +109,7 @@ cd <宿主机项目的同一绝对路径>
 source tools/remote_experiment/activate-dev-environment.sh
 ```
 
-## 4. 设置实验参数
+## 5. 设置实验参数
 
 所有可调整的实验取值只在一个文件中：
 
@@ -125,7 +142,7 @@ TIMEOUT_RETRIES = 1
 
 `"off"` 是真实关闭状态：MultiBuffer 会传入 `multibuffer=False`，不传 `--set-local-multibuffer`；数值 `1` 仍然开启该 pass，只是使用一个 buffer。配置顺序就是运行顺序，因此默认先跑关闭状态。默认配置下，A3 有 40 行，A5 有 50 行，其中 A5 前 10 行关闭 DynamicCV。`vf_merge_level=2` 当前不在默认配置中；编译器问题修复后，直接把 `2` 加回配置文件即可。
 
-## 5. 运行完整实验
+## 6. 运行完整实验
 
 命令只有一个算子文件参数：
 
@@ -165,7 +182,7 @@ TIMEOUT_RETRIES = 1
 .codex-remote/results/latest-summary/experiment-report.html
 ```
 
-## 6. 补测一个 case
+## 7. 补测一个 case
 
 单 case 命令的后三项依次为：第一轴、`multibuffer_num`、`vf_merge_level`。
 
@@ -204,7 +221,7 @@ A5 DynamicCV 关闭基线示例：
 - 每次补测都追加到原 case 日志，并记录尝试次数和手动补测次数。
 - 更新完成后自动刷新 HTML。
 
-## 7. 单独刷新 HTML
+## 8. 单独刷新 HTML
 
 已有结果不需要重新实验：
 
@@ -214,7 +231,7 @@ A5 DynamicCV 关闭基线示例：
 
 生成器会为每个算子选择最新完整记录。失败和不支持行仍保留在覆盖率与配置表中，不会被静默删除，也不会选择所谓最佳配置。
 
-## 8. 何时重新构建
+## 9. 何时重新构建
 
 | 修改内容 | 操作 |
 | --- | --- |
