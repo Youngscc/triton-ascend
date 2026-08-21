@@ -28,7 +28,7 @@ The current wrappers are:
 - `candidates/unified_attention.py`
 - `candidates/hstu_attention.py`
 
-Each wrapper creates deterministic inputs, runs a reference correctness check, and prints one `BENCHMARK` record after a successful NPU measurement. The files under `origin/` are retained only as source references; experiments run the wrappers under `candidates/`.
+Each wrapper creates deterministic inputs, runs a reference correctness check, and prints one `BENCHMARK` record after a successful NPU measurement. Measurement first uses the CANN NPU profiler. If CANN does not produce `kernel_details.csv`, the wrapper preserves the failed profile and measures the same single-kernel callable with NPU events; the row records `benchmark_method=npu_event_fallback`. The files under `origin/` are retained only as source references; experiments run the wrappers under `candidates/`.
 
 ## Run
 

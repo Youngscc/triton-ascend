@@ -54,6 +54,7 @@ def do_bench_npu(
     prof_dir=None,
     keep_res=False,
     target_kernel_name: Optional[str] = None,
+    fallback_to_event_timing=False,
 ):
     import torch
     import torch_npu
@@ -131,8 +132,54 @@ def do_bench_npu(
         )
         collected = True
         return result
+    except ProfilerDataUnavailableError as error:
+        if not fallback_to_event_timing:
+            raise
+        print(
+            "[WARNING] NPU profiler data is unavailable; falling back to "
+            f"NPU event timing. profile_path={error.profile_path}",
+            flush=True,
+        )
+        print("NPU_BENCHMARK_METHOD=npu_event_fallback", flush=True)
+        return _do_bench_npu_events(funcs, warmup, active, clear_l2_cache)
     finally:
         _rm_dic(keep_res or not collected, torch_path)
+
+
+def _do_bench_npu_events(funcs, warmup, active, clear_l2_cache=False):
+    import torch
+
+    device_interface = runtime.driver.active.get_device_interface()
+    cache_buffer = None
+    if clear_l2_cache:
+        cache_buffer = runtime.driver.active.get_empty_cache_for_benchmark().float()
+
+    def prepare_launch():
+        if cache_buffer is not None:
+            cache_buffer.sum()
+            torch.npu.synchronize()
+
+    time_cost = []
+    for fn in funcs:
+        for _ in builtins.range(warmup):
+            prepare_launch()
+            fn()
+        torch.npu.synchronize()
+
+        start_events = [device_interface.Event(enable_timing=True) for _ in builtins.range(active)]
+        end_events = [device_interface.Event(enable_timing=True) for _ in builtins.range(active)]
+        for start_event, end_event in zip(start_events, end_events):
+            prepare_launch()
+            start_event.record()
+            fn()
+            end_event.record()
+        torch.npu.synchronize()
+        samples = [start.elapsed_time(end) for start, end in zip(start_events, end_events)]
+        time_cost.append(sum(samples) / active)
+
+    if cache_buffer is not None:
+        del cache_buffer
+    return time_cost[0] if len(time_cost) == 1 else time_cost
 
 
 def _rm_dic(keep_res, torch_path):

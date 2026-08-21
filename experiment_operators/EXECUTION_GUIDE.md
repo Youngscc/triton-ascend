@@ -39,10 +39,9 @@ git rev-parse --short HEAD
 git rev-parse --short HEAD:third_party/ascend/AscendNPU-IR
 ```
 
-该分支固定的 AscendNPU-IR gitlink 是 `9137f194c`。它以 main-dev 指定的
-`572a94bda` 为基线，包含实验所需的参数暴露和原生 CV depth 语义。该版本
-不降低 SSBuffer 供旧版 `hivmc-a5` 使用，因此相关 DynamicCV 配置可能被记录为
-下游编译失败。
+该分支固定的 AscendNPU-IR gitlink 是 `4b9f1a560`。它以 main-dev 指定的
+`572a94bda` 为基线，包含实验所需的参数暴露、原生 CV depth 语义，以及在
+调用旧版 `hivmc-a5` 前执行的 SSBuffer 兼容转换层。
 
 ## 3. 维护环境配置
 
@@ -182,6 +181,11 @@ TIMEOUT_RETRIES = 1
 - `measurements.jsonl`：唯一的完整机器记录，包含编译审计字段和尝试历史。
 - `manifest.json`：实验取值、源码版本、编译器依赖版本和测量策略。
 - `logs/<case>.log`：该组合的完整编译、正确性和 benchmark 输出。
+
+延迟默认来自 CANN NPU profiler。若 CANN 未生成 `kernel_details.csv`，该 case
+会保留失败的 profiling 目录，并用 NPU Event 测量相同的单-kernel 调用；
+`results.csv` 的“测量方式”和 `measurements.jsonl` 的 `benchmark_method` 会记录
+`npu_event_fallback`。
 
 运行完成后会自动刷新：
 

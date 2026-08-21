@@ -80,6 +80,8 @@ class SweepRetryTest(unittest.TestCase):
                     print("RETRY_TEST_INITIAL_TIMEOUT", flush=True)
                     time.sleep(60)
 
+                if os.environ["EXPERIMENT_VF_MERGE_LEVEL"] == "1":
+                    print("NPU_BENCHMARK_METHOD=npu_event_fallback", flush=True)
                 print("BENCHMARK operator=retry_test latency_ms=1.25 warmup=1 active=1", flush=True)
                 """),
             encoding="utf-8",
@@ -208,6 +210,7 @@ class SweepRetryTest(unittest.TestCase):
             self.assertEqual(len(rows), 2)
             self.assertEqual(rows[0]["attempt_count"], 2)
             self.assertEqual(rows[0]["timeout_retries_used"], 1)
+            self.assertEqual(rows[0]["benchmark_method"], "npu_profiler")
             self.assertTrue(rows[0]["initial_timed_out"])
             self.assertFalse(rows[0]["timed_out"])
             self.assertEqual(
@@ -215,6 +218,7 @@ class SweepRetryTest(unittest.TestCase):
                 [True, False],
             )
             self.assertEqual(rows[1]["attempt_count"], 1)
+            self.assertEqual(rows[1]["benchmark_method"], "npu_event_fallback")
             self.assertTrue((directory / "results.csv").is_file())
             first_log = (directory / "logs/d1-b1-m0.log").read_text()
             self.assertLess(

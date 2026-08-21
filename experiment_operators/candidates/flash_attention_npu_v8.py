@@ -1470,6 +1470,7 @@ def benchmark_flash_attention(warmup=5, active=30):
         warmup=warmup,
         active=active,
         target_kernel_name="fwd_kernel",
+        fallback_to_event_timing=True,
     )
     print(f"BENCHMARK operator=flash_attention_npu_v8 latency_ms={latency_ms:.6f} warmup={warmup} active={active}")
     return latency_ms

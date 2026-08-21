@@ -260,6 +260,7 @@ def compact_row(row: dict) -> dict:
         "status": row.get("status", "missing"),
         "correctness_status": row.get("correctness_status", "missing"),
         "latency_ms": row.get("latency_ms"),
+        "benchmark_method": row.get("benchmark_method"),
         "required_ub_kib": ub_kib,
         "required_ub_bits": row.get("required_ub_bits"),
         "binary_hash": row.get("binary_hash"),
