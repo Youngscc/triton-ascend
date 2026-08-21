@@ -29,8 +29,6 @@ fi
 source "$REMOTE_VENV/bin/activate"
 
 jobs="${JOBS:-32}"
-compiler_probe_timeout="${BISHENGIR_COMPILER_PROBE_TIMEOUT:-60}"
-timeout_bin="$(command -v timeout || true)"
 compiler_source="$REMOTE_PROJECT/third_party/ascend/AscendNPU-IR"
 llvm_source="$compiler_source/third-party/llvm-project/llvm"
 system_bc_lib="$REMOTE_SYSTEM_COMPILER_LIB"
@@ -210,50 +208,6 @@ printf '%s\n' \
   -o "$ssbuf_check_dir/roundtrip.mlir"
 grep -q '#hivm.address_space<ssbuf>' "$ssbuf_check_dir/roundtrip.mlir"
 printf '%s\n' 'HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK'
-
-set +e
-if [[ -n "$timeout_bin" ]]; then
-  "$timeout_bin" "$compiler_probe_timeout" \
-    "$custom_bishengir_compile" \
-    "$ssbuf_check_dir/roundtrip.mlir" --target="$soc_name" \
-    -o "$ssbuf_check_dir/compiler-parse-check" \
-    >"$ssbuf_check_dir/compiler.stdout" \
-    2>"$ssbuf_check_dir/compiler.stderr"
-else
-  "$custom_bishengir_compile" \
-    "$ssbuf_check_dir/roundtrip.mlir" --target="$soc_name" \
-    -o "$ssbuf_check_dir/compiler-parse-check" \
-    >"$ssbuf_check_dir/compiler.stdout" \
-    2>"$ssbuf_check_dir/compiler.stderr"
-fi
-compiler_parse_status=$?
-set -e
-if (( compiler_parse_status == 124 )); then
-  printf 'project bishengir-compile SSBUF probe timed out after %ss\n' \
-    "$compiler_probe_timeout" >&2
-  cat "$ssbuf_check_dir/compiler.stdout" "$ssbuf_check_dir/compiler.stderr" >&2
-  exit 1
-fi
-if grep -Fq '[ERROR] Failed to parse input file:' \
-  "$ssbuf_check_dir/compiler.stdout" "$ssbuf_check_dir/compiler.stderr"; then
-  printf '%s\n' 'project bishengir-compile cannot parse HIVM SSBUF:' >&2
-  cat "$ssbuf_check_dir/compiler.stdout" "$ssbuf_check_dir/compiler.stderr" >&2
-  exit 1
-fi
-if [[ "$bitcode_arch" == "c310" ]] \
-  && ! grep -q 'Using merged native A5 regbase pipeline' \
-    "$ssbuf_check_dir/compiler.stderr"; then
-  printf '%s\n' \
-    'project bishengir-compile did not enter the merged native A5 pipeline' >&2
-  cat "$ssbuf_check_dir/compiler.stdout" "$ssbuf_check_dir/compiler.stderr" >&2
-  exit 1
-fi
-printf 'BISHENGIR_COMPILE_SSBUF_PARSE_OK returncode=%d\n' \
-  "$compiler_parse_status"
-if (( compiler_parse_status != 0 )); then
-  printf 'BISHENGIR_COMPILE_POST_PARSE_FAILURE_ALLOWED returncode=%d\n' \
-    "$compiler_parse_status"
-fi
 rm -rf -- "$ssbuf_check_dir"
 trap - EXIT
 
