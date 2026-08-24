@@ -37,7 +37,7 @@ OPERATOR_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 SOURCE_BENCHMARK_OPERATOR_RE = re.compile(r"BENCHMARK\s+operator=([A-Za-z0-9][A-Za-z0-9_.-]*)")
 OPERATOR_ALIASES = {"hstu_attention_fwd": "hstu_attention"}
 A3_EXPERIMENT_SCHEMA = ("native-cv-depth+no-dynamic-cv+local-multibuffer-off-v8")
-A5_EXPERIMENT_SCHEMA = ("dynamic-cv-slots+local-multibuffer-off+native-unit-flag-v6")
+A5_EXPERIMENT_SCHEMA = ("dynamic-cv-slots+native-static-depth+local-multibuffer-off-v7")
 OFF = "off"
 RESULTS_CSV_SUFFIX_FIELDS = [
     "序号",
@@ -119,6 +119,10 @@ def configured_values(is_a5: bool) -> tuple[tuple[int | str, ...], tuple[int | s
     if (isinstance(experiment.TIMEOUT_RETRIES, bool) or not isinstance(experiment.TIMEOUT_RETRIES, int)
             or experiment.TIMEOUT_RETRIES < 0):
         raise SystemExit("TIMEOUT_RETRIES must be a non-negative integer")
+    if (isinstance(experiment.A5_DYNAMIC_CV_OFF_STATIC_DEPTH, bool)
+            or not isinstance(experiment.A5_DYNAMIC_CV_OFF_STATIC_DEPTH, int)
+            or experiment.A5_DYNAMIC_CV_OFF_STATIC_DEPTH < 1):
+        raise SystemExit("A5_DYNAMIC_CV_OFF_STATIC_DEPTH must be a positive integer")
     return first, multibuffer, vf_merge
 
 
@@ -323,7 +327,7 @@ def matching_metadata(
     elif pipeline_axis == "buf_slot_num_of_veccore":
         expected.update({
             "enable_dynamic_cv_pipeline": False,
-            "set_workspace_multibuffer": 1,
+            "set_workspace_multibuffer": experiment.A5_DYNAMIC_CV_OFF_STATIC_DEPTH,
         })
     else:
         expected.update({
@@ -534,6 +538,25 @@ def terminate_process_group(process: subprocess.Popen, grace_seconds: float = 5.
     process.wait()
 
 
+def write_timeout_process_snapshot(log_handle, session_id: int) -> None:
+    log_handle.write(b"\n[EXPERIMENT] TIMEOUT_PROCESS_SNAPSHOT\n")
+    log_handle.flush()
+    try:
+        subprocess.run(
+            [
+                "ps", "-o", "pid,ppid,pgid,sid,stat,etime,comm,args", "--sid",
+                str(session_id),
+            ],
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        log_handle.write(f"process snapshot unavailable: {error}\n".encode("utf-8"))
+    log_handle.flush()
+
+
 def requested_parameters(
     operator: str,
     candidate: Path,
@@ -569,7 +592,7 @@ def requested_parameters(
         })
     elif pipeline_axis == "buf_slot_num_of_veccore":
         parameters.update({
-            "set_workspace_multibuffer": 1,
+            "set_workspace_multibuffer": experiment.A5_DYNAMIC_CV_OFF_STATIC_DEPTH,
             "buf_slot_num_of_crosscore": None,
             "buf_slot_num_of_gm": None,
         })
@@ -598,7 +621,7 @@ def candidate_environment(config: SweepConfig, is_a5: bool) -> dict[str, str]:
     if is_a5 and config.dynamic_cv_pipeline:
         env["EXPERIMENT_BUF_SLOT_NUM_OF_VECCORE"] = str(config.pipeline_value)
     elif is_a5:
-        env["EXPERIMENT_DEPTH"] = "1"
+        env["EXPERIMENT_DEPTH"] = str(experiment.A5_DYNAMIC_CV_OFF_STATIC_DEPTH)
     else:
         env["EXPERIMENT_DEPTH"] = str(config.pipeline_value)
     return env
@@ -651,6 +674,7 @@ def execute_case(
             returncode = process.wait(timeout=experiment.CASE_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             timed_out = True
+            write_timeout_process_snapshot(log_handle, process.pid)
             terminate_process_group(process)
             returncode = 124
         except KeyboardInterrupt:
@@ -720,7 +744,8 @@ def execute_case(
         "resolved_local_multibuffer_num":
         config.multibuffer_num,
         "set_workspace_multibuffer":
-        (0 if is_a5 and config.dynamic_cv_pipeline else 1 if is_a5 else config.pipeline_value),
+        (0 if is_a5 and config.dynamic_cv_pipeline else
+         experiment.A5_DYNAMIC_CV_OFF_STATIC_DEPTH if is_a5 else config.pipeline_value),
         "enable_dynamic_cv_pipeline":
         config.dynamic_cv_pipeline,
         "unit_flag":
@@ -890,7 +915,7 @@ def build_manifest(
         },
         "resolved_cv_constraint": ("DynamicCV on: buf_slot_num_of_veccore is explicit and "
                                    "set_workspace_multibuffer=0; DynamicCV off: "
-                                   "buf_slot_num_of_veccore is N/A and set_workspace_multibuffer=1"
+                                   "buf_slot_num_of_veccore is N/A and static depth uses the configured A5 fallback"
                                    if is_a5 else "static CV: set_workspace_multibuffer=depth"),
         "ordinary_multibuffer_strategy": ("off: enable-auto-multi-buffer=false and no explicit count; "
                                           "numeric: limit_auto_multi_buffer_buffer=no-limit"),
@@ -898,6 +923,7 @@ def build_manifest(
             "buf_slot_num_of_crosscore": 1,
             "buf_slot_num_of_gm": 1,
         } if is_a5 else None),
+        "dynamic_cv_off_static_depth": (experiment.A5_DYNAMIC_CV_OFF_STATIC_DEPTH if is_a5 else None),
         "hivm_unit_flag_sync_policy": ("compiler default: enabled on A5 RegBase; "
                                        "generic false default on A3"),
         "configuration_order": ("config-file axis order; off precedes numeric values by default"),

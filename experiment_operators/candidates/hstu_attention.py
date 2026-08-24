@@ -1011,8 +1011,10 @@ if __name__ == "__main__":
     }, sort_keys=True))
     # Forward is the initial CVPipeline screening case. Backward remains
     # available through pytest but is intentionally outside this smoke test.
+    print("[EXPERIMENT] CASE_STAGE=correctness_start", flush=True)
     test_hstu_attention_fwd(2, 1024, 2, 32, torch.float32)
     print("======HSTU Attention Forward Test Passed!======")
+    print("[EXPERIMENT] CASE_STAGE=benchmark_start", flush=True)
     benchmark_hstu_attention_fwd(
         warmup=int(os.getenv("EXPERIMENT_WARMUP", "5")),
         active=int(os.getenv("EXPERIMENT_ACTIVE", "30")),

@@ -1491,8 +1491,10 @@ if __name__ == "__main__":
         "sparse_opt": False,
         "direction": "forward",
     }, sort_keys=True))
+    print("[EXPERIMENT] CASE_STAGE=correctness_start", flush=True)
     test_flash_attention_fwd()
     print("======Flash Attention NPU V8 Test Passed!======")
+    print("[EXPERIMENT] CASE_STAGE=benchmark_start", flush=True)
     benchmark_flash_attention(
         warmup=int(os.getenv("EXPERIMENT_WARMUP", "5")),
         active=int(os.getenv("EXPERIMENT_ACTIVE", "30")),

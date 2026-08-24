@@ -794,6 +794,10 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
             print_cmd_list[1], print_cmd_list[-1] = _get_dump_paths(metadata["hash"], ttadapter_path, bin_file)
             print(f"[DEBUG] cmd_list: {shlex.join(print_cmd_list)}")
 
+        trace_compile = opt.debug or os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1"
+        if trace_compile:
+            print("[EXPERIMENT] CASE_STAGE=bishengir_compile_start", flush=True)
+
         compile_started = time.perf_counter()
         try:
             ret = subprocess.run(cmd_list, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
@@ -802,6 +806,8 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
                 _save_npuir_debug_output(e.stdout, e.stderr, tmpdir, metadata["hash"])
             raise RuntimeError(_format_bishengir_compile_failure(e)) from e
         metadata["compile_time_ms"] = (time.perf_counter() - compile_started) * 1000
+        if trace_compile:
+            print("[EXPERIMENT] CASE_STAGE=bishengir_compile_done", flush=True)
 
         if opt.debug:
             _save_npuir_debug_output(ret.stdout, ret.stderr, tmpdir, metadata["hash"])

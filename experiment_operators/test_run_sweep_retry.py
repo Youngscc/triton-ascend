@@ -132,7 +132,7 @@ class SweepRetryTest(unittest.TestCase):
         self.assertEqual(config, run_sweep.SweepConfig(False, None, None, 0))
         environment = run_sweep.candidate_environment(config, True)
         self.assertEqual(environment["EXPERIMENT_DYNAMIC_CV"], "0")
-        self.assertEqual(environment["EXPERIMENT_DEPTH"], "1")
+        self.assertEqual(environment["EXPERIMENT_DEPTH"], "2")
         self.assertEqual(environment["EXPERIMENT_MULTIBUFFER"], "0")
         self.assertNotIn("EXPERIMENT_HIVM_UNIT_FLAG_SYNC", environment)
         self.assertNotIn("EXPERIMENT_BUF_SLOT_NUM_OF_VECCORE", environment)
@@ -229,6 +229,7 @@ class SweepRetryTest(unittest.TestCase):
             self.assertEqual(rows[1]["benchmark_method"], "npu_event_fallback")
             self.assertTrue((directory / "results.csv").is_file())
             first_log = (directory / "logs/d1-b1-m0.log").read_text()
+            self.assertIn("[EXPERIMENT] TIMEOUT_PROCESS_SNAPSHOT", first_log)
             self.assertLess(
                 first_log.index("attempt 1 (initial)"),
                 first_log.index("attempt 2 (automatic_retry)"),

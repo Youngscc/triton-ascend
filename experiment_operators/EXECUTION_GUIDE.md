@@ -147,6 +147,7 @@ experiment_operators/experiment_config.py
 ```python
 A3_DEPTH_VALUES = (1, 2, 3, 4)
 A5_BUF_SLOT_NUM_OF_VECCORE_VALUES = ("off", 1, 2, 3, 4)
+A5_DYNAMIC_CV_OFF_STATIC_DEPTH = 2
 MULTIBUFFER_NUM_VALUES = ("off", 1, 2, 3, 4)
 VF_MERGE_LEVEL_VALUES = (0, 1)
 
@@ -161,7 +162,7 @@ TIMEOUT_RETRIES = 1
 | 配置项 | A3 | A5 |
 | --- | --- | --- |
 | `A3_DEPTH_VALUES` | 静态 CV `depth`，DynamicCV 固定关闭 | 不使用 |
-| `A5_BUF_SLOT_NUM_OF_VECCORE_VALUES` | 不使用 | `"off"` 关闭 DynamicCV；数字表示开启并设置 `buf_slot_num_of_veccore` |
+| `A5_BUF_SLOT_NUM_OF_VECCORE_VALUES` | 不使用 | `"off"` 关闭 DynamicCV，并使用静态 depth 2 fallback；数字表示开启并设置 `buf_slot_num_of_veccore` |
 | `MULTIBUFFER_NUM_VALUES` | `"off"` 关闭普通 MultiBuffer；数字表示开启并设置 local buffer 数量 | 同 A3 |
 | `VF_MERGE_LEVEL_VALUES` | `0` 关闭 VF merge，`1` 开启 level 1 | 同 A3 |
 

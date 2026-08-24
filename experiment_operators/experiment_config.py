@@ -11,6 +11,9 @@ A3_DEPTH_VALUES = (1, 2, 3, 4)
 # DynamicCV and select buf_slot_num_of_veccore.
 A5_BUF_SLOT_NUM_OF_VECCORE_VALUES = ("off", 1, 2, 3, 4)
 
+# DynamicCV-off keeps the A5 RegBase compiler's native static CV fallback.
+A5_DYNAMIC_CV_OFF_STATIC_DEPTH = 2
+
 # "off" passes multibuffer=False and omits set-local-multibuffer. Numeric
 # values enable ordinary local multibuffering with that explicit count.
 MULTIBUFFER_NUM_VALUES = ("off", 1, 2, 3, 4)

@@ -208,7 +208,7 @@ The independent variables are:
 
 | Public experiment name | Requested values | Intended compiler control |
 | --- | --- | --- |
-| A3: `depth`; A5: DynamicCV state plus `buf_slot_num_of_veccore` | A3 `1, 2, 3, 4`; A5 `off`, then `1, 2, 3, 4` | A3 uses native static CV workspace/depth with DynamicCV disabled; A5 first runs a disabled baseline with static depth 1, then enables DynamicCV and varies its Vector Core buffer slots while fixing cross-core/GM slots to 1 |
+| A3: `depth`; A5: DynamicCV state plus `buf_slot_num_of_veccore` | A3 `1, 2, 3, 4`; A5 `off`, then `1, 2, 3, 4` | A3 uses native static CV workspace/depth with DynamicCV disabled; A5 first disables DynamicCV while retaining the native static depth 2 fallback, then enables DynamicCV and varies its Vector Core buffer slots while fixing cross-core/GM slots to 1 |
 | ordinary MultiBuffer state plus `multibuffer_num` | `off`, then `1, 2, 3, 4` | `off` sets `NPUOptions.multibuffer=False`; numeric values enable the pass, replace the ordinary local `MarkMultiBuffer` default through `--set-local-multibuffer`, and set the MIX strategy to `no-limit` |
 | `vf_merge_level` | `0, 1, 2` | existing `NPUOptions.vf_merge_level` and `--enable-vf-merge-level` |
 
@@ -239,7 +239,7 @@ usage; never keep only the fastest configuration.
   kernel-name-filtered timing.
 - On A3, CV scheduling depth and workspace-buffer count use BishengIR's native
   `set_workspace_multibuffer` value and DynamicCV is disabled. On A5, `off`
-  disables DynamicCV with static workspace depth 1; numeric first-axis values
+  disables DynamicCV with the native static workspace depth 2 fallback; numeric first-axis values
   enable DynamicCV, set static workspace multibuffer to zero, and use the value
   as `buf_slot_num_of_veccore`, with `buf_slot_num_of_crosscore` plus `buf_slot_num_of_gm` fixed to 1.
   HIVM UnitFlag synchronization is not an experiment axis and must be omitted
@@ -298,7 +298,7 @@ usage; never keep only the fastest configuration.
   optimization changes generated code.
 - `experiment_operators/run_sweep.py` is the standalone step-4 controller. A3
   uses schema `native-cv-depth+no-dynamic-cv+local-multibuffer-off-v8`;
-  A5 uses `dynamic-cv-slots+local-multibuffer-off+native-unit-flag-v6`.
+  A5 uses `dynamic-cv-slots+native-static-depth+local-multibuffer-off-v7`.
   All three axis value lists and the benchmark/timeout policy live only in
   `experiment_operators/experiment_config.py`. Disabled values run first. The
   ordinary MIX strategy is `no-limit` only for numeric MultiBuffer values. The
@@ -449,7 +449,8 @@ JIT compilation but assert and record the TTIR hash for every candidate.
 ### 3. Select the architecture-specific CV axis and retain independent ordinary multibuffering
 
 On A3, pass `depth` through `NPUOptions.set_workspace_multibuffer` and disable
-DynamicCV. On A5, include a DynamicCV-disabled `off` control, then enable
+DynamicCV. On A5, make the DynamicCV-disabled `off` control retain the native
+static fallback `A5_DYNAMIC_CV_OFF_STATIC_DEPTH=2`, then enable
 DynamicCV for numeric `NPUOptions.buf_slot_num_of_veccore` values, fix
 `buf_slot_num_of_crosscore=1` and `buf_slot_num_of_gm=1`, preserve the
 compiler-native UnitFlag synchronization policy, and leave static workspace
@@ -463,7 +464,7 @@ value to `MarkMultiBufferOptions.localMultiBufferNum`.
 The resulting controls must obey these boundaries:
 
 - on A3, `depth` controls both CV schedule/unroll depth and CV physical-buffer count;
-- on A5, `off` disables DynamicCV; numeric `buf_slot_num_of_veccore` values enable it and cross-core/GM slot counts stay fixed at 1;
+- on A5, `off` disables DynamicCV and uses static depth 2; numeric `buf_slot_num_of_veccore` values enable it and cross-core/GM slot counts stay fixed at 1;
 - ordinary MultiBuffer `off` sets `NPUOptions.multibuffer=False`, omits the explicit local count, and does not force the MIX strategy;
 - `multibuffer_num` replaces only the ordinary local default 2 used for
   HFusion estimation and automatically marked Load/Store/ND2NZ/Fixpipe
