@@ -242,8 +242,10 @@ usage; never keep only the fastest configuration.
   disables DynamicCV with static workspace depth 1; numeric first-axis values
   enable DynamicCV, set static workspace multibuffer to zero, and use the value
   as `buf_slot_num_of_veccore`, with `buf_slot_num_of_crosscore` plus `buf_slot_num_of_gm` fixed to 1.
-  HIVM UnitFlag synchronization is explicitly fixed off for every operator;
-  it is not an experiment axis and must not inherit the A5 compiler default.
+  HIVM UnitFlag synchronization is not an experiment axis and must be omitted
+  from operator options. The compiler enables it by default on A5 RegBase and
+  retains the generic false default on A3; explicitly disabling it on A5 can
+  break Cube/Vector synchronization and correctness.
   DynamicCV fallback resolves the metadata switch to false and is rejected as
   unsupported rather than mixed into measurements.
 - DynamicCV return code 2 is `ERRCODE_IGNORED`, meaning the pass is not
@@ -295,8 +297,8 @@ usage; never keep only the fastest configuration.
   currently classified as dynamically insensitive rather than proof that every
   optimization changes generated code.
 - `experiment_operators/run_sweep.py` is the standalone step-4 controller. A3
-  uses schema `native-cv-depth+no-dynamic-cv+local-multibuffer-off-v7`;
-  A5 uses `dynamic-cv-slots+local-multibuffer-off+unit-flag-off-v5`.
+  uses schema `native-cv-depth+no-dynamic-cv+local-multibuffer-off-v8`;
+  A5 uses `dynamic-cv-slots+local-multibuffer-off+native-unit-flag-v6`.
   All three axis value lists and the benchmark/timeout policy live only in
   `experiment_operators/experiment_config.py`. Disabled values run first. The
   ordinary MIX strategy is `no-limit` only for numeric MultiBuffer values. The
@@ -449,8 +451,8 @@ JIT compilation but assert and record the TTIR hash for every candidate.
 On A3, pass `depth` through `NPUOptions.set_workspace_multibuffer` and disable
 DynamicCV. On A5, include a DynamicCV-disabled `off` control, then enable
 DynamicCV for numeric `NPUOptions.buf_slot_num_of_veccore` values, fix
-`buf_slot_num_of_crosscore=1` and `buf_slot_num_of_gm=1`, explicitly set
-`NPUOptions.unit_flag=False`, and leave static workspace
+`buf_slot_num_of_crosscore=1` and `buf_slot_num_of_gm=1`, preserve the
+compiler-native UnitFlag synchronization policy, and leave static workspace
 multibuffer at zero for enabled rows. Retain the validated
 `NPUOptions.multibuffer_num`, propagate it through
 `third_party/ascend/backend/compiler.py` as `--set-local-multibuffer`, then into

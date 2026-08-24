@@ -149,7 +149,6 @@ A3_DEPTH_VALUES = (1, 2, 3, 4)
 A5_BUF_SLOT_NUM_OF_VECCORE_VALUES = ("off", 1, 2, 3, 4)
 MULTIBUFFER_NUM_VALUES = ("off", 1, 2, 3, 4)
 VF_MERGE_LEVEL_VALUES = (0, 1)
-HIVM_UNIT_FLAG_SYNC = False
 
 WARMUP = 5
 ACTIVE = 30
@@ -168,7 +167,7 @@ TIMEOUT_RETRIES = 1
 
 `"off"` 是真实关闭状态：MultiBuffer 会传入 `multibuffer=False`，不传 `--set-local-multibuffer`；数值 `1` 仍然开启该 pass，只是使用一个 buffer。配置顺序就是运行顺序，因此默认先跑关闭状态。默认配置下，A3 有 40 行，A5 有 50 行，其中 A5 前 10 行关闭 DynamicCV。`vf_merge_level=2` 当前不在默认配置中；编译器问题修复后，直接把 `2` 加回配置文件即可。
 
-`HIVM_UNIT_FLAG_SYNC` 固定为 `False`，所有算子都会显式传入 `unit_flag=False`，对应 `--enable-hivm-unit-flag-sync=False`。它不是实验轴，控制器会拒绝将其改为开启，避免编译器默认值变化影响三轴对照。
+UnitFlag synchronization 不是实验轴，算子不会显式传入 `unit_flag`。编译器因此采用架构原生默认值：A5 RegBase 开启，A3 保持通用的关闭默认值。不能在 A5 上显式关闭它，否则会改变 Cube/Vector 同步语义并可能产生错误结果。
 
 ## 6. 运行完整实验
 

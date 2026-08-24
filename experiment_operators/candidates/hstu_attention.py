@@ -38,10 +38,7 @@ import torch.nn.functional as F
 
 def _experiment_compile_options():
     dynamic = os.getenv("EXPERIMENT_DYNAMIC_CV", "0") == "1"
-    options = {
-        "enable_dynamic_cv_pipeline": dynamic,
-        "unit_flag": os.getenv("EXPERIMENT_HIVM_UNIT_FLAG_SYNC", "0") == "1",
-    }
+    options = {"enable_dynamic_cv_pipeline": dynamic}
     if dynamic:
         options["set_workspace_multibuffer"] = 0
         options["buf_slot_num_of_crosscore"] = 1

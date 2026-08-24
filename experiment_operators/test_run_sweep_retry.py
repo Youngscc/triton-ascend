@@ -134,7 +134,7 @@ class SweepRetryTest(unittest.TestCase):
         self.assertEqual(environment["EXPERIMENT_DYNAMIC_CV"], "0")
         self.assertEqual(environment["EXPERIMENT_DEPTH"], "1")
         self.assertEqual(environment["EXPERIMENT_MULTIBUFFER"], "0")
-        self.assertEqual(environment["EXPERIMENT_HIVM_UNIT_FLAG_SYNC"], "0")
+        self.assertNotIn("EXPERIMENT_HIVM_UNIT_FLAG_SYNC", environment)
         self.assertNotIn("EXPERIMENT_BUF_SLOT_NUM_OF_VECCORE", environment)
         self.assertNotIn("EXPERIMENT_MULTIBUFFER_NUM", environment)
 
@@ -161,10 +161,11 @@ class SweepRetryTest(unittest.TestCase):
                         "EXPERIMENT_DEPTH": "1",
                         "EXPERIMENT_MULTIBUFFER": "0",
                         "EXPERIMENT_VF_MERGE_LEVEL": "0",
+                        "EXPERIMENT_HIVM_UNIT_FLAG_SYNC": "1",
                     }, clear=True):
                 options = compile_options()
                 self.assertFalse(options["enable_dynamic_cv_pipeline"])
-                self.assertFalse(options["unit_flag"])
+                self.assertNotIn("unit_flag", options)
                 self.assertFalse(options["multibuffer"])
                 self.assertNotIn("multibuffer_num", options)
 
@@ -175,10 +176,11 @@ class SweepRetryTest(unittest.TestCase):
                         "EXPERIMENT_MULTIBUFFER": "1",
                         "EXPERIMENT_MULTIBUFFER_NUM": "3",
                         "EXPERIMENT_VF_MERGE_LEVEL": "1",
+                        "EXPERIMENT_HIVM_UNIT_FLAG_SYNC": "1",
                     }, clear=True):
                 options = compile_options()
                 self.assertTrue(options["enable_dynamic_cv_pipeline"])
-                self.assertFalse(options["unit_flag"])
+                self.assertNotIn("unit_flag", options)
                 self.assertEqual(options["buf_slot_num_of_veccore"], 2)
                 self.assertEqual(options["buf_slot_num_of_crosscore"], 1)
                 self.assertEqual(options["buf_slot_num_of_gm"], 1)

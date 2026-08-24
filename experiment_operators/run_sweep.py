@@ -36,8 +36,8 @@ DOMINANCE_ERROR_RE = re.compile(
 OPERATOR_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 SOURCE_BENCHMARK_OPERATOR_RE = re.compile(r"BENCHMARK\s+operator=([A-Za-z0-9][A-Za-z0-9_.-]*)")
 OPERATOR_ALIASES = {"hstu_attention_fwd": "hstu_attention"}
-A3_EXPERIMENT_SCHEMA = ("native-cv-depth+no-dynamic-cv+local-multibuffer-off-v7")
-A5_EXPERIMENT_SCHEMA = ("dynamic-cv-slots+local-multibuffer-off+unit-flag-off-v5")
+A3_EXPERIMENT_SCHEMA = ("native-cv-depth+no-dynamic-cv+local-multibuffer-off-v8")
+A5_EXPERIMENT_SCHEMA = ("dynamic-cv-slots+local-multibuffer-off+native-unit-flag-v6")
 OFF = "off"
 RESULTS_CSV_SUFFIX_FIELDS = [
     "序号",
@@ -119,8 +119,6 @@ def configured_values(is_a5: bool) -> tuple[tuple[int | str, ...], tuple[int | s
     if (isinstance(experiment.TIMEOUT_RETRIES, bool) or not isinstance(experiment.TIMEOUT_RETRIES, int)
             or experiment.TIMEOUT_RETRIES < 0):
         raise SystemExit("TIMEOUT_RETRIES must be a non-negative integer")
-    if experiment.HIVM_UNIT_FLAG_SYNC is not False:
-        raise SystemExit("HIVM_UNIT_FLAG_SYNC must remain False for this experiment")
     return first, multibuffer, vf_merge
 
 
@@ -309,7 +307,9 @@ def matching_metadata(
         "multibuffer": config.auto_multibuffer,
         "multibuffer_num": config.multibuffer_num,
         "vf_merge_level": config.vf_merge_level,
-        "unit_flag": experiment.HIVM_UNIT_FLAG_SYNC,
+        # None is intentional: A5 RegBase defaults UnitFlag synchronization to
+        # true, while A3 keeps the generic false default.
+        "unit_flag": None,
         "limit_auto_multi_buffer_buffer": ("no-limit" if config.auto_multibuffer else None),
     }
     if pipeline_axis == "buf_slot_num_of_veccore" and config.dynamic_cv_pipeline:
@@ -552,7 +552,7 @@ def requested_parameters(
         "multibuffer_num": axis_value(config.multibuffer_num),
         "vf_merge_level": config.vf_merge_level,
         "enable_dynamic_cv_pipeline": config.dynamic_cv_pipeline,
-        "unit_flag": experiment.HIVM_UNIT_FLAG_SYNC,
+        "unit_flag": "compiler-default",
         "limit_auto_multi_buffer_buffer": ("no-limit" if config.auto_multibuffer else None),
         "enable_print_ub_bits": True,
         "warmup": experiment.WARMUP,
@@ -590,7 +590,6 @@ def candidate_environment(config: SweepConfig, is_a5: bool) -> dict[str, str]:
         "EXPERIMENT_DYNAMIC_CV": "1" if config.dynamic_cv_pipeline else "0",
         "EXPERIMENT_MULTIBUFFER": "1" if config.auto_multibuffer else "0",
         "EXPERIMENT_VF_MERGE_LEVEL": str(config.vf_merge_level),
-        "EXPERIMENT_HIVM_UNIT_FLAG_SYNC": "1" if experiment.HIVM_UNIT_FLAG_SYNC else "0",
         "EXPERIMENT_WARMUP": str(experiment.WARMUP),
         "EXPERIMENT_ACTIVE": str(experiment.ACTIVE),
     })
@@ -725,7 +724,9 @@ def execute_case(
         "enable_dynamic_cv_pipeline":
         config.dynamic_cv_pipeline,
         "unit_flag":
-        experiment.HIVM_UNIT_FLAG_SYNC,
+        None,
+        "unit_flag_policy":
+        "compiler-default",
         "buf_slot_num_of_crosscore":
         1 if is_a5 and config.dynamic_cv_pipeline else None,
         "buf_slot_num_of_gm":
@@ -897,7 +898,8 @@ def build_manifest(
             "buf_slot_num_of_crosscore": 1,
             "buf_slot_num_of_gm": 1,
         } if is_a5 else None),
-        "fixed_hivm_unit_flag_sync": experiment.HIVM_UNIT_FLAG_SYNC,
+        "hivm_unit_flag_sync_policy": ("compiler default: enabled on A5 RegBase; "
+                                       "generic false default on A3"),
         "configuration_order": ("config-file axis order; off precedes numeric values by default"),
     }
 

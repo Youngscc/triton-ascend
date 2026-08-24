@@ -19,11 +19,6 @@ MULTIBUFFER_NUM_VALUES = ("off", 1, 2, 3, 4)
 # part of the operator corpus. Add 2 here when that compiler issue is fixed.
 VF_MERGE_LEVEL_VALUES = (0, 1)
 
-# UnitFlag changes the implementation of HIVM synchronization and is not an
-# experiment axis. Keep it explicitly disabled for every operator so compiler
-# default changes cannot alter the sweep.
-HIVM_UNIT_FLAG_SYNC = False
-
 # Every successful configuration uses the same benchmark policy.
 WARMUP = 5
 ACTIVE = 30
