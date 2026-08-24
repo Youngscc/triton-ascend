@@ -39,8 +39,8 @@ git rev-parse --short HEAD
 git rev-parse --short HEAD:third_party/ascend/AscendNPU-IR
 ```
 
-该分支固定的 AscendNPU-IR gitlink 是 `7d1958f73`。它以兼容基线
-`2a0cddba4` 为基础，包含实验所需的参数暴露、原生 CV depth 语义，以及在
+该分支固定的 AscendNPU-IR gitlink 是 `4b9f1a560`。它以兼容基线
+`9137f194c` 为基础，包含实验所需的参数暴露、原生 CV depth 语义，以及在
 调用旧版 `hivmc-a5` 前执行的 SSBuffer 兼容转换层。
 
 ## 3. 维护环境配置
