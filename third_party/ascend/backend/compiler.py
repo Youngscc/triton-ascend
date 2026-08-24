@@ -196,7 +196,6 @@ def make_ttir(mod, metadata, opt):
             rule_mask=opt.graph_optimize_rule_mask,
             max_rewrites_per_function=opt.graph_optimize_max_rewrites_per_function,
             ub_capacity_bytes=opt.graph_optimize_ub_capacity_bytes,
-            emit_remarks=opt.graph_optimize_emit_remarks,
             force_simt_only=opt.force_simt_only,
         )
     pm.run(mod, 'make_ttir')
@@ -1172,7 +1171,6 @@ class NPUOptions:
     graph_optimize_rule_mask: int = 511
     graph_optimize_max_rewrites_per_function: int = 64
     graph_optimize_ub_capacity_bytes: Optional[int] = None
-    graph_optimize_emit_remarks: bool = False
     allow_fp8e4nv: bool = False
     auto_tile_and_bind_subblock: bool = True
     supported_fp8_dtypes: Tuple[str] = ("fp8e5", "fp8e4b15", "fp8e4nv", "fp8e4b8", "fp8e5b16")
