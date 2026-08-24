@@ -342,7 +342,7 @@ def fwd_kernel(
                     start_n = tl.multiple_of(start_n, BLOCK_N)
                     # k_attn_arg = load_if(k_attn_arg_block_ptr, False, True)
                     # offset_n = start_n + tl.arange(0, BLOCK_N)
-                    mask = load_if(mask_block_ptr, False, False)  # (32x32) -> (128, 128) --> 0
+                    mask = load_if(mask_block_ptr, False, False) != 0  # (32x32) -> (128, 128) --> 0
 
                     # mask = mask_fn(q_attn_arg, k_attn_arg, offset_m, offset_n, MASK_FN)
 
@@ -653,7 +653,7 @@ def bwd_kv_kernel(
                 # q_attn_arg = load_if(q_attn_arg_block_ptr, False, True)
                 # offset_m = start_m + tl.arange(0, BLOCK_M)
                 # mask = mask_fn(q_attn_arg, k_attn_arg, offset_m, offset_n, MASK_FN)
-                mask = load_if(mask_block_ptr, False, False)
+                mask = load_if(mask_block_ptr, False, False) != 0
                 if not SPARSE_OPT or tl.sum(mask.cast(tl.int32)) != 0:
                     q = load_if(q_block_ptr, False, True)
                     s = tl.dot(q, k)
@@ -827,7 +827,7 @@ def bwd_q_kernel(
                 # k_attn_arg = load_if(k_attn_arg_block_ptr, False, True)
                 # offset_n = start_n + tl.arange(0, BLOCK_N)
                 # mask = mask_fn(q_attn_arg, k_attn_arg, offset_m, offset_n, MASK_FN)
-                mask = load_if(mask_block_ptr, False, False)  # (32x32) -> (128, 128) --> 0
+                mask = load_if(mask_block_ptr, False, False) != 0  # (32x32) -> (128, 128) --> 0
 
                 if not SPARSE_OPT or tl.sum(mask.cast(tl.int32)) != 0:
                     k = load_if(k_block_ptr, False, True)
@@ -1015,7 +1015,7 @@ def bwd_qkv_kernel(
                 # q_attn_arg = load_if(q_attn_arg_block_ptr, False, True)
                 # offset_m = start_m + tl.arange(0, BLOCK_M)
                 # mask = mask_fn(q_attn_arg, k_attn_arg, offset_m, offset_n, MASK_FN)
-                mask = load_if(mask_block_ptr, False, False)
+                mask = load_if(mask_block_ptr, False, False) != 0
                 if not SPARSE_OPT or tl.sum(mask.cast(tl.int32)) != 0:
                     q = load_if(q_block_ptr, False, True)
                     s = tl.dot(q, k)
@@ -1341,8 +1341,8 @@ def generate_mask_fn_vectorized(q_seq_list, k_seq_list, bs, max_q_len, max_k_len
 
         # 计算 attention args mask
         # 确保数据类型一致，原始代码使用的是 .bool()
-        q_attn_slice = torch.tensor(q_attn_arg[:cur_q_len], device=device, dtype=torch.int32).view(-1, 1)
-        k_attn_slice = torch.tensor(k_attn_arg[:cur_k_len], device=device, dtype=torch.int32).view(1, -1)
+        q_attn_slice = q_attn_arg[:cur_q_len].to(device=device, dtype=torch.int32).view(-1, 1)
+        k_attn_slice = k_attn_arg[:cur_k_len].to(device=device, dtype=torch.int32).view(1, -1)
 
         # 原始逻辑: (cur_q_attn_args[:, None] == cur_k_attn_args[None, :]) | (cur_k_attn_args[None, :] == 0)
         attn_args_mask = (q_attn_slice == k_attn_slice) | (k_attn_slice == 0)
@@ -1440,17 +1440,26 @@ def _make_flash_attention_inputs(seed=0):
 
 
 def test_flash_attention_fwd():
+    print("[EXPERIMENT] CASE_STAGE=correctness_inputs_start", flush=True)
     data = _make_flash_attention_inputs(seed=0)
+    print("[EXPERIMENT] CASE_STAGE=correctness_inputs_done", flush=True)
+    print("[EXPERIMENT] CASE_STAGE=correctness_kernel_launch_start", flush=True)
     out = flash_attention_forward(
         data["q"], data["k"], data["v"],
         data["q_attn_arg"], data["k_attn_arg"], data["mask_tensor"],
         data["cu_seqlens_q"], data["cu_seqlens_k"],
         data["max_seqlen_q"], data["max_seqlen_k"], data["scale"],
     )
+    print("[EXPERIMENT] CASE_STAGE=correctness_kernel_launch_returned", flush=True)
+    torch.npu.synchronize()
+    print("[EXPERIMENT] CASE_STAGE=correctness_kernel_sync_done", flush=True)
+    print("[EXPERIMENT] CASE_STAGE=correctness_reference_start", flush=True)
     ref = reference_attention(
         data["q"], data["k"], data["v"], data["mask_tensor"],
         data["cu_seqlens_q"], data["cu_seqlens_k"], data["bs"], data["scale"],
     )
+    torch.npu.synchronize()
+    print("[EXPERIMENT] CASE_STAGE=correctness_reference_done", flush=True)
     torch.testing.assert_close(out, ref, atol=1e-2, rtol=1e-2, equal_nan=True)
     print(f"forward max abs diff: {torch.max(torch.abs(out - ref)).item():.6f}")
 
