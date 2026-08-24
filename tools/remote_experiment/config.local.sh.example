@@ -1,5 +1,3 @@
-#!/usr/bin/env bash
-
 # Optional overrides. By default the scripts use the current checkout and
 # container name triton-ascend-exp.
 REMOTE_PROJECT="/absolute/server/path/to/triton-ascend"
