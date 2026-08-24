@@ -1,0 +1,47 @@
+{
+  "compiler_options": {
+    "arch": "Ascend950PR_9579",
+    "enable_dynamic_cv_pipeline": true,
+    "inter_cache_num": 1,
+    "intra_cache_num": 4,
+    "load_cache_num": 1,
+    "multibuffer_num": 2,
+    "vf_merge_level": 0
+  },
+  "constants": {
+    "AICORE_NUM": 40,
+    "BATCH_SIZE": 2,
+    "BLOCK_M": 64,
+    "BLOCK_N": 64,
+    "DTYPE": 14,
+    "MASK_FN": 1,
+    "MAX_K_LEN": 1024,
+    "MAX_Q_LEN": 1024,
+    "QK_DIM": 64,
+    "SPARSE_OPT": false,
+    "V_DIM": 64
+  },
+  "dynamic_cv_errcode": null,
+  "dynamic_cv_result": null,
+  "entry": "fwd_kernel",
+  "operator": "flash_attention_npu_v8",
+  "plan_ir_boundary": "input to OpClassifierPass immediately after PlanComputeBlockPass",
+  "plan_ir_sha256": "e75f86b7404c51e8a9f5acc3964b6031513e172d401827c35f77589f6c7b46ea",
+  "signature": {
+    "cu_seqlens_k": "*i32",
+    "cu_seqlens_q": "*i32",
+    "k_attn_arg_ptr": "*i32",
+    "k_ptr": "*bf16",
+    "kv_head": "i32",
+    "l_ptr": "*fp32",
+    "mask_tensor_ptr": "*i1",
+    "o_ptr": "*bf16",
+    "q_attn_arg_ptr": "*i32",
+    "q_head": "i32",
+    "q_ptr": "*bf16",
+    "scale": "fp32",
+    "v_ptr": "*bf16"
+  },
+  "source": "/tmp/triton-ascend-main-dev-params/experiment_operators/candidates/flash_attention_npu_v8.py",
+  "source_sha256": "f669a02dfe294227baae61af8e430c1655c46e8369a548e03b4f86158666824f"
+}

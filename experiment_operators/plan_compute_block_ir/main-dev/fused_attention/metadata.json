@@ -1,0 +1,53 @@
+{
+  "compiler_options": {
+    "arch": "Ascend950PR_9579",
+    "enable_dynamic_cv_pipeline": true,
+    "inter_cache_num": 1,
+    "intra_cache_num": 4,
+    "load_cache_num": 1,
+    "multibuffer_num": 2,
+    "vf_merge_level": 0
+  },
+  "constants": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 128,
+    "H": 32,
+    "HEAD_DIM": 64,
+    "N_CTX": 1024,
+    "STAGE": 1,
+    "Z": 4,
+    "stride_kh": 65536,
+    "stride_kk": 1,
+    "stride_kn": 64,
+    "stride_kz": 2097152,
+    "stride_oh": 65536,
+    "stride_om": 64,
+    "stride_on": 1,
+    "stride_oz": 2097152,
+    "stride_qh": 65536,
+    "stride_qk": 1,
+    "stride_qm": 64,
+    "stride_qz": 2097152,
+    "stride_vh": 65536,
+    "stride_vk": 1,
+    "stride_vn": 64,
+    "stride_vz": 2097152
+  },
+  "dynamic_cv_errcode": null,
+  "dynamic_cv_result": null,
+  "entry": "_attn_fwd",
+  "operator": "fused_attention",
+  "plan_ir_boundary": "input to OpClassifierPass immediately after PlanComputeBlockPass",
+  "plan_ir_sha256": "1a1f1f5249950ef660c737bebf8f8d02d329d4c937214b5e361f97cab9287931",
+  "signature": {
+    "K": "*bf16",
+    "M": "*fp32",
+    "Out": "*bf16",
+    "Q": "*bf16",
+    "V": "*bf16",
+    "acc": "*fp32",
+    "sm_scale": "fp32"
+  },
+  "source": "/tmp/triton-ascend-main-dev-params/experiment_operators/candidates/fused_attention.py",
+  "source_sha256": "0347935e47ea2f6f7f1faf890a44b6edeb3d3b08297dc1822e004b8f1a348261"
+}
