@@ -39,8 +39,8 @@ git rev-parse --short HEAD
 git rev-parse --short HEAD:third_party/ascend/AscendNPU-IR
 ```
 
-该分支固定的 AscendNPU-IR gitlink 是 `f67dc61f0`。它以 main-dev 指定的
-`aea934a666` 为基线，包含实验所需的参数暴露、原生 CV depth 语义，以及在
+该分支固定的 AscendNPU-IR gitlink 是 `7d1958f73`。它以兼容基线
+`2a0cddba4` 为基础，包含实验所需的参数暴露、原生 CV depth 语义，以及在
 调用旧版 `hivmc-a5` 前执行的 SSBuffer 兼容转换层。
 
 ## 3. 维护环境配置
@@ -167,7 +167,7 @@ TIMEOUT_RETRIES = 1
 
 `"off"` 是真实关闭状态：A5 第一轴的 `"off"` 同时关闭静态和动态 CVPipeline；MultiBuffer 的 `"off"` 会传入 `multibuffer=False`，不传 `--set-local-multibuffer`。数值 `1` 仍然开启对应 pass，只是使用一个 buffer。配置顺序就是运行顺序，因此默认先跑关闭状态。默认配置下，A3 有 40 行，A5 有 50 行，其中 A5 前 10 行关闭全部 CVPipeline。`vf_merge_level=2` 当前不在默认配置中；编译器问题修复后，直接把 `2` 加回配置文件即可。
 
-UnitFlag synchronization 不是实验轴，算子不会显式传入 `unit_flag`。编译器因此采用架构原生默认值：A5 RegBase 开启，A3 保持通用的关闭默认值。不能在 A5 上显式关闭它，否则会改变 Cube/Vector 同步语义并可能产生错误结果。
+UnitFlag synchronization 不是实验轴，算子不会显式传入 `unit_flag`。当前固定的兼容编译器在 A3 和 A5 上都采用关闭默认值。
 
 ## 6. 运行完整实验
 

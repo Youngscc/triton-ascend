@@ -36,8 +36,8 @@ DOMINANCE_ERROR_RE = re.compile(
 OPERATOR_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 SOURCE_BENCHMARK_OPERATOR_RE = re.compile(r"BENCHMARK\s+operator=([A-Za-z0-9][A-Za-z0-9_.-]*)")
 OPERATOR_ALIASES = {"hstu_attention_fwd": "hstu_attention"}
-A3_EXPERIMENT_SCHEMA = ("native-cv-depth+no-dynamic-cv+local-multibuffer-off-v8")
-A5_EXPERIMENT_SCHEMA = ("dynamic-cv-slots+no-static-cv+local-multibuffer-off-v8")
+A3_EXPERIMENT_SCHEMA = ("native-cv-depth+no-dynamic-cv+local-multibuffer-off-v9")
+A5_EXPERIMENT_SCHEMA = ("dynamic-cv-slots+no-static-cv+local-multibuffer-off-v9")
 OFF = "off"
 RESULTS_CSV_SUFFIX_FIELDS = [
     "序号",
@@ -307,8 +307,8 @@ def matching_metadata(
         "multibuffer": config.auto_multibuffer,
         "multibuffer_num": config.multibuffer_num,
         "vf_merge_level": config.vf_merge_level,
-        # None is intentional: A5 RegBase defaults UnitFlag synchronization to
-        # true, while A3 keeps the generic false default.
+        # UnitFlag is not an experiment axis. The pinned compatibility compiler
+        # retains its false default on both architectures.
         "unit_flag": None,
         "limit_auto_multi_buffer_buffer": ("no-limit" if config.auto_multibuffer else None),
     }
@@ -574,7 +574,7 @@ def requested_parameters(
         "vf_merge_level": config.vf_merge_level,
         "enable_dynamic_cv_pipeline": config.dynamic_cv_pipeline,
         "cv_pipeline_mode": ("off" if pipeline_axis == "buf_slot_num_of_veccore" else None),
-        "unit_flag": "compiler-default",
+        "unit_flag": "compiler-default-false",
         "limit_auto_multi_buffer_buffer": ("no-limit" if config.auto_multibuffer else None),
         "enable_print_ub_bits": True,
         "warmup": experiment.WARMUP,
@@ -752,7 +752,7 @@ def execute_case(
         "unit_flag":
         None,
         "unit_flag_policy":
-        "compiler-default",
+        "compiler-default-false",
         "buf_slot_num_of_crosscore":
         1 if is_a5 and config.dynamic_cv_pipeline else None,
         "buf_slot_num_of_gm":
@@ -925,8 +925,7 @@ def build_manifest(
             "buf_slot_num_of_gm": 1,
         } if is_a5 else None),
         "static_cv_pipeline_policy": ("always-disabled" if is_a5 else "controlled-by-depth"),
-        "hivm_unit_flag_sync_policy": ("compiler default: enabled on A5 RegBase; "
-                                       "generic false default on A3"),
+        "hivm_unit_flag_sync_policy": "compiler default: disabled",
         "configuration_order": ("config-file axis order; off precedes numeric values by default"),
     }
 

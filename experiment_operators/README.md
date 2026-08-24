@@ -13,7 +13,7 @@ MULTIBUFFER_NUM_VALUES = ("off", 1, 2, 3, 4)
 VF_MERGE_LEVEL_VALUES = (0, 1)
 ```
 
-On A3, the first axis is static CV `depth` and DynamicCV is always disabled. On A5, static CVPipeline is explicitly disabled with `--set-cv-pipeline-mode=off` and workspace multibuffer 0 for every row: `"off"` disables DynamicCV as well, while numeric values enable only DynamicCV with that `buf_slot_num_of_veccore`; `buf_slot_num_of_crosscore` and `buf_slot_num_of_gm` remain fixed at 1. For the second axis, `"off"` passes `multibuffer=False` and omits the explicit local count, while `1` keeps the pass enabled with one buffer. `vf_merge_level=0` disables VF merge. UnitFlag synchronization is not an experiment axis and is omitted from operator options, preserving the compiler's native default: enabled on A5 RegBase and disabled by the generic A3 default.
+On A3, the first axis is static CV `depth` and DynamicCV is always disabled. On A5, static CVPipeline is explicitly disabled with `--set-cv-pipeline-mode=off` and workspace multibuffer 0 for every row: `"off"` disables DynamicCV as well, while numeric values enable only DynamicCV with that `buf_slot_num_of_veccore`; `buf_slot_num_of_crosscore` and `buf_slot_num_of_gm` remain fixed at 1. For the second axis, `"off"` passes `multibuffer=False` and omits the explicit local count, while `1` keeps the pass enabled with one buffer. `vf_merge_level=0` disables VF merge. UnitFlag synchronization is not an experiment axis and is omitted from operator options; the pinned compatibility compiler keeps it disabled by default on both architectures.
 
 The default order runs disabled states first. It produces 40 A3 rows and 50 A5 rows.
 

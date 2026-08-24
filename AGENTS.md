@@ -24,8 +24,8 @@ Keep the unified A3 and A5/Ascend 950 experiment procedure in
 - Experiment branch: local `codex/experiment-main-dev`, based on
   `upstream/main-dev`
 - Triton-Ascend source baseline: `41509cb78d0fda91b521b3ad8a896e915f208829`
-- AscendNPU-IR upstream baseline: `aea934a66646e837c54fea11e87db54d42eb3221`
-- AscendNPU-IR experiment gitlink: `f67dc61f0143f625984c54a0f96bddd9829ba933`
+- AscendNPU-IR compatibility baseline: `2a0cddba405e253b4496bb756a56ed5b470590a3`
+- AscendNPU-IR experiment gitlink: `7d1958f73cfe3af5c101b27c279ceab62ca10f37`
 - Active server SSH alias: `huaweiyun`
 - Active server project path: `/home/y00969467/triton-ascend`
 - Active experiment container: `triton-ascend-exp`
@@ -243,9 +243,8 @@ usage; never keep only the fastest configuration.
   keep static CVPipeline disabled, enable DynamicCV, set static workspace multibuffer to zero, and use the value
   as `buf_slot_num_of_veccore`, with `buf_slot_num_of_crosscore` plus `buf_slot_num_of_gm` fixed to 1.
   HIVM UnitFlag synchronization is not an experiment axis and must be omitted
-  from operator options. The compiler enables it by default on A5 RegBase and
-  retains the generic false default on A3; explicitly disabling it on A5 can
-  break Cube/Vector synchronization and correctness.
+  from operator options. The pinned compatibility compiler retains its false
+  default on both A3 and A5.
   DynamicCV fallback resolves the metadata switch to false and is rejected as
   unsupported rather than mixed into measurements.
 - DynamicCV return code 2 is `ERRCODE_IGNORED`, meaning the pass is not
@@ -297,8 +296,8 @@ usage; never keep only the fastest configuration.
   currently classified as dynamically insensitive rather than proof that every
   optimization changes generated code.
 - `experiment_operators/run_sweep.py` is the standalone step-4 controller. A3
-  uses schema `native-cv-depth+no-dynamic-cv+local-multibuffer-off-v8`;
-  A5 uses `dynamic-cv-slots+no-static-cv+local-multibuffer-off-v8`.
+  uses schema `native-cv-depth+no-dynamic-cv+local-multibuffer-off-v9`;
+  A5 uses `dynamic-cv-slots+no-static-cv+local-multibuffer-off-v9`.
   All three axis value lists and the benchmark/timeout policy live only in
   `experiment_operators/experiment_config.py`. Disabled values run first. The
   ordinary MIX strategy is `no-limit` only for numeric MultiBuffer values. The
@@ -452,8 +451,8 @@ On A3, pass `depth` through `NPUOptions.set_workspace_multibuffer` and disable
 DynamicCV. On A5, set `NPUOptions.cv_pipeline_mode="off"` for every row;
 the `off` control also disables DynamicCV, while numeric rows enable DynamicCV
 with explicit `NPUOptions.buf_slot_num_of_veccore` values, fix
-`buf_slot_num_of_crosscore=1` and `buf_slot_num_of_gm=1`, preserve the
-compiler-native UnitFlag synchronization policy, and leave static workspace
+`buf_slot_num_of_crosscore=1` and `buf_slot_num_of_gm=1`, omit UnitFlag so the
+pinned compiler retains its disabled default, and leave static workspace
 multibuffer at zero for enabled rows. Retain the validated
 `NPUOptions.multibuffer_num`, propagate it through
 `third_party/ascend/backend/compiler.py` as `--set-local-multibuffer`, then into
