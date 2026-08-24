@@ -73,6 +73,12 @@ clone's own `.git`. The mirrored `.codex-remote/top-git` remains only for the
 offline rsync fallback. Do not copy a venv between hosts, containers, or
 project paths.
 
+`tools/remote_experiment/clean-build-cache.sh` is the explicit clean-rebuild
+entry point. It removes only allowlisted project-local build products, Triton
+runtime cache, the project-local `.codex-remote/ccache`, Python caches, and
+`tmp/`. It preserves results, logs, the venv, Git metadata, and downloaded LLVM
+packages; normal sync and experiment commands never invoke it automatically.
+
 `run.sh` calls the server's local Docker daemon, starts a detached command inside
 the configured container, and prints a run ID, log
 path, and host PID. `logs.sh` follows the newest log with `tail -F`; pressing

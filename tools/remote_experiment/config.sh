@@ -3,7 +3,7 @@
 # Project-dependent values may remain in a shell after the checkout is moved.
 # Recompute them on every load; config.local.sh is the persistent override.
 unset REMOTE_PROJECT REMOTE_LOG_DIR REMOTE_VENV REMOTE_COMPILER_BUILD \
-  REMOTE_TRITON_CACHE REMOTE_TOP_GIT_DIR REMOTE_TMP_DIR
+  REMOTE_TRITON_CACHE REMOTE_CCACHE_DIR REMOTE_TOP_GIT_DIR REMOTE_TMP_DIR
 
 _REMOTE_CONFIG_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 _REMOTE_DEFAULT_PROJECT="$(cd -- "$_REMOTE_CONFIG_DIR/../.." && pwd)"
@@ -18,6 +18,7 @@ REMOTE_LOG_DIR="${REMOTE_LOG_DIR:-$REMOTE_PROJECT/.codex-remote/logs}"
 REMOTE_VENV="${REMOTE_VENV:-$REMOTE_PROJECT/.codex-remote/venv}"
 REMOTE_COMPILER_BUILD="${REMOTE_COMPILER_BUILD:-$REMOTE_PROJECT/.codex-remote/ascendnpu-ir-build-explicit}"
 REMOTE_TRITON_CACHE="${REMOTE_TRITON_CACHE:-$REMOTE_PROJECT/.codex-remote/triton-cache}"
+REMOTE_CCACHE_DIR="${REMOTE_CCACHE_DIR:-$REMOTE_PROJECT/.codex-remote/ccache}"
 REMOTE_TOP_GIT_DIR="${REMOTE_TOP_GIT_DIR:-$REMOTE_PROJECT/.codex-remote/top-git}"
 REMOTE_TMP_DIR="${REMOTE_TMP_DIR:-$REMOTE_PROJECT/tmp}"
 if [[ -n "${TRITON_ASCEND_DEV_VENV:-}" ]]; then

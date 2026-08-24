@@ -115,6 +115,25 @@ cd <宿主机项目的同一绝对路径>
 source tools/remote_experiment/activate-dev-environment.sh
 ```
 
+### 清除编译产物与缓存
+
+需要排除旧构建或旧缓存影响时，先停止正在运行的构建和实验，然后在容器内执行：
+
+```bash
+./tools/remote_experiment/clean-build-cache.sh
+```
+
+脚本只删除当前项目内白名单中的 Triton CMake/扩展产物、AscendNPU-IR
+build、项目专用 `ccache`、Triton kernel cache、Python cache 和 `./tmp`。它不会删除
+`.codex-remote/results`、日志、venv、Git 元数据或已经下载的 Triton LLVM。
+清理完成会输出 `CLEAN_BUILD_CACHE_OK`，之后重新构建：
+
+```bash
+./tools/remote_experiment/setup-dev-environment.sh
+./tools/remote_experiment/rebuild-compiler.sh
+source tools/remote_experiment/activate-dev-environment.sh
+```
+
 ## 5. 设置实验参数
 
 所有可调整的实验取值只在一个文件中：
