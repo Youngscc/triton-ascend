@@ -542,7 +542,10 @@ def write_timeout_process_snapshot(log_handle, session_id: int) -> None:
     try:
         subprocess.run(
             [
-                "ps", "-o", "pid,ppid,pgid,sid,stat,etime,comm,args", "--sid",
+                "ps",
+                "-o",
+                "pid,ppid,pgid,sid,stat,etime,comm,args",
+                "--sid",
                 str(session_id),
             ],
             stdout=log_handle,
@@ -769,8 +772,8 @@ def execute_case(
         "passed" if correctness else "failed",
         "latency_ms":
         float(benchmark.group("latency")) if benchmark else None,
-        "benchmark_method": ((benchmark_method_match.group("method") if benchmark_method_match else
-                              "npu_profiler") if benchmark else None),
+        "benchmark_method":
+        ((benchmark_method_match.group("method") if benchmark_method_match else "npu_profiler") if benchmark else None),
         "reported_operator":
         benchmark.group("operator") if benchmark else None,
         "warmup": (int(benchmark.group("warmup")) if benchmark else experiment.WARMUP),
@@ -914,10 +917,10 @@ def build_manifest(
             "multibuffer_num": list(multibuffer_values),
             "vf_merge_level": list(vf_merge_values),
         },
-        "resolved_cv_constraint": ("static CVPipeline is disabled for every A5 row; DynamicCV on: "
-                                   "buf_slot_num_of_veccore is explicit and set_workspace_multibuffer=0; "
-                                   "DynamicCV off: all CVPipeline modes are disabled"
-                                   if is_a5 else "static CV: set_workspace_multibuffer=depth"),
+        "resolved_cv_constraint":
+        ("static CVPipeline is disabled for every A5 row; DynamicCV on: "
+         "buf_slot_num_of_veccore is explicit and set_workspace_multibuffer=0; "
+         "DynamicCV off: all CVPipeline modes are disabled" if is_a5 else "static CV: set_workspace_multibuffer=depth"),
         "ordinary_multibuffer_strategy": ("off: enable-auto-multi-buffer=false and no explicit count; "
                                           "numeric: limit_auto_multi_buffer_buffer=no-limit"),
         "fixed_dynamic_cv_buffer_counts": ({
@@ -925,7 +928,8 @@ def build_manifest(
             "buf_slot_num_of_gm": 1,
         } if is_a5 else None),
         "static_cv_pipeline_policy": ("always-disabled" if is_a5 else "controlled-by-depth"),
-        "hivm_unit_flag_sync_policy": "compiler default: disabled",
+        "hivm_unit_flag_sync_policy":
+        "compiler default: disabled",
         "configuration_order": ("config-file axis order; off precedes numeric values by default"),
     }
 
@@ -1104,7 +1108,8 @@ def parse_run_time(run_id: str) -> datetime:
     return datetime.strptime(normalized, "%Y%m%dT%H%M%S%z")
 
 
-def find_latest_operator_run(operator: str, pipeline_axis: str, experiment_schema: str) -> tuple[Path, dict, list[dict]]:
+def find_latest_operator_run(operator: str, pipeline_axis: str,
+                             experiment_schema: str) -> tuple[Path, dict, list[dict]]:
     latest = None
     if not RESULTS_ROOT.is_dir():
         raise SystemExit(f"results directory does not exist: {RESULTS_ROOT}")
@@ -1139,10 +1144,8 @@ def find_latest_operator_run(operator: str, pipeline_axis: str, experiment_schem
         if latest is None or candidate[:2] > latest[:2]:
             latest = candidate
     if latest is None:
-        raise SystemExit(
-            f"no complete {pipeline_axis} result with schema {experiment_schema!r} "
-            f"found for operator {operator!r}"
-        )
+        raise SystemExit(f"no complete {pipeline_axis} result with schema {experiment_schema!r} "
+                         f"found for operator {operator!r}")
     return latest[2], latest[3], latest[4]
 
 

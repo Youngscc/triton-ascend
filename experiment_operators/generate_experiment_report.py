@@ -260,21 +260,34 @@ def compact_row(row: dict) -> dict:
     if auto_multibuffer is False:
         multibuffer_num = OFF
     return {
-        "depth": row_depth(row),
+        "depth":
+        row_depth(row),
         "buf_slot_num_of_veccore":
         (row.get("buf_slot_num_of_veccore") if row.get("enable_dynamic_cv_pipeline") is not False else "off"),
-        "enable_dynamic_cv_pipeline": row.get("enable_dynamic_cv_pipeline"),
-        "enable_auto_multi_buffer": auto_multibuffer,
-        "multibuffer_num": multibuffer_num,
-        "vf_merge_level": row.get("vf_merge_level"),
-        "status": row.get("status", "missing"),
-        "correctness_status": row.get("correctness_status", "missing"),
-        "latency_ms": row.get("latency_ms"),
-        "benchmark_method": row.get("benchmark_method"),
-        "required_ub_kib": ub_kib,
-        "required_ub_bits": row.get("required_ub_bits"),
-        "binary_hash": row.get("binary_hash"),
-        "diagnostic": row.get("diagnostic", ""),
+        "enable_dynamic_cv_pipeline":
+        row.get("enable_dynamic_cv_pipeline"),
+        "enable_auto_multi_buffer":
+        auto_multibuffer,
+        "multibuffer_num":
+        multibuffer_num,
+        "vf_merge_level":
+        row.get("vf_merge_level"),
+        "status":
+        row.get("status", "missing"),
+        "correctness_status":
+        row.get("correctness_status", "missing"),
+        "latency_ms":
+        row.get("latency_ms"),
+        "benchmark_method":
+        row.get("benchmark_method"),
+        "required_ub_kib":
+        ub_kib,
+        "required_ub_bits":
+        row.get("required_ub_bits"),
+        "binary_hash":
+        row.get("binary_hash"),
+        "diagnostic":
+        row.get("diagnostic", ""),
     }
 
 

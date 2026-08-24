@@ -268,8 +268,7 @@ def _warn_deprecated_ascend_env_vars() -> None:
 
 def _is_910_95_name(name):
     name_lower = str(name).lower()
-    return ("ascend910_95" in name_lower or "ascend950" in name_lower
-            or "910_958" in name_lower)
+    return ("ascend910_95" in name_lower or "ascend950" in name_lower or "910_958" in name_lower)
 
 
 def is_compile_on_910_95(arch: str = None) -> bool:

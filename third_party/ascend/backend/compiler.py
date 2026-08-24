@@ -78,14 +78,8 @@ from triton.runtime.cache import get_dump_manager
 def _print_resolved_npu_options(metadata, opt):
     if os.getenv("TRITON_PRINT_AUTOTUNING") != "1" and not opt.debug:
         return
-    resolved = {
-        name: metadata.get(name, getattr(opt, name))
-        for name in opt.__dataclass_fields__
-    }
-    print(
-        "[EXPERIMENT] resolved_npu_options="
-        + json.dumps(resolved, default=str, sort_keys=True)
-    )
+    resolved = {name: metadata.get(name, getattr(opt, name)) for name in opt.__dataclass_fields__}
+    print("[EXPERIMENT] resolved_npu_options=" + json.dumps(resolved, default=str, sort_keys=True))
 
 
 # TODO: materialize the concrete min shape
@@ -153,13 +147,11 @@ def _adjust_metadata_by_module_result(mod, metadata, opt, **kwargs):
         metadata["disable_auto_inject_block_sync"] = kwargs["disable_auto_inject_block_sync"]
         metadata["set_workspace_multibuffer"] = kwargs["set_workspace_multibuffer"]
         if opt.debug or os.getenv("TRITON_PRINT_AUTOTUNING") == "1":
-            print(
-                "[EXPERIMENT] dynamic_cv_pipeline_fallback="
-                + json.dumps({
-                    "return_code": rc,
-                    "enable_dynamic_cv_pipeline": False,
-                }, sort_keys=True)
-            )
+            print("[EXPERIMENT] dynamic_cv_pipeline_fallback=" +
+                  json.dumps({
+                      "return_code": rc,
+                      "enable_dynamic_cv_pipeline": False,
+                  }, sort_keys=True))
 
 
 def _get_dump_paths(hash_key: str, src_path: str, dst_path: str) -> Tuple[str, str]:
@@ -403,13 +395,11 @@ def bc_to_linalg_by_bishengir_opt(bc_data: bytes, metadata, opt):
         if result.returncode != 0:
             stdout = result.stdout.strip() or "<empty>"
             stderr = result.stderr.strip() or "<empty>"
-            raise RuntimeError(
-                "bishengir-opt failed while decoding Triton MLIR bytecode\n"
-                f"executable: {bishengir_opt_path}\n"
-                f"returncode: {result.returncode}\n"
-                f"stdout:\n{stdout}\n"
-                f"stderr:\n{stderr}"
-            )
+            raise RuntimeError("bishengir-opt failed while decoding Triton MLIR bytecode\n"
+                               f"executable: {bishengir_opt_path}\n"
+                               f"returncode: {result.returncode}\n"
+                               f"stdout:\n{stdout}\n"
+                               f"stderr:\n{stderr}")
 
         # Read the generated MLIR text
         linalg_text = Path(mlir_path).read_text()
@@ -422,6 +412,7 @@ def bc_to_linalg_by_bishengir_opt(bc_data: bytes, metadata, opt):
 
 
 def _format_bishengir_compile_failure(error: subprocess.CalledProcessError) -> str:
+
     def decode(value) -> str:
         if not value:
             return "<empty>"
@@ -432,13 +423,11 @@ def _format_bishengir_compile_failure(error: subprocess.CalledProcessError) -> s
     command = error.cmd
     if isinstance(command, (list, tuple)):
         command = shlex.join(str(arg) for arg in command)
-    return (
-        "bishengir-compile failed\n"
-        f"returncode: {error.returncode}\n"
-        f"command: {command}\n"
-        f"stdout:\n{decode(error.stdout)}\n"
-        f"stderr:\n{decode(error.stderr)}"
-    )
+    return ("bishengir-compile failed\n"
+            f"returncode: {error.returncode}\n"
+            f"command: {command}\n"
+            f"stdout:\n{decode(error.stdout)}\n"
+            f"stderr:\n{decode(error.stderr)}")
 
 
 def __get_metadata_attr_by_callback(lib, postfix: str, metadata, meta_key: str):
@@ -1211,21 +1200,15 @@ class NPUOptions:
         object.__setattr__(self, "is_pure_simt", False)
 
         if self.vf_merge_level not in (0, 1, 2):
-            raise ValueError(
-                f"vf_merge_level must be one of 0, 1, or 2; got {self.vf_merge_level}"
-            )
+            raise ValueError(f"vf_merge_level must be one of 0, 1, or 2; got {self.vf_merge_level}")
 
         if self.multibuffer_num is not None and self.multibuffer_num not in (1, 2, 3, 4):
-            raise ValueError(
-                "multibuffer_num must be one of 1, 2, 3, or 4; "
-                f"got {self.multibuffer_num}"
-            )
+            raise ValueError("multibuffer_num must be one of 1, 2, 3, or 4; "
+                             f"got {self.multibuffer_num}")
 
         if self.cv_pipeline_mode is not None and self.cv_pipeline_mode not in ("off", "unroll", "skew", "dynamic"):
-            raise ValueError(
-                "cv_pipeline_mode must be one of off, unroll, skew, or dynamic; "
-                f"got {self.cv_pipeline_mode!r}"
-            )
+            raise ValueError("cv_pipeline_mode must be one of off, unroll, skew, or dynamic; "
+                             f"got {self.cv_pipeline_mode!r}")
 
         # An explicitly requested ordinary-local multibuffer count is only
         # observable on mixed AIC/AIV kernels if the compiler's ordinary

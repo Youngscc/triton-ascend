@@ -59,32 +59,23 @@ def _experiment_compile_options():
 #     for w in [4, 8]
 # ]
 
+
 # The following best configs are obtained by autotuning under dim64.
 # Currently, only sm80(A100/A800), sm89(L), and sm90(H20) are supported.
 # Developers can autotune according to your own needs.
 def get_fwd_configs():
     if is_hopper():
-        return [
-            triton.Config({"BLOCK_M": 64, "BLOCK_N": 32}, num_stages=2, num_warps=4)
-        ]
+        return [triton.Config({"BLOCK_M": 64, "BLOCK_N": 32}, num_stages=2, num_warps=4)]
     elif is_ampere():
-        return [
-            triton.Config({"BLOCK_M": 128, "BLOCK_N": 32}, num_stages=3, num_warps=4)
-        ]
+        return [triton.Config({"BLOCK_M": 128, "BLOCK_N": 32}, num_stages=3, num_warps=4)]
     else:
         # return [
         #     triton.Config({"BLOCK_M": 64, "BLOCK_N": 128})
         # ]
-        configs = [
-            triton.Config(
-                {
-                    "BLOCK_M": BM,
-                    "BLOCK_N": BN,
-                },
-            )
-            for BM in [32, 64, 128]
-            for BN in [32, 64, 128]
-        ]
+        configs = [triton.Config({
+            "BLOCK_M": BM,
+            "BLOCK_N": BN,
+        }, ) for BM in [32, 64, 128] for BN in [32, 64, 128]]
         return configs
 
 
@@ -99,32 +90,21 @@ def get_bwd_preprocess_configs():
 
 def get_bwd_q_configs():
     if is_hopper():
-        return [
-            triton.Config({"BLOCK_M": 64, "BLOCK_N": 32}, num_stages=4, num_warps=4)
-        ]
+        return [triton.Config({"BLOCK_M": 64, "BLOCK_N": 32}, num_stages=4, num_warps=4)]
     elif is_ampere():
-        return [
-            triton.Config({"BLOCK_M": 128, "BLOCK_N": 32}, num_stages=1, num_warps=4)
-        ]
+        return [triton.Config({"BLOCK_M": 128, "BLOCK_N": 32}, num_stages=1, num_warps=4)]
     else:
-        return [
-            triton.Config({"BLOCK_M": 128, "BLOCK_N": 32}, num_stages=1, num_warps=4)
-        ]
+        return [triton.Config({"BLOCK_M": 128, "BLOCK_N": 32}, num_stages=1, num_warps=4)]
 
 
 def get_bwd_kv_configs():
     if is_hopper():
-        return [
-            triton.Config({"BLOCK_M": 64, "BLOCK_N": 64}, num_stages=4, num_warps=4)
-        ]
+        return [triton.Config({"BLOCK_M": 64, "BLOCK_N": 64}, num_stages=4, num_warps=4)]
     elif is_ampere():
-        return [
-            triton.Config({"BLOCK_M": 64, "BLOCK_N": 64}, num_stages=1, num_warps=4)
-        ]
+        return [triton.Config({"BLOCK_M": 64, "BLOCK_N": 64}, num_stages=1, num_warps=4)]
     else:
-        return [
-            triton.Config({"BLOCK_M": 64, "BLOCK_N": 64}, num_stages=1, num_warps=4)
-        ]
+        return [triton.Config({"BLOCK_M": 64, "BLOCK_N": 64}, num_stages=1, num_warps=4)]
+
 
 def get_bwd_qkv_configs():
     return [
@@ -138,6 +118,7 @@ def get_bwd_qkv_configs():
         triton.Config({"BLOCK_M": 64, "BLOCK_N": 32}),
         triton.Config({"BLOCK_M": 32, "BLOCK_N": 32}),
     ]
+
 
 if os.environ.get("TRITON_DEBUG") == "1":
     configs = [triton.Config({"BLOCK_M": 32, "BLOCK_N": 16}, num_stages=1, num_warps=1)]
@@ -158,9 +139,9 @@ def load_if(block_ptr, EVEN_M: tl.constexpr, EVEN_N: tl.constexpr):
     if EVEN_M & EVEN_N:
         return tl.load(block_ptr)
     elif EVEN_M:
-        return tl.load(block_ptr, boundary_check=(1,), padding_option="zero")
+        return tl.load(block_ptr, boundary_check=(1, ), padding_option="zero")
     elif EVEN_N:
-        return tl.load(block_ptr, boundary_check=(0,), padding_option="zero")
+        return tl.load(block_ptr, boundary_check=(0, ), padding_option="zero")
     else:
         return tl.load(block_ptr, boundary_check=(0, 1), padding_option="zero")
 
@@ -170,9 +151,9 @@ def store_if(block_ptr, value, EVEN_M: tl.constexpr, EVEN_N: tl.constexpr):
     if EVEN_M & EVEN_N:
         tl.store(block_ptr, value)
     elif EVEN_N:
-        tl.store(block_ptr, value, boundary_check=(0,))
+        tl.store(block_ptr, value, boundary_check=(0, ))
     elif EVEN_M:
-        tl.store(block_ptr, value, boundary_check=(1,))
+        tl.store(block_ptr, value, boundary_check=(1, ))
     else:
         tl.store(block_ptr, value, boundary_check=(0, 1))
 
@@ -185,32 +166,43 @@ def mask_fn(q_attn_arg, k_attn_arg, q_offset, k_offset, TYPE: tl.constexpr):
     if TYPE == 1:
         # return (q_offset[:, None] <= k_offset[None, :])
         triu_causal = (q_offset[:, None] <= k_offset[None, :]).to(tl.int32)
-        return (
-                (triu_causal &
-                 ((q_attn_arg[:, None] == k_attn_arg[None, :]).to(tl.int32) |
-                  (k_attn_arg[None, :] == 0).to(tl.int32))) |
+        return ((triu_causal & ((q_attn_arg[:, None] == k_attn_arg[None, :]).to(tl.int32) |
+                                (k_attn_arg[None, :] == 0).to(tl.int32))) |
                 (q_offset[:, None] == k_offset[None, :]).to(tl.int32))
     if TYPE == 2:
         tril_causal = (q_offset[:, None] >= k_offset[None, :])
-        return ((tril_causal & ((q_attn_arg[:, None] == k_attn_arg[None, :]) | (k_attn_arg[None, :] == 0))) | (
-                    q_offset[:, None] == k_offset[None, :]))
+        return ((tril_causal & ((q_attn_arg[:, None] == k_attn_arg[None, :]) | (k_attn_arg[None, :] == 0))) |
+                (q_offset[:, None] == k_offset[None, :]))
 
 
 # Autotune removed for the sweep: BLOCK_M/BLOCK_N are passed explicitly by the
 # launcher so the experiment owns the exact configuration.
 @triton.jit
 def fwd_kernel(
-        q_ptr, k_ptr, v_ptr, o_ptr, l_ptr,
-        q_attn_arg_ptr, k_attn_arg_ptr, mask_tensor_ptr,
-        cu_seqlens_q, cu_seqlens_k,
-        q_head, kv_head, scale,
-        QK_DIM: tl.constexpr, V_DIM: tl.constexpr, MASK_FN: tl.constexpr,
-        SPARSE_OPT: tl.constexpr, DTYPE: tl.constexpr,
-        BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
-        AICORE_NUM: tl.constexpr,
-        MAX_Q_LEN: tl.constexpr,
-        MAX_K_LEN: tl.constexpr,
-        BATCH_SIZE: tl.constexpr,
+    q_ptr,
+    k_ptr,
+    v_ptr,
+    o_ptr,
+    l_ptr,
+    q_attn_arg_ptr,
+    k_attn_arg_ptr,
+    mask_tensor_ptr,
+    cu_seqlens_q,
+    cu_seqlens_k,
+    q_head,
+    kv_head,
+    scale,
+    QK_DIM: tl.constexpr,
+    V_DIM: tl.constexpr,
+    MASK_FN: tl.constexpr,
+    SPARSE_OPT: tl.constexpr,
+    DTYPE: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    AICORE_NUM: tl.constexpr,
+    MAX_Q_LEN: tl.constexpr,
+    MAX_K_LEN: tl.constexpr,
+    BATCH_SIZE: tl.constexpr,
 ):
     dtype = o_ptr.type.element_ty
     pid = tl.program_id(0)
@@ -270,46 +262,23 @@ def fwd_kernel(
 
                 q_start = q_start1.to(tl.int64)
                 k_start = k_start1.to(tl.int64)
-                q_block_ptr = tl.make_block_ptr(
-                    base=q_ptr + q_start * q_head * QK_DIM + start_qh * QK_DIM,
-                    shape=(q_len, QK_DIM),
-                    strides=(q_head * QK_DIM, 1),
-                    offsets=(start_m * BLOCK_M, 0),
-                    block_shape=(BLOCK_M, QK_DIM),
-                    order=(1, 0)
-                )
-                k_block_ptr = tl.make_block_ptr(
-                    base=k_ptr + k_start * kv_head * QK_DIM + start_kvh * QK_DIM,
-                    shape=(QK_DIM, k_len),
-                    strides=(1, kv_head * QK_DIM),
-                    offsets=(0, begin),
-                    block_shape=(QK_DIM, BLOCK_N),
-                    order=(0, 1)
-                )
-                v_block_ptr = tl.make_block_ptr(
-                    base=v_ptr + k_start * kv_head * V_DIM + start_kvh * V_DIM,
-                    shape=(k_len, V_DIM),
-                    strides=(kv_head * V_DIM, 1),
-                    offsets=(begin, 0),
-                    block_shape=(BLOCK_N, V_DIM),
-                    order=(1, 0)
-                )
-                o_block_ptr = tl.make_block_ptr(
-                    base=o_ptr + q_start * q_head * V_DIM + start_qh * V_DIM,
-                    shape=(q_len, V_DIM),
-                    strides=(q_head * V_DIM, 1),
-                    offsets=(start_m * BLOCK_M, 0),
-                    block_shape=(BLOCK_M, V_DIM),
-                    order=(1, 0)
-                )
-                l_block_ptr = tl.make_block_ptr(
-                    base=l_ptr + q_start * q_head + start_qh,
-                    shape=(q_len,),
-                    strides=(q_head,),
-                    offsets=(start_m * BLOCK_M,),
-                    block_shape=(BLOCK_M,),
-                    order=(0,)
-                )
+                q_block_ptr = tl.make_block_ptr(base=q_ptr + q_start * q_head * QK_DIM + start_qh * QK_DIM,
+                                                shape=(q_len, QK_DIM), strides=(q_head * QK_DIM, 1),
+                                                offsets=(start_m * BLOCK_M, 0), block_shape=(BLOCK_M, QK_DIM),
+                                                order=(1, 0))
+                k_block_ptr = tl.make_block_ptr(base=k_ptr + k_start * kv_head * QK_DIM + start_kvh * QK_DIM,
+                                                shape=(QK_DIM, k_len), strides=(1, kv_head * QK_DIM),
+                                                offsets=(0, begin), block_shape=(QK_DIM, BLOCK_N), order=(0, 1))
+                v_block_ptr = tl.make_block_ptr(base=v_ptr + k_start * kv_head * V_DIM + start_kvh * V_DIM,
+                                                shape=(k_len, V_DIM), strides=(kv_head * V_DIM, 1), offsets=(begin, 0),
+                                                block_shape=(BLOCK_N, V_DIM), order=(1, 0))
+                o_block_ptr = tl.make_block_ptr(base=o_ptr + q_start * q_head * V_DIM + start_qh * V_DIM,
+                                                shape=(q_len, V_DIM), strides=(q_head * V_DIM, 1),
+                                                offsets=(start_m * BLOCK_M, 0), block_shape=(BLOCK_M, V_DIM),
+                                                order=(1, 0))
+                l_block_ptr = tl.make_block_ptr(base=l_ptr + q_start * q_head + start_qh, shape=(q_len, ),
+                                                strides=(q_head, ), offsets=(start_m * BLOCK_M, ),
+                                                block_shape=(BLOCK_M, ), order=(0, ))
                 # q_attn_arg_block_ptr = tl.make_block_ptr(
                 #     base = q_attn_arg_ptr + q_start,
                 #     shape = (q_len,),
@@ -327,17 +296,13 @@ def fwd_kernel(
                 #     order = (0,)
                 # )
 
-                mask_block_ptr = tl.make_block_ptr(
-                    base=mask_tensor_ptr + start_b * MAX_Q_LEN * MAX_K_LEN,
-                    shape=(q_len, k_len),
-                    strides=(MAX_K_LEN, 1),
-                    offsets=(start_m * BLOCK_M, begin),
-                    block_shape=(BLOCK_M, BLOCK_N),
-                    order=(1, 0)
-                )
+                mask_block_ptr = tl.make_block_ptr(base=mask_tensor_ptr + start_b * MAX_Q_LEN * MAX_K_LEN,
+                                                   shape=(q_len, k_len), strides=(MAX_K_LEN, 1),
+                                                   offsets=(start_m * BLOCK_M, begin), block_shape=(BLOCK_M, BLOCK_N),
+                                                   order=(1, 0))
                 acc = tl.zeros((BLOCK_M, V_DIM), dtype=tl.float32)
-                m = tl.full((BLOCK_M,), value=-2 ** 30, dtype=tl.float32)
-                l = tl.zeros((BLOCK_M,), dtype=tl.float32)
+                m = tl.full((BLOCK_M, ), value=-2**30, dtype=tl.float32)
+                l = tl.zeros((BLOCK_M, ), dtype=tl.float32)
 
                 q = load_if(q_block_ptr, False, True)
                 # q_attn_arg = load_if(q_attn_arg_block_ptr, False, True)
@@ -368,7 +333,7 @@ def fwd_kernel(
                         # s = tl.where(mask, s, -2**30)
                         # mask_value = tl.where(boundary_mask & mask, 0, -2**30).to(tl.float16)
                         # s = s * qk_scale + mask_value.to(tl.float32)
-                        s = s * qk_scale + tl.where(mask, 0.0, -2.0 ** 30)
+                        s = s * qk_scale + tl.where(mask, 0.0, -2.0**30)
                         # m_new = tl.maximum(m, tl.max(s, 1))
                         # 1.128 *128: nomak test: ub overflow, requires 2263552 bits while 2031616 bits available!: 777.79 -> 616
                         # 1.1 128 * 128, triu_causal - 客户mask, 2111->850
@@ -404,10 +369,13 @@ def fwd_kernel(
 # @triton.autotune(get_bwd_preprocess_configs(), key = ["V_DIM"])
 @triton.jit
 def bwd_preprocess(
-    o_ptr, do_ptr, d_ptr,
+    o_ptr,
+    do_ptr,
+    d_ptr,
     cu_seqlens_q,
     q_head,
-    V_DIM: tl.constexpr, DTYPE: tl.constexpr,
+    V_DIM: tl.constexpr,
+    DTYPE: tl.constexpr,
     BLOCK_M: tl.constexpr,
     NUM_BLOCKS_M: tl.constexpr,
     NUM_BLOCKS: tl.constexpr,
@@ -426,29 +394,24 @@ def bwd_preprocess(
         if start_m * BLOCK_M < q_len:
             q_start = q_start1.to(tl.int64)
             o_block_ptr = tl.make_block_ptr(
-                base = o_ptr + q_start * q_head * V_DIM + start_h * V_DIM,
-                shape = (q_len, V_DIM),
-                strides = (q_head * V_DIM, 1),
-                offsets = (start_m * BLOCK_M, 0),
-                block_shape = (BLOCK_M, V_DIM),
-                order = (1, 0),
+                base=o_ptr + q_start * q_head * V_DIM + start_h * V_DIM,
+                shape=(q_len, V_DIM),
+                strides=(q_head * V_DIM, 1),
+                offsets=(start_m * BLOCK_M, 0),
+                block_shape=(BLOCK_M, V_DIM),
+                order=(1, 0),
             )
             do_block_ptr = tl.make_block_ptr(
-                base = do_ptr + q_start * q_head * V_DIM + start_h * V_DIM,
-                shape = (q_len, V_DIM),
-                strides = (q_head * V_DIM, 1),
-                offsets = (start_m * BLOCK_M, 0),
-                block_shape = (BLOCK_M, V_DIM),
-                order = (1, 0),
+                base=do_ptr + q_start * q_head * V_DIM + start_h * V_DIM,
+                shape=(q_len, V_DIM),
+                strides=(q_head * V_DIM, 1),
+                offsets=(start_m * BLOCK_M, 0),
+                block_shape=(BLOCK_M, V_DIM),
+                order=(1, 0),
             )
-            d_block_ptr = tl.make_block_ptr(
-                base = d_ptr + q_start * q_head + start_h,
-                shape = (q_len,),
-                strides = (q_head,),
-                offsets = (start_m * BLOCK_M,),
-                block_shape = (BLOCK_M,),
-                order = (0,)
-            )
+            d_block_ptr = tl.make_block_ptr(base=d_ptr + q_start * q_head + start_h, shape=(q_len, ),
+                                            strides=(q_head, ), offsets=(start_m * BLOCK_M, ), block_shape=(BLOCK_M, ),
+                                            order=(0, ))
             o = load_if(o_block_ptr, False, True).to(tl.float32)
             do = load_if(do_block_ptr, False, True).to(tl.float32)
             d = tl.sum(o * do, 1)
@@ -473,34 +436,34 @@ def bwd_preprocess_ifmn(
     for block_id in tl.range(0, NUM_BLOCKS):
 
         o_block_ptr = tl.make_block_ptr(
-            base = o_ptr + task_start * Q_HEAD_NUM * V_DIM,
-            shape = (TASK_SIZE, Q_HEAD_NUM, V_DIM),
-            strides = (Q_HEAD_NUM * V_DIM, V_DIM, 1),
-            offsets = (block_id * BLOCK_SIZE, 0, 0),
-            block_shape = (BLOCK_SIZE, Q_HEAD_NUM, V_DIM),
-            order = (2, 1, 0),
+            base=o_ptr + task_start * Q_HEAD_NUM * V_DIM,
+            shape=(TASK_SIZE, Q_HEAD_NUM, V_DIM),
+            strides=(Q_HEAD_NUM * V_DIM, V_DIM, 1),
+            offsets=(block_id * BLOCK_SIZE, 0, 0),
+            block_shape=(BLOCK_SIZE, Q_HEAD_NUM, V_DIM),
+            order=(2, 1, 0),
         )
         o = load_if(o_block_ptr, False, True).to(tl.float32)
 
         do_block_ptr = tl.make_block_ptr(
-            base = do_ptr + task_start * Q_HEAD_NUM * V_DIM,
-            shape = (TASK_SIZE, Q_HEAD_NUM, V_DIM),
-            strides = (Q_HEAD_NUM * V_DIM, V_DIM, 1),
-            offsets = (block_id * BLOCK_SIZE, 0, 0),
-            block_shape = (BLOCK_SIZE, Q_HEAD_NUM, V_DIM),
-            order = (2, 1, 0),
+            base=do_ptr + task_start * Q_HEAD_NUM * V_DIM,
+            shape=(TASK_SIZE, Q_HEAD_NUM, V_DIM),
+            strides=(Q_HEAD_NUM * V_DIM, V_DIM, 1),
+            offsets=(block_id * BLOCK_SIZE, 0, 0),
+            block_shape=(BLOCK_SIZE, Q_HEAD_NUM, V_DIM),
+            order=(2, 1, 0),
         )
         do = load_if(do_block_ptr, False, True).to(tl.float32)
 
         d = tl.sum(o * do, 2)
 
         d_block_ptr = tl.make_block_ptr(
-            base = d_ptr + task_start * Q_HEAD_NUM,
-            shape = (TASK_SIZE, Q_HEAD_NUM),
-            strides = (Q_HEAD_NUM, 1),
-            offsets = (block_id * BLOCK_SIZE, 0),
-            block_shape = (BLOCK_SIZE, Q_HEAD_NUM),
-            order = (1, 0),
+            base=d_ptr + task_start * Q_HEAD_NUM,
+            shape=(TASK_SIZE, Q_HEAD_NUM),
+            strides=(Q_HEAD_NUM, 1),
+            offsets=(block_id * BLOCK_SIZE, 0),
+            block_shape=(BLOCK_SIZE, Q_HEAD_NUM),
+            order=(1, 0),
         )
         store_if(d_block_ptr, d, False, True)
 
@@ -508,19 +471,34 @@ def bwd_preprocess_ifmn(
 # @triton.autotune(list(filter(keep, get_bwd_kv_configs())), key = ["QK_DIM", "V_DIM", "MASK_FN", "SPARSE_OPT"])
 @triton.jit
 def bwd_kv_kernel(
-        q_ptr, k_ptr, v_ptr,
-        dk_ptr, dv_ptr, do_ptr,
-        l_ptr, d_ptr,
-        q_attn_arg_ptr, k_attn_arg_ptr, mask_tensor_ptr,
-        cu_seqlens_q, cu_seqlens_k,
-        q_head, kv_head, scale,
-        QK_DIM: tl.constexpr, V_DIM: tl.constexpr, MASK_FN: tl.constexpr, SPARSE_OPT: tl.constexpr, DTYPE: tl.constexpr,
-        BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
-        NUM_BLOCKS_N: tl.constexpr,
-        NUM_BLOCKS: tl.constexpr,
-        NUM_CORES: tl.constexpr,
-        MAX_Q_LEN: tl.constexpr,
-        MAX_K_LEN: tl.constexpr,
+    q_ptr,
+    k_ptr,
+    v_ptr,
+    dk_ptr,
+    dv_ptr,
+    do_ptr,
+    l_ptr,
+    d_ptr,
+    q_attn_arg_ptr,
+    k_attn_arg_ptr,
+    mask_tensor_ptr,
+    cu_seqlens_q,
+    cu_seqlens_k,
+    q_head,
+    kv_head,
+    scale,
+    QK_DIM: tl.constexpr,
+    V_DIM: tl.constexpr,
+    MASK_FN: tl.constexpr,
+    SPARSE_OPT: tl.constexpr,
+    DTYPE: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    NUM_BLOCKS_N: tl.constexpr,
+    NUM_BLOCKS: tl.constexpr,
+    NUM_CORES: tl.constexpr,
+    MAX_Q_LEN: tl.constexpr,
+    MAX_K_LEN: tl.constexpr,
 ):
     dtype = k_ptr.type.element_ty
     pid = tl.program_id(0)
@@ -556,70 +534,29 @@ def bwd_kv_kernel(
 
             q_start = q_start1.to(tl.int64)
             k_start = k_start1.to(tl.int64)
-            q_block_ptr = tl.make_block_ptr(
-                base=q_ptr + q_start * q_head * QK_DIM + start_qh * QK_DIM,
-                shape=(q_len, QK_DIM),
-                strides=(q_head * QK_DIM, 1),
-                offsets=(begin, 0),
-                block_shape=(BLOCK_M, QK_DIM),
-                order=(1, 0)
-            )
-            k_block_ptr = tl.make_block_ptr(
-                base=k_ptr + k_start * kv_head * QK_DIM + start_kvh * QK_DIM,
-                shape=(QK_DIM, k_len),
-                strides=(1, kv_head * QK_DIM),
-                offsets=(0, start_n * BLOCK_N),
-                block_shape=(QK_DIM, BLOCK_N),
-                order=(0, 1)
-            )
-            v_block_ptr = tl.make_block_ptr(
-                base=v_ptr + k_start * kv_head * V_DIM + start_kvh * V_DIM,
-                shape=(V_DIM, k_len),
-                strides=(1, kv_head * V_DIM),
-                offsets=(0, start_n * BLOCK_N),
-                block_shape=(V_DIM, BLOCK_N),
-                order=(0, 1)
-            )
-            dk_block_ptr = tl.make_block_ptr(
-                base=dk_ptr + k_start * q_head * QK_DIM + start_qh * QK_DIM,
-                shape=(k_len, QK_DIM),
-                strides=(q_head * QK_DIM, 1),
-                offsets=(start_n * BLOCK_N, 0),
-                block_shape=(BLOCK_N, QK_DIM),
-                order=(1, 0)
-            )
-            dv_block_ptr = tl.make_block_ptr(
-                base=dv_ptr + k_start * q_head * V_DIM + start_qh * V_DIM,
-                shape=(k_len, V_DIM),
-                strides=(q_head * V_DIM, 1),
-                offsets=(start_n * BLOCK_N, 0),
-                block_shape=(BLOCK_N, V_DIM),
-                order=(1, 0)
-            )
-            do_block_ptr = tl.make_block_ptr(
-                base=do_ptr + q_start * q_head * V_DIM + start_qh * V_DIM,
-                shape=(q_len, V_DIM),
-                strides=(q_head * V_DIM, 1),
-                offsets=(begin, 0),
-                block_shape=(BLOCK_M, V_DIM),
-                order=(1, 0)
-            )
-            l_block_ptr = tl.make_block_ptr(
-                base=l_ptr + q_start * q_head + start_qh,
-                shape=(q_len,),
-                strides=(q_head,),
-                offsets=(begin,),
-                block_shape=(BLOCK_M,),
-                order=(0,)
-            )
-            d_block_ptr = tl.make_block_ptr(
-                base=d_ptr + q_start * q_head + start_qh,
-                shape=(q_len,),
-                strides=(q_head,),
-                offsets=(begin,),
-                block_shape=(BLOCK_M,),
-                order=(0,)
-            )
+            q_block_ptr = tl.make_block_ptr(base=q_ptr + q_start * q_head * QK_DIM + start_qh * QK_DIM,
+                                            shape=(q_len, QK_DIM), strides=(q_head * QK_DIM, 1), offsets=(begin, 0),
+                                            block_shape=(BLOCK_M, QK_DIM), order=(1, 0))
+            k_block_ptr = tl.make_block_ptr(base=k_ptr + k_start * kv_head * QK_DIM + start_kvh * QK_DIM,
+                                            shape=(QK_DIM, k_len), strides=(1, kv_head * QK_DIM),
+                                            offsets=(0, start_n * BLOCK_N), block_shape=(QK_DIM, BLOCK_N), order=(0, 1))
+            v_block_ptr = tl.make_block_ptr(base=v_ptr + k_start * kv_head * V_DIM + start_kvh * V_DIM,
+                                            shape=(V_DIM, k_len), strides=(1, kv_head * V_DIM),
+                                            offsets=(0, start_n * BLOCK_N), block_shape=(V_DIM, BLOCK_N), order=(0, 1))
+            dk_block_ptr = tl.make_block_ptr(base=dk_ptr + k_start * q_head * QK_DIM + start_qh * QK_DIM,
+                                             shape=(k_len, QK_DIM), strides=(q_head * QK_DIM, 1),
+                                             offsets=(start_n * BLOCK_N, 0), block_shape=(BLOCK_N, QK_DIM),
+                                             order=(1, 0))
+            dv_block_ptr = tl.make_block_ptr(base=dv_ptr + k_start * q_head * V_DIM + start_qh * V_DIM,
+                                             shape=(k_len, V_DIM), strides=(q_head * V_DIM, 1),
+                                             offsets=(start_n * BLOCK_N, 0), block_shape=(BLOCK_N, V_DIM), order=(1, 0))
+            do_block_ptr = tl.make_block_ptr(base=do_ptr + q_start * q_head * V_DIM + start_qh * V_DIM,
+                                             shape=(q_len, V_DIM), strides=(q_head * V_DIM, 1), offsets=(begin, 0),
+                                             block_shape=(BLOCK_M, V_DIM), order=(1, 0))
+            l_block_ptr = tl.make_block_ptr(base=l_ptr + q_start * q_head + start_qh, shape=(q_len, ),
+                                            strides=(q_head, ), offsets=(begin, ), block_shape=(BLOCK_M, ), order=(0, ))
+            d_block_ptr = tl.make_block_ptr(base=d_ptr + q_start * q_head + start_qh, shape=(q_len, ),
+                                            strides=(q_head, ), offsets=(begin, ), block_shape=(BLOCK_M, ), order=(0, ))
             # q_attn_arg_block_ptr = tl.make_block_ptr(
             #     base=q_attn_arg_ptr + q_start,
             #     shape=(q_len,),
@@ -637,14 +574,10 @@ def bwd_kv_kernel(
             #     order=(0,)
             # )
 
-            mask_block_ptr = tl.make_block_ptr(
-                base=mask_tensor_ptr + start_b * MAX_Q_LEN * MAX_K_LEN,
-                shape=(q_len, k_len),
-                strides=(MAX_K_LEN, 1),
-                offsets=(begin, start_n * BLOCK_N),
-                block_shape=(BLOCK_M, BLOCK_N),
-                order=(1, 0)
-            )
+            mask_block_ptr = tl.make_block_ptr(base=mask_tensor_ptr + start_b * MAX_Q_LEN * MAX_K_LEN,
+                                               shape=(q_len, k_len), strides=(MAX_K_LEN, 1),
+                                               offsets=(begin, start_n * BLOCK_N), block_shape=(BLOCK_M, BLOCK_N),
+                                               order=(1, 0))
 
             dk = tl.zeros((BLOCK_N, QK_DIM), dtype=tl.float32)
             dv = tl.zeros((BLOCK_N, V_DIM), dtype=tl.float32)
@@ -676,8 +609,8 @@ def bwd_kv_kernel(
                     dk += tl.dot(tl.trans(ds), q)
                 q_block_ptr = tl.advance(q_block_ptr, (BLOCK_M, 0))
                 do_block_ptr = tl.advance(do_block_ptr, (BLOCK_M, 0))
-                l_block_ptr = tl.advance(l_block_ptr, (BLOCK_M,))
-                d_block_ptr = tl.advance(d_block_ptr, (BLOCK_M,))
+                l_block_ptr = tl.advance(l_block_ptr, (BLOCK_M, ))
+                d_block_ptr = tl.advance(d_block_ptr, (BLOCK_M, ))
                 # q_attn_arg_block_ptr = tl.advance(q_attn_arg_block_ptr, (BLOCK_M,))
                 mask_block_ptr = tl.advance(mask_block_ptr, (BLOCK_M, 0))
 
@@ -689,17 +622,33 @@ def bwd_kv_kernel(
 # @triton.autotune(list(filter(keep, get_bwd_q_configs())), key = ["QK_DIM", "V_DIM", "MASK_FN", "SPARSE_OPT"])
 @triton.jit
 def bwd_q_kernel(
-        q_ptr, k_ptr, v_ptr, dq_ptr, do_ptr, l_ptr, d_ptr,
-        q_attn_arg_ptr, k_attn_arg_ptr, mask_tensor_ptr,
-        cu_seqlens_q, cu_seqlens_k,
-        q_head, kv_head, scale,
-        QK_DIM: tl.constexpr, V_DIM: tl.constexpr, MASK_FN: tl.constexpr, SPARSE_OPT: tl.constexpr, DTYPE: tl.constexpr,
-        BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
-        NUM_BLOCKS_M: tl.constexpr,
-        NUM_BLOCKS: tl.constexpr,
-        NUM_CORES: tl.constexpr,
-        MAX_Q_LEN: tl.constexpr,
-        MAX_K_LEN: tl.constexpr,
+    q_ptr,
+    k_ptr,
+    v_ptr,
+    dq_ptr,
+    do_ptr,
+    l_ptr,
+    d_ptr,
+    q_attn_arg_ptr,
+    k_attn_arg_ptr,
+    mask_tensor_ptr,
+    cu_seqlens_q,
+    cu_seqlens_k,
+    q_head,
+    kv_head,
+    scale,
+    QK_DIM: tl.constexpr,
+    V_DIM: tl.constexpr,
+    MASK_FN: tl.constexpr,
+    SPARSE_OPT: tl.constexpr,
+    DTYPE: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    NUM_BLOCKS_M: tl.constexpr,
+    NUM_BLOCKS: tl.constexpr,
+    NUM_CORES: tl.constexpr,
+    MAX_Q_LEN: tl.constexpr,
+    MAX_K_LEN: tl.constexpr,
 ):
     dtype = k_ptr.type.element_ty
     pid = tl.program_id(0)
@@ -738,62 +687,28 @@ def bwd_q_kernel(
 
             q_start = q_start1.to(tl.int64)
             k_start = k_start1.to(tl.int64)
-            q_block_ptr = tl.make_block_ptr(
-                base=q_ptr + q_start * q_head * QK_DIM + start_qh * QK_DIM,
-                shape=(q_len, QK_DIM),
-                strides=(q_head * QK_DIM, 1),
-                offsets=(start_m * BLOCK_M, 0),
-                block_shape=(BLOCK_M, QK_DIM),
-                order=(1, 0)
-            )
-            k_block_ptr = tl.make_block_ptr(
-                base=k_ptr + k_start * kv_head * QK_DIM + start_kvh * QK_DIM,
-                shape=(k_len, QK_DIM),
-                strides=(kv_head * QK_DIM, 1),
-                offsets=(begin, 0),
-                block_shape=(BLOCK_N, QK_DIM),
-                order=(1, 0)
-            )
-            v_block_ptr = tl.make_block_ptr(
-                base=v_ptr + k_start * kv_head * V_DIM + start_kvh * V_DIM,
-                shape=(V_DIM, k_len),
-                strides=(1, kv_head * V_DIM),
-                offsets=(0, begin),
-                block_shape=(V_DIM, BLOCK_N),
-                order=(0, 1)
-            )
-            dq_block_ptr = tl.make_block_ptr(
-                base=dq_ptr + q_start * q_head * QK_DIM + start_qh * QK_DIM,
-                shape=(q_len, QK_DIM),
-                strides=(q_head * QK_DIM, 1),
-                offsets=(start_m * BLOCK_M, 0),
-                block_shape=(BLOCK_M, QK_DIM),
-                order=(1, 0)
-            )
-            do_block_ptr = tl.make_block_ptr(
-                base=do_ptr + q_start * q_head * V_DIM + start_qh * V_DIM,
-                shape=(q_len, V_DIM),
-                strides=(q_head * V_DIM, 1),
-                offsets=(start_m * BLOCK_M, 0),
-                block_shape=(BLOCK_M, V_DIM),
-                order=(1, 0)
-            )
-            l_block_ptr = tl.make_block_ptr(
-                base=l_ptr + q_start * q_head + start_qh,
-                shape=(q_len,),
-                strides=(q_head,),
-                offsets=(start_m * BLOCK_M,),
-                block_shape=(BLOCK_M,),
-                order=(0,)
-            )
-            d_block_ptr = tl.make_block_ptr(
-                base=d_ptr + q_start * q_head + start_qh,
-                shape=(q_len,),
-                strides=(q_head,),
-                offsets=(start_m * BLOCK_M,),
-                block_shape=(BLOCK_M,),
-                order=(0,)
-            )
+            q_block_ptr = tl.make_block_ptr(base=q_ptr + q_start * q_head * QK_DIM + start_qh * QK_DIM,
+                                            shape=(q_len, QK_DIM), strides=(q_head * QK_DIM, 1),
+                                            offsets=(start_m * BLOCK_M, 0), block_shape=(BLOCK_M, QK_DIM), order=(1, 0))
+            k_block_ptr = tl.make_block_ptr(base=k_ptr + k_start * kv_head * QK_DIM + start_kvh * QK_DIM,
+                                            shape=(k_len, QK_DIM), strides=(kv_head * QK_DIM, 1), offsets=(begin, 0),
+                                            block_shape=(BLOCK_N, QK_DIM), order=(1, 0))
+            v_block_ptr = tl.make_block_ptr(base=v_ptr + k_start * kv_head * V_DIM + start_kvh * V_DIM,
+                                            shape=(V_DIM, k_len), strides=(1, kv_head * V_DIM), offsets=(0, begin),
+                                            block_shape=(V_DIM, BLOCK_N), order=(0, 1))
+            dq_block_ptr = tl.make_block_ptr(base=dq_ptr + q_start * q_head * QK_DIM + start_qh * QK_DIM,
+                                             shape=(q_len, QK_DIM), strides=(q_head * QK_DIM, 1),
+                                             offsets=(start_m * BLOCK_M, 0), block_shape=(BLOCK_M, QK_DIM),
+                                             order=(1, 0))
+            do_block_ptr = tl.make_block_ptr(base=do_ptr + q_start * q_head * V_DIM + start_qh * V_DIM,
+                                             shape=(q_len, V_DIM), strides=(q_head * V_DIM, 1),
+                                             offsets=(start_m * BLOCK_M, 0), block_shape=(BLOCK_M, V_DIM), order=(1, 0))
+            l_block_ptr = tl.make_block_ptr(base=l_ptr + q_start * q_head + start_qh, shape=(q_len, ),
+                                            strides=(q_head, ), offsets=(start_m * BLOCK_M, ), block_shape=(BLOCK_M, ),
+                                            order=(0, ))
+            d_block_ptr = tl.make_block_ptr(base=d_ptr + q_start * q_head + start_qh, shape=(q_len, ),
+                                            strides=(q_head, ), offsets=(start_m * BLOCK_M, ), block_shape=(BLOCK_M, ),
+                                            order=(0, ))
             # q_attn_arg_block_ptr = tl.make_block_ptr(
             #     base=q_attn_arg_ptr + q_start,
             #     shape=(q_len,),
@@ -810,14 +725,10 @@ def bwd_q_kernel(
             #     block_shape=(BLOCK_N,),
             #     order=(0,)
             # )
-            mask_block_ptr = tl.make_block_ptr(
-                base=mask_tensor_ptr + start_b * MAX_Q_LEN * MAX_K_LEN,
-                shape=(q_len, k_len),
-                strides=(MAX_K_LEN, 1),
-                offsets=(start_m * BLOCK_M, begin),
-                block_shape=(BLOCK_M, BLOCK_N),
-                order=(1, 0)
-            )
+            mask_block_ptr = tl.make_block_ptr(base=mask_tensor_ptr + start_b * MAX_Q_LEN * MAX_K_LEN,
+                                               shape=(q_len, k_len), strides=(MAX_K_LEN, 1),
+                                               offsets=(start_m * BLOCK_M, begin), block_shape=(BLOCK_M, BLOCK_N),
+                                               order=(1, 0))
 
             dq = tl.zeros((BLOCK_M, QK_DIM), dtype=tl.float32)
 
@@ -856,35 +767,42 @@ def bwd_q_kernel(
             store_if(dq_block_ptr, dq.to(dtype), False, True)
 
 
-@triton.autotune(
-    list(filter(keep, get_bwd_qkv_configs())),
-    key = ["QK_DIM", "V_DIM", "MASK_FN", "SPARSE_OPT"],
-    reset_to_zero = ["dq_ptr"]
-)
+@triton.autotune(list(filter(keep, get_bwd_qkv_configs())), key=["QK_DIM", "V_DIM", "MASK_FN", "SPARSE_OPT"],
+                 reset_to_zero=["dq_ptr"])
 @triton.jit
 def bwd_qkv_kernel(
-        q_ptr, k_ptr, v_ptr,
-        dq_ptr, dk_ptr, dv_ptr,
-        do_ptr, l_ptr, d_ptr,
-        q_attn_arg_ptr, k_attn_arg_ptr,
-        mask_tensor_ptr,
-        cu_seqlens_q, cu_seqlens_k,
-        batch_size,
-        max_q_len, max_k_len,
-        q_head, kv_head,
-        scale,
-        QK_DIM: tl.constexpr,
-        V_DIM: tl.constexpr,
-        MASK_FN: tl.constexpr,
-        SPARSE_OPT: tl.constexpr,
-        DTYPE: tl.constexpr,
-        NUM_CORES: tl.constexpr,
-        BLOCK_M: tl.constexpr,
-        BLOCK_N: tl.constexpr,
+    q_ptr,
+    k_ptr,
+    v_ptr,
+    dq_ptr,
+    dk_ptr,
+    dv_ptr,
+    do_ptr,
+    l_ptr,
+    d_ptr,
+    q_attn_arg_ptr,
+    k_attn_arg_ptr,
+    mask_tensor_ptr,
+    cu_seqlens_q,
+    cu_seqlens_k,
+    batch_size,
+    max_q_len,
+    max_k_len,
+    q_head,
+    kv_head,
+    scale,
+    QK_DIM: tl.constexpr,
+    V_DIM: tl.constexpr,
+    MASK_FN: tl.constexpr,
+    SPARSE_OPT: tl.constexpr,
+    DTYPE: tl.constexpr,
+    NUM_CORES: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
 ):
     dtype = k_ptr.type.element_ty
     pid = tl.program_id(0)
-    NUM_BLOCKS_N= tl.cdiv(max_k_len, BLOCK_N)
+    NUM_BLOCKS_N = tl.cdiv(max_k_len, BLOCK_N)
     NUM_BLOCKS = NUM_BLOCKS_N * q_head * batch_size
     start_block, end_block, step = pid, NUM_BLOCKS, NUM_CORES
     for block_idx in range(start_block, end_block, step):
@@ -918,70 +836,29 @@ def bwd_qkv_kernel(
 
             q_start = q_start1.to(tl.int64)
             k_start = k_start1.to(tl.int64)
-            q_block_ptr = tl.make_block_ptr(
-                base=q_ptr + q_start * q_head * QK_DIM + start_qh * QK_DIM,
-                shape=(q_len, QK_DIM),
-                strides=(q_head * QK_DIM, 1),
-                offsets=(begin, 0),
-                block_shape=(BLOCK_M, QK_DIM),
-                order=(1, 0)
-            )
-            k_block_ptr = tl.make_block_ptr(
-                base=k_ptr + k_start * kv_head * QK_DIM + start_kvh * QK_DIM,
-                shape=(QK_DIM, k_len),
-                strides=(1, kv_head * QK_DIM),
-                offsets=(0, start_n * BLOCK_N),
-                block_shape=(QK_DIM, BLOCK_N),
-                order=(0, 1)
-            )
-            v_block_ptr = tl.make_block_ptr(
-                base=v_ptr + k_start * kv_head * V_DIM + start_kvh * V_DIM,
-                shape=(V_DIM, k_len),
-                strides=(1, kv_head * V_DIM),
-                offsets=(0, start_n * BLOCK_N),
-                block_shape=(V_DIM, BLOCK_N),
-                order=(0, 1)
-            )
-            dk_block_ptr = tl.make_block_ptr(
-                base=dk_ptr + k_start * q_head * QK_DIM + start_qh * QK_DIM,
-                shape=(k_len, QK_DIM),
-                strides=(q_head * QK_DIM, 1),
-                offsets=(start_n * BLOCK_N, 0),
-                block_shape=(BLOCK_N, QK_DIM),
-                order=(1, 0)
-            )
-            dv_block_ptr = tl.make_block_ptr(
-                base=dv_ptr + k_start * q_head * V_DIM + start_qh * V_DIM,
-                shape=(k_len, V_DIM),
-                strides=(q_head * V_DIM, 1),
-                offsets=(start_n * BLOCK_N, 0),
-                block_shape=(BLOCK_N, V_DIM),
-                order=(1, 0)
-            )
-            do_block_ptr = tl.make_block_ptr(
-                base=do_ptr + q_start * q_head * V_DIM + start_qh * V_DIM,
-                shape=(q_len, V_DIM),
-                strides=(q_head * V_DIM, 1),
-                offsets=(begin, 0),
-                block_shape=(BLOCK_M, V_DIM),
-                order=(1, 0)
-            )
-            l_block_ptr = tl.make_block_ptr(
-                base=l_ptr + q_start * q_head + start_qh,
-                shape=(q_len,),
-                strides=(q_head,),
-                offsets=(begin,),
-                block_shape=(BLOCK_M,),
-                order=(0,)
-            )
-            d_block_ptr = tl.make_block_ptr(
-                base=d_ptr + q_start * q_head + start_qh,
-                shape=(q_len,),
-                strides=(q_head,),
-                offsets=(begin,),
-                block_shape=(BLOCK_M,),
-                order=(0,)
-            )
+            q_block_ptr = tl.make_block_ptr(base=q_ptr + q_start * q_head * QK_DIM + start_qh * QK_DIM,
+                                            shape=(q_len, QK_DIM), strides=(q_head * QK_DIM, 1), offsets=(begin, 0),
+                                            block_shape=(BLOCK_M, QK_DIM), order=(1, 0))
+            k_block_ptr = tl.make_block_ptr(base=k_ptr + k_start * kv_head * QK_DIM + start_kvh * QK_DIM,
+                                            shape=(QK_DIM, k_len), strides=(1, kv_head * QK_DIM),
+                                            offsets=(0, start_n * BLOCK_N), block_shape=(QK_DIM, BLOCK_N), order=(0, 1))
+            v_block_ptr = tl.make_block_ptr(base=v_ptr + k_start * kv_head * V_DIM + start_kvh * V_DIM,
+                                            shape=(V_DIM, k_len), strides=(1, kv_head * V_DIM),
+                                            offsets=(0, start_n * BLOCK_N), block_shape=(V_DIM, BLOCK_N), order=(0, 1))
+            dk_block_ptr = tl.make_block_ptr(base=dk_ptr + k_start * q_head * QK_DIM + start_qh * QK_DIM,
+                                             shape=(k_len, QK_DIM), strides=(q_head * QK_DIM, 1),
+                                             offsets=(start_n * BLOCK_N, 0), block_shape=(BLOCK_N, QK_DIM),
+                                             order=(1, 0))
+            dv_block_ptr = tl.make_block_ptr(base=dv_ptr + k_start * q_head * V_DIM + start_qh * V_DIM,
+                                             shape=(k_len, V_DIM), strides=(q_head * V_DIM, 1),
+                                             offsets=(start_n * BLOCK_N, 0), block_shape=(BLOCK_N, V_DIM), order=(1, 0))
+            do_block_ptr = tl.make_block_ptr(base=do_ptr + q_start * q_head * V_DIM + start_qh * V_DIM,
+                                             shape=(q_len, V_DIM), strides=(q_head * V_DIM, 1), offsets=(begin, 0),
+                                             block_shape=(BLOCK_M, V_DIM), order=(1, 0))
+            l_block_ptr = tl.make_block_ptr(base=l_ptr + q_start * q_head + start_qh, shape=(q_len, ),
+                                            strides=(q_head, ), offsets=(begin, ), block_shape=(BLOCK_M, ), order=(0, ))
+            d_block_ptr = tl.make_block_ptr(base=d_ptr + q_start * q_head + start_qh, shape=(q_len, ),
+                                            strides=(q_head, ), offsets=(begin, ), block_shape=(BLOCK_M, ), order=(0, ))
             # q_attn_arg_block_ptr = tl.make_block_ptr(
             #     base=q_attn_arg_ptr + q_start,
             #     shape=(q_len,),
@@ -999,14 +876,10 @@ def bwd_qkv_kernel(
             #     order=(0,)
             # )
 
-            mask_block_ptr = tl.make_block_ptr(
-                base=mask_tensor_ptr + start_b * max_q_len * max_k_len,
-                shape=(q_len, k_len),
-                strides=(max_k_len, 1),
-                offsets=(begin, start_n * BLOCK_N),
-                block_shape=(BLOCK_M, BLOCK_N),
-                order=(1, 0)
-            )
+            mask_block_ptr = tl.make_block_ptr(base=mask_tensor_ptr + start_b * max_q_len * max_k_len,
+                                               shape=(q_len, k_len), strides=(max_k_len, 1),
+                                               offsets=(begin, start_n * BLOCK_N), block_shape=(BLOCK_M, BLOCK_N),
+                                               order=(1, 0))
 
             dk = tl.zeros((BLOCK_N, QK_DIM), dtype=tl.float32)
             dv = tl.zeros((BLOCK_N, V_DIM), dtype=tl.float32)
@@ -1044,17 +917,14 @@ def bwd_qkv_kernel(
                     extension.compile_hint(ds, "break_vf")
                     dq = tl.dot(ds, tl.trans(k))
                     dq *= scale
-                    tl.atomic_add(
-                        dq_ptr + (dq_offs_base + row_offs[:, None] * q_head * QK_DIM + col_offs[None, :]),
-                        dq,
-                        mask=row_mask[:, None]
-                    )
+                    tl.atomic_add(dq_ptr + (dq_offs_base + row_offs[:, None] * q_head * QK_DIM + col_offs[None, :]), dq,
+                                  mask=row_mask[:, None])
                     # dk
                     dk += tl.dot(tl.trans(ds), q)
                 q_block_ptr = tl.advance(q_block_ptr, (BLOCK_M, 0))
                 do_block_ptr = tl.advance(do_block_ptr, (BLOCK_M, 0))
-                l_block_ptr = tl.advance(l_block_ptr, (BLOCK_M,))
-                d_block_ptr = tl.advance(d_block_ptr, (BLOCK_M,))
+                l_block_ptr = tl.advance(l_block_ptr, (BLOCK_M, ))
+                d_block_ptr = tl.advance(d_block_ptr, (BLOCK_M, ))
                 # q_attn_arg_block_ptr = tl.advance(q_attn_arg_block_ptr, (BLOCK_M,))
                 mask_block_ptr = tl.advance(mask_block_ptr, (BLOCK_M, 0))
 
@@ -1075,10 +945,10 @@ VECTOR_NUM = properties["num_vectorcore"]
 # q: [total_q_seq, head, dim]
 # k: [total_kv_seq, head, dim]
 class FlashAttentionFunc(torch.autograd.Function):
+
     @staticmethod
-    def forward(ctx, q, k, v, q_attn_arg, k_attn_arg,
-                mask_tensor, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, max_seqlen_k, scale,
-                mask_fn, sparse_opt, use_fused_bwd_qkv=True):
+    def forward(ctx, q, k, v, q_attn_arg, k_attn_arg, mask_tensor, cu_seqlens_q, cu_seqlens_k, max_seqlen_q,
+                max_seqlen_k, scale, mask_fn, sparse_opt, use_fused_bwd_qkv=True):
         q_len, q_head, qk_dim = q.shape
         k_len, kv_head, v_dim = v.shape
         batch_size = cu_seqlens_q.shape[0] - 1
@@ -1088,19 +958,27 @@ class FlashAttentionFunc(torch.autograd.Function):
         BLOCK_M = 64
         BLOCK_N = 64
         NUM_CORES = AICORE_NUM
-        grid = (NUM_CORES,)
+        grid = (NUM_CORES, )
         # The native workspace multibuffer option controls both CV unroll depth
         # and the number of physical CV workspace buffers.
         extra_kern_args = _experiment_compile_options()
-        if (extra_kern_args.get("cv_pipeline_mode") != "off"
-                and "set_workspace_multibuffer" not in extra_kern_args):
+        if (extra_kern_args.get("cv_pipeline_mode") != "off" and "set_workspace_multibuffer" not in extra_kern_args):
             extra_kern_args["set_workspace_multibuffer"] = 2
         extra_kern_args.setdefault("multibuffer", True)
         fwd_kernel[grid](
-            q, k, v, o, l,
-            q_attn_arg, k_attn_arg, mask_tensor,
-            cu_seqlens_q, cu_seqlens_k,
-            q_head, kv_head, scale,
+            q,
+            k,
+            v,
+            o,
+            l,
+            q_attn_arg,
+            k_attn_arg,
+            mask_tensor,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            q_head,
+            kv_head,
+            scale,
             QK_DIM=qk_dim,
             V_DIM=v_dim,
             MASK_FN=mask_fn,
@@ -1160,18 +1038,18 @@ class FlashAttentionFunc(torch.autograd.Function):
                 NUM_CORES = triton.cdiv(ctx.max_seqlen_q * ctx.batch_size, BLOCK_SIZE)
                 TASK_SIZE = BLOCK_SIZE
             NUM_BLOCKS = triton.cdiv(TASK_SIZE, BLOCK_SIZE)
-            bwd_preprocess_ifmn[(NUM_CORES,)](
-                o_ptr = o,
-                do_ptr = do,
-                d_ptr = d,
-                Q_HEAD_NUM = ctx.q_head,
-                V_DIM = ctx.v_dim,
-                DTYPE = ctx.dtype,
-                TASK_SIZE = TASK_SIZE,
-                NUM_BLOCKS = NUM_BLOCKS,
-                BLOCK_SIZE = BLOCK_SIZE,
-                multibuffer = True,
-                limit_auto_multi_buffer_of_local_buffer = "no-limit",
+            bwd_preprocess_ifmn[(NUM_CORES, )](
+                o_ptr=o,
+                do_ptr=do,
+                d_ptr=d,
+                Q_HEAD_NUM=ctx.q_head,
+                V_DIM=ctx.v_dim,
+                DTYPE=ctx.dtype,
+                TASK_SIZE=TASK_SIZE,
+                NUM_BLOCKS=NUM_BLOCKS,
+                BLOCK_SIZE=BLOCK_SIZE,
+                multibuffer=True,
+                limit_auto_multi_buffer_of_local_buffer="no-limit",
             )
         else:  # 不等长场景
             if ctx.v_dim > 64:
@@ -1181,12 +1059,14 @@ class FlashAttentionFunc(torch.autograd.Function):
             NUM_CORES = VECTOR_NUM
             NUM_BLOCKS_M = triton.cdiv(ctx.max_seqlen_q, BLOCK_M)
             NUM_BLOCKS = NUM_BLOCKS_M * ctx.q_head * ctx.batch_size
-            bwd_preprocess[(NUM_CORES,)](
-                o, do, d,
+            bwd_preprocess[(NUM_CORES, )](
+                o,
+                do,
+                d,
                 cu_seqlens_q,
                 ctx.q_head,
-                V_DIM = ctx.v_dim,
-                DTYPE = ctx.dtype,
+                V_DIM=ctx.v_dim,
+                DTYPE=ctx.dtype,
                 # inject_barrier_all=True,
                 limit_auto_multi_buffer_of_local_buffer="no-limit",
                 enable_flatten=False,
@@ -1199,16 +1079,26 @@ class FlashAttentionFunc(torch.autograd.Function):
 
         if use_fused_bwd_qkv:
             NUM_CORES = AICORE_NUM
-            bwd_qkv_kernel[(NUM_CORES,)](
-                q, k, v,
-                dq, dk, dv,
-                do, l, d,
-                q_attn_arg, k_attn_arg,
+            bwd_qkv_kernel[(NUM_CORES, )](
+                q,
+                k,
+                v,
+                dq,
+                dk,
+                dv,
+                do,
+                l,
+                d,
+                q_attn_arg,
+                k_attn_arg,
                 mask_tensor,
-                cu_seqlens_q, cu_seqlens_k,
+                cu_seqlens_q,
+                cu_seqlens_k,
                 ctx.batch_size,
-                ctx.max_seqlen_q, ctx.max_seqlen_k,
-                ctx.q_head, ctx.kv_head,
+                ctx.max_seqlen_q,
+                ctx.max_seqlen_k,
+                ctx.q_head,
+                ctx.kv_head,
                 ctx.scale,
                 QK_DIM=ctx.qk_dim,
                 V_DIM=ctx.v_dim,
@@ -1227,13 +1117,25 @@ class FlashAttentionFunc(torch.autograd.Function):
             BLOCK_M = 128
             BLOCK_N = 128
             NUM_CORES = AICORE_NUM
-            NUM_BLOCKS_N= triton.cdiv(ctx.max_seqlen_k, BLOCK_N)
+            NUM_BLOCKS_N = triton.cdiv(ctx.max_seqlen_k, BLOCK_N)
             NUM_BLOCKS = NUM_BLOCKS_N * ctx.q_head * ctx.batch_size
-            bwd_kv_kernel[(NUM_CORES,)](
-                q, k, v, dk, dv, do, l, d,
-                q_attn_arg, k_attn_arg, mask_tensor,
-                cu_seqlens_q, cu_seqlens_k,
-                ctx.q_head, ctx.kv_head, ctx.scale,
+            bwd_kv_kernel[(NUM_CORES, )](
+                q,
+                k,
+                v,
+                dk,
+                dv,
+                do,
+                l,
+                d,
+                q_attn_arg,
+                k_attn_arg,
+                mask_tensor,
+                cu_seqlens_q,
+                cu_seqlens_k,
+                ctx.q_head,
+                ctx.kv_head,
+                ctx.scale,
                 QK_DIM=ctx.qk_dim,
                 V_DIM=ctx.v_dim,
                 MASK_FN=ctx.mask_fn,
@@ -1258,33 +1160,18 @@ class FlashAttentionFunc(torch.autograd.Function):
             NUM_CORES = AICORE_NUM
             NUM_BLOCKS_M = triton.cdiv(ctx.max_seqlen_q, BLOCK_M)
             NUM_BLOCKS = NUM_BLOCKS_M * ctx.q_head * ctx.batch_size
-            bwd_q_kernel[(NUM_CORES,)](
-                q, k, v, dq, do, l, d,
-                q_attn_arg, k_attn_arg, mask_tensor,
-                cu_seqlens_q, cu_seqlens_k,
-                ctx.q_head, ctx.kv_head, ctx.scale,
-                QK_DIM=ctx.qk_dim,
-                V_DIM=ctx.v_dim,
-                MASK_FN=ctx.mask_fn,
-                SPARSE_OPT=ctx.sparse_opt,
-                DTYPE=ctx.dtype,
-                BLOCK_M=BLOCK_M,
-                BLOCK_N=BLOCK_N,
-                NUM_BLOCKS_M=NUM_BLOCKS_M,
-                NUM_BLOCKS=NUM_BLOCKS,
-                NUM_CORES=NUM_CORES,
-                MAX_Q_LEN=ctx.max_seqlen_q,
-                MAX_K_LEN=ctx.max_seqlen_k,
-                limit_auto_multi_buffer_of_local_buffer="no-limit",
-                enable_flatten=False,
-                sync_solver=True,
-                enable_mixed_cv=True
-            )
+            bwd_q_kernel[(NUM_CORES, )](q, k, v, dq, do, l, d, q_attn_arg, k_attn_arg, mask_tensor, cu_seqlens_q,
+                                        cu_seqlens_k, ctx.q_head, ctx.kv_head, ctx.scale, QK_DIM=ctx.qk_dim,
+                                        V_DIM=ctx.v_dim, MASK_FN=ctx.mask_fn, SPARSE_OPT=ctx.sparse_opt,
+                                        DTYPE=ctx.dtype, BLOCK_M=BLOCK_M, BLOCK_N=BLOCK_N, NUM_BLOCKS_M=NUM_BLOCKS_M,
+                                        NUM_BLOCKS=NUM_BLOCKS, NUM_CORES=NUM_CORES, MAX_Q_LEN=ctx.max_seqlen_q,
+                                        MAX_K_LEN=ctx.max_seqlen_k, limit_auto_multi_buffer_of_local_buffer="no-limit",
+                                        enable_flatten=False, sync_solver=True, enable_mixed_cv=True)
         head_group = ctx.q_head // ctx.kv_head
         if head_group > 1:
             dk = dk.reshape(ctx.k_len, ctx.kv_head, head_group, ctx.qk_dim).sum(2)
             dv = dv.reshape(ctx.k_len, ctx.kv_head, head_group, ctx.v_dim).sum(2)
-        return (dq, dk, dv) + (None,) * 11
+        return (dq, dk, dv) + (None, ) * 11
 
 
 import torch_npu
@@ -1309,18 +1196,18 @@ def generate_mask_fn(q_seq_list, k_seq_list, bs, max_q_len, max_k_len, q_attn_ar
                 cur_start_k = block_n_i * BLOCK_N
                 cur_end_k = min(cur_start_k + BLOCK_N, cur_k_len)
                 k_offset = range(cur_start_k, cur_end_k)
-                cur_k_attn_args = k_attn_arg[cur_start_k: cur_end_k]
+                cur_k_attn_args = k_attn_arg[cur_start_k:cur_end_k]
 
                 # triu_causal = (q_offset[:, None] <= k_offset[None, :])
                 triu_causal = (torch.tensor(list(q_offset))[:, None] <= torch.tensor(list(k_offset))[None, :])
-                attn_args_mask = (cur_q_attn_args[:, None] == cur_k_attn_args[None, :]) | (
-                            cur_k_attn_args[None, :] == 0)
+                attn_args_mask = (cur_q_attn_args[:, None] == cur_k_attn_args[None, :]) | (cur_k_attn_args[None, :]
+                                                                                           == 0)
                 q_offset_mask = (torch.tensor(list(q_offset))[:, None] == torch.tensor(list(k_offset))[None, :])
                 # print(f"{triu_causal.shape=}, {triu_causal=}, {attn_args_mask.shape=}, {attn_args_mask=}, {q_offset_mask.shape=}, {q_offset_mask=}")
                 result_mask = ((triu_causal.bool() & attn_args_mask.bool()) | q_offset_mask.bool()).to(torch.bool)
                 # print(f"{b_i=}, {block_m_i=}, {block_n_i=}, {result_mask.shape=}")
 
-                mask_fn[b_i, cur_start_q: cur_end_q, cur_start_k: cur_end_k] = result_mask
+                mask_fn[b_i, cur_start_q:cur_end_q, cur_start_k:cur_end_k] = result_mask
         b_k_offset += cur_k_len
         b_q_offset += cur_q_len
     return mask_fn
@@ -1366,16 +1253,14 @@ def generate_mask_fn_vectorized(q_seq_list, k_seq_list, bs, max_q_len, max_k_len
     return mask_fn
 
 
-def flash_attention_forward(q, k, v, q_attn_arg, k_attn_arg, mask_tensor,
-                            cu_seqlens_q, cu_seqlens_k, max_seqlen_q,
+def flash_attention_forward(q, k, v, q_attn_arg, k_attn_arg, mask_tensor, cu_seqlens_q, cu_seqlens_k, max_seqlen_q,
                             max_seqlen_k, scale):
     """Forward-only entry point used by the correctness check and benchmark."""
-    return FlashAttentionFunc.apply(
-        q, k, v, q_attn_arg, k_attn_arg, mask_tensor,
-        cu_seqlens_q, cu_seqlens_k, max_seqlen_q, max_seqlen_k, scale,
-        1,      # mask_fn (triu causal, driven entirely by mask_tensor)
-        False,  # sparse_opt
-    )
+    return FlashAttentionFunc.apply(q, k, v, q_attn_arg, k_attn_arg, mask_tensor, cu_seqlens_q, cu_seqlens_k,
+                                    max_seqlen_q, max_seqlen_k, scale,
+                                    1,  # mask_fn (triu causal, driven entirely by mask_tensor)
+                                    False,  # sparse_opt
+                                    )
 
 
 def reference_attention(q, k, v, mask_tensor, cu_seqlens_q, cu_seqlens_k, bs, scale):
@@ -1393,7 +1278,7 @@ def reference_attention(q, k, v, mask_tensor, cu_seqlens_q, cu_seqlens_k, bs, sc
         qb = q[qs:qe].float()
         kb = k[ks:ke].float()
         vb = v[ks:ke].float()
-        mb = mask_tensor[b, : qe - qs, : ke - ks]
+        mb = mask_tensor[b, :qe - qs, :ke - ks]
         # q_head == kv_head here, so query head h reads key/value head h.
         s = torch.einsum("qhd,khd->qhk", qb, kb) * scale
         s = s.masked_fill(~mb.unsqueeze(1), float("-inf"))
@@ -1415,7 +1300,7 @@ def _make_flash_attention_inputs(seed=0):
     k_len = sum(k_seq_list)
     max_seqlen_q = max(q_seq_list)
     max_seqlen_k = max(k_seq_list)
-    scale = 1.0 / (head_dim ** 0.5)
+    scale = 1.0 / (head_dim**0.5)
 
     q = torch.randn(q_len, q_head, head_dim, dtype=dtype, device="npu")
     k = torch.randn(k_len, kv_head, head_dim, dtype=dtype, device="npu")
@@ -1426,8 +1311,13 @@ def _make_flash_attention_inputs(seed=0):
     cu_seqlens_q = torch.tensor([0] + q_seq_list, dtype=torch.int32).cumsum(0).to(torch.int32)
     cu_seqlens_k = torch.tensor([0] + k_seq_list, dtype=torch.int32).cumsum(0).to(torch.int32)
     mask_tensor = generate_mask_fn_vectorized(
-        q_seq_list, k_seq_list, bs, max_seqlen_q, max_seqlen_k,
-        q_attn_arg, k_attn_arg,
+        q_seq_list,
+        k_seq_list,
+        bs,
+        max_seqlen_q,
+        max_seqlen_k,
+        q_attn_arg,
+        k_attn_arg,
     )
     return {
         "q": q,
@@ -1451,18 +1341,31 @@ def test_flash_attention_fwd():
     print("[EXPERIMENT] CASE_STAGE=correctness_inputs_done", flush=True)
     print("[EXPERIMENT] CASE_STAGE=correctness_kernel_launch_start", flush=True)
     out = flash_attention_forward(
-        data["q"], data["k"], data["v"],
-        data["q_attn_arg"], data["k_attn_arg"], data["mask_tensor"],
-        data["cu_seqlens_q"], data["cu_seqlens_k"],
-        data["max_seqlen_q"], data["max_seqlen_k"], data["scale"],
+        data["q"],
+        data["k"],
+        data["v"],
+        data["q_attn_arg"],
+        data["k_attn_arg"],
+        data["mask_tensor"],
+        data["cu_seqlens_q"],
+        data["cu_seqlens_k"],
+        data["max_seqlen_q"],
+        data["max_seqlen_k"],
+        data["scale"],
     )
     print("[EXPERIMENT] CASE_STAGE=correctness_kernel_launch_returned", flush=True)
     torch.npu.synchronize()
     print("[EXPERIMENT] CASE_STAGE=correctness_kernel_sync_done", flush=True)
     print("[EXPERIMENT] CASE_STAGE=correctness_reference_start", flush=True)
     ref = reference_attention(
-        data["q"], data["k"], data["v"], data["mask_tensor"],
-        data["cu_seqlens_q"], data["cu_seqlens_k"], data["bs"], data["scale"],
+        data["q"],
+        data["k"],
+        data["v"],
+        data["mask_tensor"],
+        data["cu_seqlens_q"],
+        data["cu_seqlens_k"],
+        data["bs"],
+        data["scale"],
     )
     torch.npu.synchronize()
     print("[EXPERIMENT] CASE_STAGE=correctness_reference_done", flush=True)
@@ -1473,10 +1376,17 @@ def test_flash_attention_fwd():
 def benchmark_flash_attention(warmup=5, active=30):
     data = _make_flash_attention_inputs(seed=0)
     fn = lambda: flash_attention_forward(
-        data["q"], data["k"], data["v"],
-        data["q_attn_arg"], data["k_attn_arg"], data["mask_tensor"],
-        data["cu_seqlens_q"], data["cu_seqlens_k"],
-        data["max_seqlen_q"], data["max_seqlen_k"], data["scale"],
+        data["q"],
+        data["k"],
+        data["v"],
+        data["q_attn_arg"],
+        data["k_attn_arg"],
+        data["mask_tensor"],
+        data["cu_seqlens_q"],
+        data["cu_seqlens_k"],
+        data["max_seqlen_q"],
+        data["max_seqlen_k"],
+        data["scale"],
     )
     fn()
     torch.npu.synchronize()
@@ -1492,20 +1402,21 @@ def benchmark_flash_attention(warmup=5, active=30):
 
 
 if __name__ == "__main__":
-    print("[EXPERIMENT] operator_parameters=" + json.dumps({
-        "batch_size": 2,
-        "q_heads": 4,
-        "kv_heads": 4,
-        "q_sequence_lengths": [1024, 1024],
-        "k_sequence_lengths": [1024, 1024],
-        "head_dim": 64,
-        "dtype": "bfloat16",
-        "block_m": 64,
-        "block_n": 64,
-        "mask_fn": 1,
-        "sparse_opt": False,
-        "direction": "forward",
-    }, sort_keys=True))
+    print("[EXPERIMENT] operator_parameters=" + json.dumps(
+        {
+            "batch_size": 2,
+            "q_heads": 4,
+            "kv_heads": 4,
+            "q_sequence_lengths": [1024, 1024],
+            "k_sequence_lengths": [1024, 1024],
+            "head_dim": 64,
+            "dtype": "bfloat16",
+            "block_m": 64,
+            "block_n": 64,
+            "mask_fn": 1,
+            "sparse_opt": False,
+            "direction": "forward",
+        }, sort_keys=True))
     print("[EXPERIMENT] CASE_STAGE=correctness_start", flush=True)
     test_flash_attention_fwd()
     print("======Flash Attention NPU V8 Test Passed!======")
