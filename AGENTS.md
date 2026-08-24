@@ -202,7 +202,7 @@ The independent variables are:
 
 | Public experiment name | Requested values | Intended compiler control |
 | --- | --- | --- |
-| A3: `depth`; A5: DynamicCV state plus `intra_cache_num` | A3 `1, 2, 3, 4`; A5 `off`, then `1, 2, 3, 4` | A3 uses native static CV workspace/depth with DynamicCV disabled; A5 first runs a disabled baseline with static depth 1, then enables DynamicCV and varies its intra-cache count while fixing inter/load to 1 |
+| A3: `depth`; A5: DynamicCV state plus `buf_slot_num_of_veccore` | A3 `1, 2, 3, 4`; A5 `off`, then `1, 2, 3, 4` | A3 uses native static CV workspace/depth with DynamicCV disabled; A5 first runs a disabled baseline with static depth 1, then enables DynamicCV and varies its Vector Core buffer slots while fixing cross-core/GM slots to 1 |
 | ordinary MultiBuffer state plus `multibuffer_num` | `off`, then `1, 2, 3, 4` | `off` sets `NPUOptions.multibuffer=False`; numeric values enable the pass, replace the ordinary local `MarkMultiBuffer` default through `--set-local-multibuffer`, and set the MIX strategy to `no-limit` |
 | `vf_merge_level` | `0, 1, 2` | existing `NPUOptions.vf_merge_level` and `--enable-vf-merge-level` |
 
@@ -235,7 +235,9 @@ usage; never keep only the fastest configuration.
   `set_workspace_multibuffer` value and DynamicCV is disabled. On A5, `off`
   disables DynamicCV with static workspace depth 1; numeric first-axis values
   enable DynamicCV, set static workspace multibuffer to zero, and use the value
-  as `intra_cache_num`, with `inter_cache_num` plus `load_cache_num` fixed to 1.
+  as `buf_slot_num_of_veccore`, with `buf_slot_num_of_crosscore` plus `buf_slot_num_of_gm` fixed to 1.
+  HIVM UnitFlag synchronization is explicitly fixed off for every operator;
+  it is not an experiment axis and must not inherit the A5 compiler default.
   DynamicCV fallback resolves the metadata switch to false and is rejected as
   unsupported rather than mixed into measurements.
 - DynamicCV return code 2 is `ERRCODE_IGNORED`, meaning the pass is not
@@ -287,8 +289,8 @@ usage; never keep only the fastest configuration.
   currently classified as dynamically insensitive rather than proof that every
   optimization changes generated code.
 - `experiment_operators/run_sweep.py` is the standalone step-4 controller. A3
-  uses schema `native-cv-depth+no-dynamic-cv+local-multibuffer-off-v6`;
-  A5 uses `dynamic-cv-and-local-multibuffer-off-v4`.
+  uses schema `native-cv-depth+no-dynamic-cv+local-multibuffer-off-v7`;
+  A5 uses `dynamic-cv-slots+local-multibuffer-off+unit-flag-off-v5`.
   All three axis value lists and the benchmark/timeout policy live only in
   `experiment_operators/experiment_config.py`. Disabled values run first. The
   ordinary MIX strategy is `no-limit` only for numeric MultiBuffer values. The
@@ -440,8 +442,9 @@ JIT compilation but assert and record the TTIR hash for every candidate.
 
 On A3, pass `depth` through `NPUOptions.set_workspace_multibuffer` and disable
 DynamicCV. On A5, include a DynamicCV-disabled `off` control, then enable
-DynamicCV for numeric `NPUOptions.intra_cache_num` values, fix
-`inter_cache_num=1` and `load_cache_num=1`, and leave static workspace
+DynamicCV for numeric `NPUOptions.buf_slot_num_of_veccore` values, fix
+`buf_slot_num_of_crosscore=1` and `buf_slot_num_of_gm=1`, explicitly set
+`NPUOptions.unit_flag=False`, and leave static workspace
 multibuffer at zero for enabled rows. Retain the validated
 `NPUOptions.multibuffer_num`, propagate it through
 `third_party/ascend/backend/compiler.py` as `--set-local-multibuffer`, then into
@@ -452,7 +455,7 @@ value to `MarkMultiBufferOptions.localMultiBufferNum`.
 The resulting controls must obey these boundaries:
 
 - on A3, `depth` controls both CV schedule/unroll depth and CV physical-buffer count;
-- on A5, `off` disables DynamicCV; numeric `intra_cache_num` values enable it and inter/load counts stay fixed at 1;
+- on A5, `off` disables DynamicCV; numeric `buf_slot_num_of_veccore` values enable it and cross-core/GM slot counts stay fixed at 1;
 - ordinary MultiBuffer `off` sets `NPUOptions.multibuffer=False`, omits the explicit local count, and does not force the MIX strategy;
 - `multibuffer_num` replaces only the ordinary local default 2 used for
   HFusion estimation and automatically marked Load/Store/ND2NZ/Fixpipe

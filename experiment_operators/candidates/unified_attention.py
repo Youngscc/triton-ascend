@@ -25,14 +25,17 @@ NUM_BLOCKS = [32768, 2048]
 
 def _experiment_compile_options():
     dynamic = os.getenv("EXPERIMENT_DYNAMIC_CV", "0") == "1"
-    options = {"enable_dynamic_cv_pipeline": dynamic}
+    options = {
+        "enable_dynamic_cv_pipeline": dynamic,
+        "unit_flag": os.getenv("EXPERIMENT_HIVM_UNIT_FLAG_SYNC", "0") == "1",
+    }
     if dynamic:
         options["set_workspace_multibuffer"] = 0
-        options["inter_cache_num"] = 1
-        options["load_cache_num"] = 1
-        intra = os.getenv("EXPERIMENT_INTRA_CACHE_NUM")
-        if intra is not None:
-            options["intra_cache_num"] = int(intra)
+        options["buf_slot_num_of_crosscore"] = 1
+        options["buf_slot_num_of_gm"] = 1
+        vec_slots = os.getenv("EXPERIMENT_BUF_SLOT_NUM_OF_VECCORE")
+        if vec_slots is not None:
+            options["buf_slot_num_of_veccore"] = int(vec_slots)
     else:
         depth = os.getenv("EXPERIMENT_DEPTH")
         if depth is not None:

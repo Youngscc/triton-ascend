@@ -8,12 +8,13 @@ Edit `experiment_config.py` before a full run:
 
 ```python
 A3_DEPTH_VALUES = (1, 2, 3, 4)
-A5_INTRA_CACHE_NUM_VALUES = ("off", 1, 2, 3, 4)
+A5_BUF_SLOT_NUM_OF_VECCORE_VALUES = ("off", 1, 2, 3, 4)
 MULTIBUFFER_NUM_VALUES = ("off", 1, 2, 3, 4)
 VF_MERGE_LEVEL_VALUES = (0, 1)
+HIVM_UNIT_FLAG_SYNC = False
 ```
 
-On A3, the first axis is static CV `depth` and DynamicCV is always disabled. On A5, `"off"` disables DynamicCV and numeric values enable it with that `intra_cache_num`; the A5 inter/load cache counts remain fixed at 1. For the second axis, `"off"` passes `multibuffer=False` and omits the explicit local count, while `1` keeps the pass enabled with one buffer. `vf_merge_level=0` disables VF merge.
+On A3, the first axis is static CV `depth` and DynamicCV is always disabled. On A5, `"off"` disables DynamicCV and numeric values enable it with that `buf_slot_num_of_veccore`; `buf_slot_num_of_crosscore` and `buf_slot_num_of_gm` remain fixed at 1. For the second axis, `"off"` passes `multibuffer=False` and omits the explicit local count, while `1` keeps the pass enabled with one buffer. `vf_merge_level=0` disables VF merge. UnitFlag synchronization is not an experiment axis and is explicitly disabled for every operator.
 
 The default order runs disabled states first. It produces 40 A3 rows and 50 A5 rows.
 

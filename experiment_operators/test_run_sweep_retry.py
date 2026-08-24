@@ -91,7 +91,7 @@ class SweepRetryTest(unittest.TestCase):
     def settings(self, root: Path, retries: int) -> ExitStack:
         stack = ExitStack()
         stack.enter_context(patch.object(experiment_config, "A3_DEPTH_VALUES", (1, )))
-        stack.enter_context(patch.object(experiment_config, "A5_INTRA_CACHE_NUM_VALUES", ("off", 1)))
+        stack.enter_context(patch.object(experiment_config, "A5_BUF_SLOT_NUM_OF_VECCORE_VALUES", ("off", 1)))
         stack.enter_context(patch.object(experiment_config, "MULTIBUFFER_NUM_VALUES", (1, )))
         stack.enter_context(patch.object(experiment_config, "VF_MERGE_LEVEL_VALUES", (0, 1)))
         stack.enter_context(patch.object(experiment_config, "WARMUP", 1))
@@ -134,13 +134,14 @@ class SweepRetryTest(unittest.TestCase):
         self.assertEqual(environment["EXPERIMENT_DYNAMIC_CV"], "0")
         self.assertEqual(environment["EXPERIMENT_DEPTH"], "1")
         self.assertEqual(environment["EXPERIMENT_MULTIBUFFER"], "0")
-        self.assertNotIn("EXPERIMENT_INTRA_CACHE_NUM", environment)
+        self.assertEqual(environment["EXPERIMENT_HIVM_UNIT_FLAG_SYNC"], "0")
+        self.assertNotIn("EXPERIMENT_BUF_SLOT_NUM_OF_VECCORE", environment)
         self.assertNotIn("EXPERIMENT_MULTIBUFFER_NUM", environment)
 
         enabled = run_sweep.parse_manual_config("2", "3", "1", True)
         environment = run_sweep.candidate_environment(enabled, True)
         self.assertEqual(environment["EXPERIMENT_DYNAMIC_CV"], "1")
-        self.assertEqual(environment["EXPERIMENT_INTRA_CACHE_NUM"], "2")
+        self.assertEqual(environment["EXPERIMENT_BUF_SLOT_NUM_OF_VECCORE"], "2")
         self.assertEqual(environment["EXPERIMENT_MULTIBUFFER"], "1")
         self.assertEqual(environment["EXPERIMENT_MULTIBUFFER_NUM"], "3")
 
@@ -163,19 +164,24 @@ class SweepRetryTest(unittest.TestCase):
                     }, clear=True):
                 options = compile_options()
                 self.assertFalse(options["enable_dynamic_cv_pipeline"])
+                self.assertFalse(options["unit_flag"])
                 self.assertFalse(options["multibuffer"])
                 self.assertNotIn("multibuffer_num", options)
 
             with self.subTest(candidate=name), patch.dict(
                     os.environ, {
                         "EXPERIMENT_DYNAMIC_CV": "1",
-                        "EXPERIMENT_INTRA_CACHE_NUM": "2",
+                        "EXPERIMENT_BUF_SLOT_NUM_OF_VECCORE": "2",
                         "EXPERIMENT_MULTIBUFFER": "1",
                         "EXPERIMENT_MULTIBUFFER_NUM": "3",
                         "EXPERIMENT_VF_MERGE_LEVEL": "1",
                     }, clear=True):
                 options = compile_options()
                 self.assertTrue(options["enable_dynamic_cv_pipeline"])
+                self.assertFalse(options["unit_flag"])
+                self.assertEqual(options["buf_slot_num_of_veccore"], 2)
+                self.assertEqual(options["buf_slot_num_of_crosscore"], 1)
+                self.assertEqual(options["buf_slot_num_of_gm"], 1)
                 self.assertTrue(options["multibuffer"])
                 self.assertEqual(options["multibuffer_num"], 3)
 

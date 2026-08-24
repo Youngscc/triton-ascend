@@ -14,7 +14,7 @@ Usage:
 
 The first form runs the complete experiment defined in experiment_config.py.
 The second reruns one row in the latest complete result. On A5, FIRST_AXIS may
-be "off" for the DynamicCV-disabled baseline or an intra_cache_num value.
+be "off" for the DynamicCV-disabled baseline or a buf_slot_num_of_veccore value.
 MULTIBUFFER may be "off" to disable ordinary Auto MultiBuffer, or a count.
 EOF
 }

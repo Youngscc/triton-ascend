@@ -259,7 +259,7 @@
       const report = JSON.parse(document.getElementById("experiment-data").textContent);
       const axes = {
         depth: { label: "CV depth", short: "depth" },
-        intra_cache_num: { label: "DynamicCV off / intra cache 数量", short: "DynamicCV" },
+        buf_slot_num_of_veccore: { label: "DynamicCV 关闭 / Vector Core buffer slot 数", short: "DynamicCV" },
         multibuffer_num: { label: "普通 multibuffer off / 数量", short: "multibuffer" },
         vf_merge_level: { label: "VF merge level", short: "merge" }
       };

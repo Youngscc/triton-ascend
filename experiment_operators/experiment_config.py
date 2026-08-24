@@ -8,8 +8,8 @@ selects an operator or one existing case to rerun.
 A3_DEPTH_VALUES = (1, 2, 3, 4)
 
 # A5 uses "off" for a real DynamicCV-disabled baseline. Numeric values enable
-# DynamicCV and select intra_cache_num.
-A5_INTRA_CACHE_NUM_VALUES = ("off", 1, 2, 3, 4)
+# DynamicCV and select buf_slot_num_of_veccore.
+A5_BUF_SLOT_NUM_OF_VECCORE_VALUES = ("off", 1, 2, 3, 4)
 
 # "off" passes multibuffer=False and omits set-local-multibuffer. Numeric
 # values enable ordinary local multibuffering with that explicit count.
@@ -18,6 +18,11 @@ MULTIBUFFER_NUM_VALUES = ("off", 1, 2, 3, 4)
 # Level 2 remains excluded because it currently produces invalid HIVM IR in
 # part of the operator corpus. Add 2 here when that compiler issue is fixed.
 VF_MERGE_LEVEL_VALUES = (0, 1)
+
+# UnitFlag changes the implementation of HIVM synchronization and is not an
+# experiment axis. Keep it explicitly disabled for every operator so compiler
+# default changes cannot alter the sweep.
+HIVM_UNIT_FLAG_SYNC = False
 
 # Every successful configuration uses the same benchmark policy.
 WARMUP = 5

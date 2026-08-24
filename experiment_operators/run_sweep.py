@@ -36,8 +36,8 @@ DOMINANCE_ERROR_RE = re.compile(
 OPERATOR_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 SOURCE_BENCHMARK_OPERATOR_RE = re.compile(r"BENCHMARK\s+operator=([A-Za-z0-9][A-Za-z0-9_.-]*)")
 OPERATOR_ALIASES = {"hstu_attention_fwd": "hstu_attention"}
-A3_EXPERIMENT_SCHEMA = ("native-cv-depth+no-dynamic-cv+local-multibuffer-off-v6")
-A5_EXPERIMENT_SCHEMA = ("dynamic-cv-and-local-multibuffer-off-v4")
+A3_EXPERIMENT_SCHEMA = ("native-cv-depth+no-dynamic-cv+local-multibuffer-off-v7")
+A5_EXPERIMENT_SCHEMA = ("dynamic-cv-slots+local-multibuffer-off+unit-flag-off-v5")
 OFF = "off"
 RESULTS_CSV_SUFFIX_FIELDS = [
     "序号",
@@ -96,8 +96,8 @@ def validate_axis(name: str, values, minimum: int, *, allow_off: bool = False) -
 def configured_values(is_a5: bool) -> tuple[tuple[int | str, ...], tuple[int | str, ...], tuple[int, ...]]:
     if is_a5:
         first = validate_axis(
-            "A5_INTRA_CACHE_NUM_VALUES",
-            experiment.A5_INTRA_CACHE_NUM_VALUES,
+            "A5_BUF_SLOT_NUM_OF_VECCORE_VALUES",
+            experiment.A5_BUF_SLOT_NUM_OF_VECCORE_VALUES,
             1,
             allow_off=True,
         )
@@ -119,6 +119,8 @@ def configured_values(is_a5: bool) -> tuple[tuple[int | str, ...], tuple[int | s
     if (isinstance(experiment.TIMEOUT_RETRIES, bool) or not isinstance(experiment.TIMEOUT_RETRIES, int)
             or experiment.TIMEOUT_RETRIES < 0):
         raise SystemExit("TIMEOUT_RETRIES must be a non-negative integer")
+    if experiment.HIVM_UNIT_FLAG_SYNC is not False:
+        raise SystemExit("HIVM_UNIT_FLAG_SYNC must remain False for this experiment")
     return first, multibuffer, vf_merge
 
 
@@ -142,7 +144,7 @@ def config_key(config: SweepConfig, is_a5: bool) -> str:
     if is_a5 and not config.dynamic_cv_pipeline:
         return f"dynoff-b{multibuffer}-m{config.vf_merge_level}"
     if is_a5:
-        return (f"dynon-i{config.pipeline_value}-b{multibuffer}"
+        return (f"dynon-v{config.pipeline_value}-b{multibuffer}"
                 f"-m{config.vf_merge_level}")
     return (f"d{config.pipeline_value}-b{multibuffer}"
             f"-m{config.vf_merge_level}")
@@ -307,17 +309,18 @@ def matching_metadata(
         "multibuffer": config.auto_multibuffer,
         "multibuffer_num": config.multibuffer_num,
         "vf_merge_level": config.vf_merge_level,
+        "unit_flag": experiment.HIVM_UNIT_FLAG_SYNC,
         "limit_auto_multi_buffer_buffer": ("no-limit" if config.auto_multibuffer else None),
     }
-    if pipeline_axis == "intra_cache_num" and config.dynamic_cv_pipeline:
+    if pipeline_axis == "buf_slot_num_of_veccore" and config.dynamic_cv_pipeline:
         expected.update({
             "enable_dynamic_cv_pipeline": True,
-            "intra_cache_num": config.pipeline_value,
-            "inter_cache_num": 1,
-            "load_cache_num": 1,
+            "buf_slot_num_of_veccore": config.pipeline_value,
+            "buf_slot_num_of_crosscore": 1,
+            "buf_slot_num_of_gm": 1,
             "set_workspace_multibuffer": 0,
         })
-    elif pipeline_axis == "intra_cache_num":
+    elif pipeline_axis == "buf_slot_num_of_veccore":
         expected.update({
             "enable_dynamic_cv_pipeline": False,
             "set_workspace_multibuffer": 1,
@@ -483,7 +486,7 @@ def write_results(rows: list[dict], result_dir: Path, pipeline_axis: str) -> Pat
         writer.writeheader()
         for number, row in enumerate(rows, 1):
             pipeline_value = row.get(pipeline_axis)
-            if pipeline_axis == "intra_cache_num" and not row.get("enable_dynamic_cv_pipeline", False):
+            if pipeline_axis == "buf_slot_num_of_veccore" and not row.get("enable_dynamic_cv_pipeline", False):
                 pipeline_value = OFF
             writer.writerow({
                 "序号": number,
@@ -549,6 +552,7 @@ def requested_parameters(
         "multibuffer_num": axis_value(config.multibuffer_num),
         "vf_merge_level": config.vf_merge_level,
         "enable_dynamic_cv_pipeline": config.dynamic_cv_pipeline,
+        "unit_flag": experiment.HIVM_UNIT_FLAG_SYNC,
         "limit_auto_multi_buffer_buffer": ("no-limit" if config.auto_multibuffer else None),
         "enable_print_ub_bits": True,
         "warmup": experiment.WARMUP,
@@ -557,17 +561,17 @@ def requested_parameters(
         "attempt": attempt_number,
         "attempt_kind": attempt_kind,
     }
-    if pipeline_axis == "intra_cache_num" and config.dynamic_cv_pipeline:
+    if pipeline_axis == "buf_slot_num_of_veccore" and config.dynamic_cv_pipeline:
         parameters.update({
             "set_workspace_multibuffer": 0,
-            "inter_cache_num": 1,
-            "load_cache_num": 1,
+            "buf_slot_num_of_crosscore": 1,
+            "buf_slot_num_of_gm": 1,
         })
-    elif pipeline_axis == "intra_cache_num":
+    elif pipeline_axis == "buf_slot_num_of_veccore":
         parameters.update({
             "set_workspace_multibuffer": 1,
-            "inter_cache_num": None,
-            "load_cache_num": None,
+            "buf_slot_num_of_crosscore": None,
+            "buf_slot_num_of_gm": None,
         })
     return parameters
 
@@ -575,8 +579,9 @@ def requested_parameters(
 def candidate_environment(config: SweepConfig, is_a5: bool) -> dict[str, str]:
     env = os.environ.copy()
     env.pop("EXPERIMENT_DEPTH", None)
-    env.pop("EXPERIMENT_INTRA_CACHE_NUM", None)
+    env.pop("EXPERIMENT_BUF_SLOT_NUM_OF_VECCORE", None)
     env.pop("EXPERIMENT_MULTIBUFFER_NUM", None)
+    env.pop("EXPERIMENT_HIVM_UNIT_FLAG_SYNC", None)
     env.update({
         "ENABLE_PRINT_UB_BITS": "true",
         "TRITON_ALWAYS_COMPILE": "1",
@@ -585,13 +590,14 @@ def candidate_environment(config: SweepConfig, is_a5: bool) -> dict[str, str]:
         "EXPERIMENT_DYNAMIC_CV": "1" if config.dynamic_cv_pipeline else "0",
         "EXPERIMENT_MULTIBUFFER": "1" if config.auto_multibuffer else "0",
         "EXPERIMENT_VF_MERGE_LEVEL": str(config.vf_merge_level),
+        "EXPERIMENT_HIVM_UNIT_FLAG_SYNC": "1" if experiment.HIVM_UNIT_FLAG_SYNC else "0",
         "EXPERIMENT_WARMUP": str(experiment.WARMUP),
         "EXPERIMENT_ACTIVE": str(experiment.ACTIVE),
     })
     if config.auto_multibuffer:
         env["EXPERIMENT_MULTIBUFFER_NUM"] = str(config.multibuffer_num)
     if is_a5 and config.dynamic_cv_pipeline:
-        env["EXPERIMENT_INTRA_CACHE_NUM"] = str(config.pipeline_value)
+        env["EXPERIMENT_BUF_SLOT_NUM_OF_VECCORE"] = str(config.pipeline_value)
     elif is_a5:
         env["EXPERIMENT_DEPTH"] = "1"
     else:
@@ -707,7 +713,7 @@ def execute_case(
         experiment_schema,
         "depth":
         None if is_a5 else config.pipeline_value,
-        "intra_cache_num": (config.pipeline_value if is_a5 and config.dynamic_cv_pipeline else None),
+        "buf_slot_num_of_veccore": (config.pipeline_value if is_a5 and config.dynamic_cv_pipeline else None),
         "enable_auto_multi_buffer":
         config.auto_multibuffer,
         "multibuffer_num":
@@ -718,9 +724,11 @@ def execute_case(
         (0 if is_a5 and config.dynamic_cv_pipeline else 1 if is_a5 else config.pipeline_value),
         "enable_dynamic_cv_pipeline":
         config.dynamic_cv_pipeline,
-        "inter_cache_num":
+        "unit_flag":
+        experiment.HIVM_UNIT_FLAG_SYNC,
+        "buf_slot_num_of_crosscore":
         1 if is_a5 and config.dynamic_cv_pipeline else None,
-        "load_cache_num":
+        "buf_slot_num_of_gm":
         1 if is_a5 and config.dynamic_cv_pipeline else None,
         "limit_auto_multi_buffer_buffer":
         "no-limit" if config.auto_multibuffer else None,
@@ -796,7 +804,7 @@ def resolve_operator(operator_file: Path) -> tuple[str, Path]:
 
 def experiment_context() -> tuple[bool, str, str]:
     is_a5 = os.environ.get("BISHENGIR_NATIVE_A5_REGBASE") == "1"
-    pipeline_axis = "intra_cache_num" if is_a5 else "depth"
+    pipeline_axis = "buf_slot_num_of_veccore" if is_a5 else "depth"
     schema = A5_EXPERIMENT_SCHEMA if is_a5 else A3_EXPERIMENT_SCHEMA
     return is_a5, pipeline_axis, schema
 
@@ -879,13 +887,17 @@ def build_manifest(
             "multibuffer_num": list(multibuffer_values),
             "vf_merge_level": list(vf_merge_values),
         },
-        "resolved_cv_constraint": ("DynamicCV on: intra_cache_num is explicit and "
+        "resolved_cv_constraint": ("DynamicCV on: buf_slot_num_of_veccore is explicit and "
                                    "set_workspace_multibuffer=0; DynamicCV off: "
-                                   "intra_cache_num is N/A and set_workspace_multibuffer=1"
+                                   "buf_slot_num_of_veccore is N/A and set_workspace_multibuffer=1"
                                    if is_a5 else "static CV: set_workspace_multibuffer=depth"),
         "ordinary_multibuffer_strategy": ("off: enable-auto-multi-buffer=false and no explicit count; "
                                           "numeric: limit_auto_multi_buffer_buffer=no-limit"),
-        "fixed_dynamic_cv_buffer_counts": ({"inter_cache_num": 1, "load_cache_num": 1} if is_a5 else None),
+        "fixed_dynamic_cv_buffer_counts": ({
+            "buf_slot_num_of_crosscore": 1,
+            "buf_slot_num_of_gm": 1,
+        } if is_a5 else None),
+        "fixed_hivm_unit_flag_sync": experiment.HIVM_UNIT_FLAG_SYNC,
         "configuration_order": ("config-file axis order; off precedes numeric values by default"),
     }
 
@@ -992,7 +1004,7 @@ def load_legacy_results(result_dir: Path, manifest: dict) -> list[dict]:
     path = result_dir / "results.csv"
     if not path.is_file():
         return []
-    pipeline_axis = ("intra_cache_num" if "intra_cache_num" in manifest.get("axes", {}) else "depth")
+    pipeline_axis = ("buf_slot_num_of_veccore" if "buf_slot_num_of_veccore" in manifest.get("axes", {}) else "depth")
     rows = []
     with path.open(newline="", encoding="utf-8-sig") as handle:
         for raw in csv.DictReader(handle):
@@ -1018,7 +1030,7 @@ def load_legacy_results(result_dir: Path, manifest: dict) -> list[dict]:
                 "operator": manifest.get("operator"),
                 "experiment_schema": manifest.get("experiment_schema"),
                 "depth": value if pipeline_axis == "depth" else None,
-                "intra_cache_num": value if pipeline_axis == "intra_cache_num" else None,
+                "buf_slot_num_of_veccore": value if pipeline_axis == "buf_slot_num_of_veccore" else None,
                 "enable_dynamic_cv_pipeline": csv_bool(raw.get("enable_dynamic_cv_pipeline")),
                 "enable_auto_multi_buffer": enable_auto_multibuffer,
                 "multibuffer_num": multibuffer,
@@ -1132,7 +1144,7 @@ def parse_manual_config(first_axis: str, multibuffer: str, vf_merge: str, is_a5:
 
 
 def row_matches_config(row: dict, config: SweepConfig, is_a5: bool) -> bool:
-    pipeline_value = row.get("intra_cache_num") if is_a5 else row.get("depth")
+    pipeline_value = row.get("buf_slot_num_of_veccore") if is_a5 else row.get("depth")
     row_multibuffer = row.get("multibuffer_num")
     if row_multibuffer is None and row.get("enable_auto_multi_buffer") is False:
         row_multibuffer = OFF

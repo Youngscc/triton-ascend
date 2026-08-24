@@ -60,7 +60,14 @@ def is_complete(manifest: dict, rows: list[dict]) -> bool:
 
 
 def pipeline_axis(run: dict) -> str:
-    return ("intra_cache_num" if "intra_cache_num" in run["manifest"].get("axes", {}) else "depth")
+    axes = run["manifest"].get("axes", {})
+    if not isinstance(axes, dict):
+        raise ValueError("result axes must be an object")
+    if "buf_slot_num_of_veccore" in axes:
+        return "buf_slot_num_of_veccore"
+    if "depth" in axes:
+        return "depth"
+    raise ValueError(f"result has no supported pipeline axis: {sorted(axes)}")
 
 
 def row_depth(row: dict):
@@ -75,7 +82,9 @@ def is_supported(row: dict) -> bool:
 def run_record(result_dir: Path, manifest: dict, rows: list[dict], source: str):
     operator = manifest.get("operator")
     run_id = manifest.get("run_id")
-    if not operator or not run_id or not is_complete(manifest, rows):
+    axes = manifest.get("axes", {})
+    if (not isinstance(axes, dict) or not operator or not run_id or not is_complete(manifest, rows)
+            or not ({"depth", "buf_slot_num_of_veccore"} & axes.keys())):
         return None
     try:
         run_time = parse_run_time(run_id)
@@ -158,7 +167,7 @@ def normalize_csv_row(raw: dict[str, str], axis: str) -> dict:
     ub_kib = optional_float(raw.get("UB使用_KiB"))
     return {
         "depth": value if axis == "depth" else None,
-        "intra_cache_num": value if axis == "intra_cache_num" else None,
+        "buf_slot_num_of_veccore": value if axis == "buf_slot_num_of_veccore" else None,
         "enable_dynamic_cv_pipeline": csv_bool(raw.get("enable_dynamic_cv_pipeline")),
         "enable_auto_multi_buffer": auto_multibuffer,
         "multibuffer_num": multibuffer,
@@ -184,7 +193,8 @@ def load_csv_run(result_dir: Path) -> dict | None:
     with csv_path.open(newline="", encoding="utf-8-sig") as handle:
         reader = csv.DictReader(handle)
         fields = set(reader.fieldnames or ())
-        axis = ("intra_cache_num" if "intra_cache_num" in fields else "depth" if "depth" in fields else None)
+        axis = ("buf_slot_num_of_veccore"
+                if "buf_slot_num_of_veccore" in fields else "depth" if "depth" in fields else None)
         if axis is None:
             return None
         rows = [normalize_csv_row(row, axis) for row in reader]
@@ -203,7 +213,7 @@ def load_csv_run(result_dir: Path) -> dict | None:
             axis:
             sorted(
                 {
-                    OFF if axis == "intra_cache_num" and not row["enable_dynamic_cv_pipeline"] else row[axis]
+                    OFF if axis == "buf_slot_num_of_veccore" and not row["enable_dynamic_cv_pipeline"] else row[axis]
                     for row in rows
                 }, key=axis_sort_key),
             "multibuffer_num":
@@ -251,8 +261,8 @@ def compact_row(row: dict) -> dict:
         multibuffer_num = OFF
     return {
         "depth": row_depth(row),
-        "intra_cache_num":
-        (row.get("intra_cache_num") if row.get("enable_dynamic_cv_pipeline") is not False else "off"),
+        "buf_slot_num_of_veccore":
+        (row.get("buf_slot_num_of_veccore") if row.get("enable_dynamic_cv_pipeline") is not False else "off"),
         "enable_dynamic_cv_pipeline": row.get("enable_dynamic_cv_pipeline"),
         "enable_auto_multi_buffer": auto_multibuffer,
         "multibuffer_num": multibuffer_num,
