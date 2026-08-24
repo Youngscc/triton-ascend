@@ -147,7 +147,6 @@ experiment_operators/experiment_config.py
 ```python
 A3_DEPTH_VALUES = (1, 2, 3, 4)
 A5_BUF_SLOT_NUM_OF_VECCORE_VALUES = ("off", 1, 2, 3, 4)
-A5_DYNAMIC_CV_OFF_STATIC_DEPTH = 2
 MULTIBUFFER_NUM_VALUES = ("off", 1, 2, 3, 4)
 VF_MERGE_LEVEL_VALUES = (0, 1)
 
@@ -162,11 +161,11 @@ TIMEOUT_RETRIES = 1
 | 配置项 | A3 | A5 |
 | --- | --- | --- |
 | `A3_DEPTH_VALUES` | 静态 CV `depth`，DynamicCV 固定关闭 | 不使用 |
-| `A5_BUF_SLOT_NUM_OF_VECCORE_VALUES` | 不使用 | `"off"` 关闭 DynamicCV，并使用静态 depth 2 fallback；数字表示开启并设置 `buf_slot_num_of_veccore` |
+| `A5_BUF_SLOT_NUM_OF_VECCORE_VALUES` | 不使用 | 通过 `--set-cv-pipeline-mode=off` 始终关闭静态 CVPipeline；`"off"` 同时关闭 DynamicCV，数字表示仅开启 DynamicCV 并设置 `buf_slot_num_of_veccore` |
 | `MULTIBUFFER_NUM_VALUES` | `"off"` 关闭普通 MultiBuffer；数字表示开启并设置 local buffer 数量 | 同 A3 |
 | `VF_MERGE_LEVEL_VALUES` | `0` 关闭 VF merge，`1` 开启 level 1 | 同 A3 |
 
-`"off"` 是真实关闭状态：MultiBuffer 会传入 `multibuffer=False`，不传 `--set-local-multibuffer`；数值 `1` 仍然开启该 pass，只是使用一个 buffer。配置顺序就是运行顺序，因此默认先跑关闭状态。默认配置下，A3 有 40 行，A5 有 50 行，其中 A5 前 10 行关闭 DynamicCV。`vf_merge_level=2` 当前不在默认配置中；编译器问题修复后，直接把 `2` 加回配置文件即可。
+`"off"` 是真实关闭状态：A5 第一轴的 `"off"` 同时关闭静态和动态 CVPipeline；MultiBuffer 的 `"off"` 会传入 `multibuffer=False`，不传 `--set-local-multibuffer`。数值 `1` 仍然开启对应 pass，只是使用一个 buffer。配置顺序就是运行顺序，因此默认先跑关闭状态。默认配置下，A3 有 40 行，A5 有 50 行，其中 A5 前 10 行关闭全部 CVPipeline。`vf_merge_level=2` 当前不在默认配置中；编译器问题修复后，直接把 `2` 加回配置文件即可。
 
 UnitFlag synchronization 不是实验轴，算子不会显式传入 `unit_flag`。编译器因此采用架构原生默认值：A5 RegBase 开启，A3 保持通用的关闭默认值。不能在 A5 上显式关闭它，否则会改变 Cube/Vector 同步语义并可能产生错误结果。
 

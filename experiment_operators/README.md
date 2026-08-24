@@ -9,12 +9,11 @@ Edit `experiment_config.py` before a full run:
 ```python
 A3_DEPTH_VALUES = (1, 2, 3, 4)
 A5_BUF_SLOT_NUM_OF_VECCORE_VALUES = ("off", 1, 2, 3, 4)
-A5_DYNAMIC_CV_OFF_STATIC_DEPTH = 2
 MULTIBUFFER_NUM_VALUES = ("off", 1, 2, 3, 4)
 VF_MERGE_LEVEL_VALUES = (0, 1)
 ```
 
-On A3, the first axis is static CV `depth` and DynamicCV is always disabled. On A5, `"off"` disables DynamicCV while retaining its native static depth 2 fallback; numeric values enable DynamicCV with that `buf_slot_num_of_veccore`, while `buf_slot_num_of_crosscore` and `buf_slot_num_of_gm` remain fixed at 1. For the second axis, `"off"` passes `multibuffer=False` and omits the explicit local count, while `1` keeps the pass enabled with one buffer. `vf_merge_level=0` disables VF merge. UnitFlag synchronization is not an experiment axis and is omitted from operator options, preserving the compiler's native default: enabled on A5 RegBase and disabled by the generic A3 default.
+On A3, the first axis is static CV `depth` and DynamicCV is always disabled. On A5, static CVPipeline is explicitly disabled with `--set-cv-pipeline-mode=off` and workspace multibuffer 0 for every row: `"off"` disables DynamicCV as well, while numeric values enable only DynamicCV with that `buf_slot_num_of_veccore`; `buf_slot_num_of_crosscore` and `buf_slot_num_of_gm` remain fixed at 1. For the second axis, `"off"` passes `multibuffer=False` and omits the explicit local count, while `1` keeps the pass enabled with one buffer. `vf_merge_level=0` disables VF merge. UnitFlag synchronization is not an experiment axis and is omitted from operator options, preserving the compiler's native default: enabled on A5 RegBase and disabled by the generic A3 default.
 
 The default order runs disabled states first. It produces 40 A3 rows and 50 A5 rows.
 
@@ -48,7 +47,7 @@ To rerun one existing row in the latest complete result:
 ./run_all_sweeps.sh --case \
   experiment_operators/candidates/fused_attention.py 3 2 1
 
-# A5 DynamicCV-off baseline
+# A5: both static CVPipeline and DynamicCV disabled
 ./run_all_sweeps.sh --case \
   experiment_operators/candidates/fused_attention.py off 2 1
 

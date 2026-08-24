@@ -23,6 +23,9 @@ def _experiment_compile_options():
     compile options (standard candidate contract consumed by run_sweep.py)."""
     dynamic = os.getenv("EXPERIMENT_DYNAMIC_CV", "0") == "1"
     options = {"enable_dynamic_cv_pipeline": dynamic}
+    disable_static_cv = os.getenv("EXPERIMENT_DISABLE_STATIC_CV") == "1"
+    if disable_static_cv:
+        options["cv_pipeline_mode"] = "off"
     if dynamic:
         options["set_workspace_multibuffer"] = 0
         options["buf_slot_num_of_crosscore"] = 1
@@ -32,7 +35,9 @@ def _experiment_compile_options():
             options["buf_slot_num_of_veccore"] = int(vec_slots)
     else:
         depth = os.getenv("EXPERIMENT_DEPTH")
-        if depth is not None:
+        if disable_static_cv:
+            options["set_workspace_multibuffer"] = 0
+        elif depth is not None:
             options["set_workspace_multibuffer"] = int(depth)
     multibuffer = os.getenv("EXPERIMENT_MULTIBUFFER")
     if multibuffer is not None:
@@ -1087,7 +1092,8 @@ class FlashAttentionFunc(torch.autograd.Function):
         # The native workspace multibuffer option controls both CV unroll depth
         # and the number of physical CV workspace buffers.
         extra_kern_args = _experiment_compile_options()
-        if "set_workspace_multibuffer" not in extra_kern_args:
+        if (extra_kern_args.get("cv_pipeline_mode") != "off"
+                and "set_workspace_multibuffer" not in extra_kern_args):
             extra_kern_args["set_workspace_multibuffer"] = 2
         extra_kern_args.setdefault("multibuffer", True)
         fwd_kernel[grid](

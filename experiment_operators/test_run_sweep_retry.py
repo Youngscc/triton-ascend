@@ -132,8 +132,9 @@ class SweepRetryTest(unittest.TestCase):
         self.assertEqual(config, run_sweep.SweepConfig(False, None, None, 0))
         environment = run_sweep.candidate_environment(config, True)
         self.assertEqual(environment["EXPERIMENT_DYNAMIC_CV"], "0")
-        self.assertEqual(environment["EXPERIMENT_DEPTH"], "2")
+        self.assertEqual(environment["EXPERIMENT_DISABLE_STATIC_CV"], "1")
         self.assertEqual(environment["EXPERIMENT_MULTIBUFFER"], "0")
+        self.assertNotIn("EXPERIMENT_DEPTH", environment)
         self.assertNotIn("EXPERIMENT_HIVM_UNIT_FLAG_SYNC", environment)
         self.assertNotIn("EXPERIMENT_BUF_SLOT_NUM_OF_VECCORE", environment)
         self.assertNotIn("EXPERIMENT_MULTIBUFFER_NUM", environment)
@@ -141,9 +142,15 @@ class SweepRetryTest(unittest.TestCase):
         enabled = run_sweep.parse_manual_config("2", "3", "1", True)
         environment = run_sweep.candidate_environment(enabled, True)
         self.assertEqual(environment["EXPERIMENT_DYNAMIC_CV"], "1")
+        self.assertEqual(environment["EXPERIMENT_DISABLE_STATIC_CV"], "1")
         self.assertEqual(environment["EXPERIMENT_BUF_SLOT_NUM_OF_VECCORE"], "2")
         self.assertEqual(environment["EXPERIMENT_MULTIBUFFER"], "1")
         self.assertEqual(environment["EXPERIMENT_MULTIBUFFER_NUM"], "3")
+
+        a3 = run_sweep.SweepConfig(False, 3, None, 0)
+        environment = run_sweep.candidate_environment(a3, False)
+        self.assertEqual(environment["EXPERIMENT_DEPTH"], "3")
+        self.assertNotIn("EXPERIMENT_DISABLE_STATIC_CV", environment)
 
     def test_every_candidate_forwards_multibuffer_disabled_state(self):
         candidates = (
@@ -158,13 +165,15 @@ class SweepRetryTest(unittest.TestCase):
             with self.subTest(candidate=name), patch.dict(
                     os.environ, {
                         "EXPERIMENT_DYNAMIC_CV": "0",
-                        "EXPERIMENT_DEPTH": "1",
+                        "EXPERIMENT_DISABLE_STATIC_CV": "1",
                         "EXPERIMENT_MULTIBUFFER": "0",
                         "EXPERIMENT_VF_MERGE_LEVEL": "0",
                         "EXPERIMENT_HIVM_UNIT_FLAG_SYNC": "1",
                     }, clear=True):
                 options = compile_options()
                 self.assertFalse(options["enable_dynamic_cv_pipeline"])
+                self.assertEqual(options["cv_pipeline_mode"], "off")
+                self.assertEqual(options["set_workspace_multibuffer"], 0)
                 self.assertNotIn("unit_flag", options)
                 self.assertFalse(options["multibuffer"])
                 self.assertNotIn("multibuffer_num", options)
@@ -172,6 +181,7 @@ class SweepRetryTest(unittest.TestCase):
             with self.subTest(candidate=name), patch.dict(
                     os.environ, {
                         "EXPERIMENT_DYNAMIC_CV": "1",
+                        "EXPERIMENT_DISABLE_STATIC_CV": "1",
                         "EXPERIMENT_BUF_SLOT_NUM_OF_VECCORE": "2",
                         "EXPERIMENT_MULTIBUFFER": "1",
                         "EXPERIMENT_MULTIBUFFER_NUM": "3",
@@ -180,6 +190,8 @@ class SweepRetryTest(unittest.TestCase):
                     }, clear=True):
                 options = compile_options()
                 self.assertTrue(options["enable_dynamic_cv_pipeline"])
+                self.assertEqual(options["cv_pipeline_mode"], "off")
+                self.assertEqual(options["set_workspace_multibuffer"], 0)
                 self.assertNotIn("unit_flag", options)
                 self.assertEqual(options["buf_slot_num_of_veccore"], 2)
                 self.assertEqual(options["buf_slot_num_of_crosscore"], 1)

@@ -39,6 +39,9 @@ import torch.nn.functional as F
 def _experiment_compile_options():
     dynamic = os.getenv("EXPERIMENT_DYNAMIC_CV", "0") == "1"
     options = {"enable_dynamic_cv_pipeline": dynamic}
+    disable_static_cv = os.getenv("EXPERIMENT_DISABLE_STATIC_CV") == "1"
+    if disable_static_cv:
+        options["cv_pipeline_mode"] = "off"
     if dynamic:
         options["set_workspace_multibuffer"] = 0
         options["buf_slot_num_of_crosscore"] = 1
@@ -48,7 +51,9 @@ def _experiment_compile_options():
             options["buf_slot_num_of_veccore"] = int(vec_slots)
     else:
         depth = os.getenv("EXPERIMENT_DEPTH")
-        if depth is not None:
+        if disable_static_cv:
+            options["set_workspace_multibuffer"] = 0
+        elif depth is not None:
             options["set_workspace_multibuffer"] = int(depth)
     multibuffer = os.getenv("EXPERIMENT_MULTIBUFFER")
     if multibuffer is not None:

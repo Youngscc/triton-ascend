@@ -37,7 +37,7 @@ OPERATOR_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 SOURCE_BENCHMARK_OPERATOR_RE = re.compile(r"BENCHMARK\s+operator=([A-Za-z0-9][A-Za-z0-9_.-]*)")
 OPERATOR_ALIASES = {"hstu_attention_fwd": "hstu_attention"}
 A3_EXPERIMENT_SCHEMA = ("native-cv-depth+no-dynamic-cv+local-multibuffer-off-v8")
-A5_EXPERIMENT_SCHEMA = ("dynamic-cv-slots+native-static-depth+local-multibuffer-off-v7")
+A5_EXPERIMENT_SCHEMA = ("dynamic-cv-slots+no-static-cv+local-multibuffer-off-v8")
 OFF = "off"
 RESULTS_CSV_SUFFIX_FIELDS = [
     "序号",
@@ -119,10 +119,6 @@ def configured_values(is_a5: bool) -> tuple[tuple[int | str, ...], tuple[int | s
     if (isinstance(experiment.TIMEOUT_RETRIES, bool) or not isinstance(experiment.TIMEOUT_RETRIES, int)
             or experiment.TIMEOUT_RETRIES < 0):
         raise SystemExit("TIMEOUT_RETRIES must be a non-negative integer")
-    if (isinstance(experiment.A5_DYNAMIC_CV_OFF_STATIC_DEPTH, bool)
-            or not isinstance(experiment.A5_DYNAMIC_CV_OFF_STATIC_DEPTH, int)
-            or experiment.A5_DYNAMIC_CV_OFF_STATIC_DEPTH < 1):
-        raise SystemExit("A5_DYNAMIC_CV_OFF_STATIC_DEPTH must be a positive integer")
     return first, multibuffer, vf_merge
 
 
@@ -318,6 +314,7 @@ def matching_metadata(
     }
     if pipeline_axis == "buf_slot_num_of_veccore" and config.dynamic_cv_pipeline:
         expected.update({
+            "cv_pipeline_mode": "off",
             "enable_dynamic_cv_pipeline": True,
             "buf_slot_num_of_veccore": config.pipeline_value,
             "buf_slot_num_of_crosscore": 1,
@@ -326,8 +323,9 @@ def matching_metadata(
         })
     elif pipeline_axis == "buf_slot_num_of_veccore":
         expected.update({
+            "cv_pipeline_mode": "off",
             "enable_dynamic_cv_pipeline": False,
-            "set_workspace_multibuffer": experiment.A5_DYNAMIC_CV_OFF_STATIC_DEPTH,
+            "set_workspace_multibuffer": 0,
         })
     else:
         expected.update({
@@ -575,6 +573,7 @@ def requested_parameters(
         "multibuffer_num": axis_value(config.multibuffer_num),
         "vf_merge_level": config.vf_merge_level,
         "enable_dynamic_cv_pipeline": config.dynamic_cv_pipeline,
+        "cv_pipeline_mode": ("off" if pipeline_axis == "buf_slot_num_of_veccore" else None),
         "unit_flag": "compiler-default",
         "limit_auto_multi_buffer_buffer": ("no-limit" if config.auto_multibuffer else None),
         "enable_print_ub_bits": True,
@@ -592,7 +591,7 @@ def requested_parameters(
         })
     elif pipeline_axis == "buf_slot_num_of_veccore":
         parameters.update({
-            "set_workspace_multibuffer": experiment.A5_DYNAMIC_CV_OFF_STATIC_DEPTH,
+            "set_workspace_multibuffer": 0,
             "buf_slot_num_of_crosscore": None,
             "buf_slot_num_of_gm": None,
         })
@@ -603,6 +602,7 @@ def candidate_environment(config: SweepConfig, is_a5: bool) -> dict[str, str]:
     env = os.environ.copy()
     env.pop("EXPERIMENT_DEPTH", None)
     env.pop("EXPERIMENT_BUF_SLOT_NUM_OF_VECCORE", None)
+    env.pop("EXPERIMENT_DISABLE_STATIC_CV", None)
     env.pop("EXPERIMENT_MULTIBUFFER_NUM", None)
     env.pop("EXPERIMENT_HIVM_UNIT_FLAG_SYNC", None)
     env.update({
@@ -618,10 +618,10 @@ def candidate_environment(config: SweepConfig, is_a5: bool) -> dict[str, str]:
     })
     if config.auto_multibuffer:
         env["EXPERIMENT_MULTIBUFFER_NUM"] = str(config.multibuffer_num)
-    if is_a5 and config.dynamic_cv_pipeline:
-        env["EXPERIMENT_BUF_SLOT_NUM_OF_VECCORE"] = str(config.pipeline_value)
-    elif is_a5:
-        env["EXPERIMENT_DEPTH"] = str(experiment.A5_DYNAMIC_CV_OFF_STATIC_DEPTH)
+    if is_a5:
+        env["EXPERIMENT_DISABLE_STATIC_CV"] = "1"
+        if config.dynamic_cv_pipeline:
+            env["EXPERIMENT_BUF_SLOT_NUM_OF_VECCORE"] = str(config.pipeline_value)
     else:
         env["EXPERIMENT_DEPTH"] = str(config.pipeline_value)
     return env
@@ -744,8 +744,9 @@ def execute_case(
         "resolved_local_multibuffer_num":
         config.multibuffer_num,
         "set_workspace_multibuffer":
-        (0 if is_a5 and config.dynamic_cv_pipeline else
-         experiment.A5_DYNAMIC_CV_OFF_STATIC_DEPTH if is_a5 else config.pipeline_value),
+        0 if is_a5 else config.pipeline_value,
+        "cv_pipeline_mode":
+        "off" if is_a5 else None,
         "enable_dynamic_cv_pipeline":
         config.dynamic_cv_pipeline,
         "unit_flag":
@@ -913,9 +914,9 @@ def build_manifest(
             "multibuffer_num": list(multibuffer_values),
             "vf_merge_level": list(vf_merge_values),
         },
-        "resolved_cv_constraint": ("DynamicCV on: buf_slot_num_of_veccore is explicit and "
-                                   "set_workspace_multibuffer=0; DynamicCV off: "
-                                   "buf_slot_num_of_veccore is N/A and static depth uses the configured A5 fallback"
+        "resolved_cv_constraint": ("static CVPipeline is disabled for every A5 row; DynamicCV on: "
+                                   "buf_slot_num_of_veccore is explicit and set_workspace_multibuffer=0; "
+                                   "DynamicCV off: all CVPipeline modes are disabled"
                                    if is_a5 else "static CV: set_workspace_multibuffer=depth"),
         "ordinary_multibuffer_strategy": ("off: enable-auto-multi-buffer=false and no explicit count; "
                                           "numeric: limit_auto_multi_buffer_buffer=no-limit"),
@@ -923,7 +924,7 @@ def build_manifest(
             "buf_slot_num_of_crosscore": 1,
             "buf_slot_num_of_gm": 1,
         } if is_a5 else None),
-        "dynamic_cv_off_static_depth": (experiment.A5_DYNAMIC_CV_OFF_STATIC_DEPTH if is_a5 else None),
+        "static_cv_pipeline_policy": ("always-disabled" if is_a5 else "controlled-by-depth"),
         "hivm_unit_flag_sync_policy": ("compiler default: enabled on A5 RegBase; "
                                        "generic false default on A3"),
         "configuration_order": ("config-file axis order; off precedes numeric values by default"),
@@ -1104,7 +1105,7 @@ def parse_run_time(run_id: str) -> datetime:
     return datetime.strptime(normalized, "%Y%m%dT%H%M%S%z")
 
 
-def find_latest_operator_run(operator: str, pipeline_axis: str) -> tuple[Path, dict, list[dict]]:
+def find_latest_operator_run(operator: str, pipeline_axis: str, experiment_schema: str) -> tuple[Path, dict, list[dict]]:
     latest = None
     if not RESULTS_ROOT.is_dir():
         raise SystemExit(f"results directory does not exist: {RESULTS_ROOT}")
@@ -1117,6 +1118,8 @@ def find_latest_operator_run(operator: str, pipeline_axis: str) -> tuple[Path, d
         except (OSError, json.JSONDecodeError):
             continue
         if manifest.get("operator") != operator:
+            continue
+        if manifest.get("experiment_schema") != experiment_schema:
             continue
         if pipeline_axis not in manifest.get("axes", {}):
             continue
@@ -1137,7 +1140,10 @@ def find_latest_operator_run(operator: str, pipeline_axis: str) -> tuple[Path, d
         if latest is None or candidate[:2] > latest[:2]:
             latest = candidate
     if latest is None:
-        raise SystemExit(f"no complete {pipeline_axis} result found for operator {operator!r}")
+        raise SystemExit(
+            f"no complete {pipeline_axis} result with schema {experiment_schema!r} "
+            f"found for operator {operator!r}"
+        )
     return latest[2], latest[3], latest[4]
 
 
@@ -1193,7 +1199,7 @@ def rerun_case(operator_file: Path, first_axis: str, multibuffer: str, vf_merge:
     is_a5, pipeline_axis, schema = experiment_context()
     configured_values(is_a5)
     config = parse_manual_config(first_axis, multibuffer, vf_merge, is_a5)
-    result_dir, manifest, rows = find_latest_operator_run(operator, pipeline_axis)
+    result_dir, manifest, rows = find_latest_operator_run(operator, pipeline_axis, schema)
     matching_indexes = [index for index, row in enumerate(rows) if row_matches_config(row, config, is_a5)]
     if len(matching_indexes) != 1:
         raise SystemExit("the requested combination is not a unique row in the latest complete "
