@@ -39,8 +39,8 @@ git rev-parse --short HEAD
 git rev-parse --short HEAD:third_party/ascend/AscendNPU-IR
 ```
 
-该分支固定的 AscendNPU-IR gitlink 是 `4b9f1a560`。它以 main-dev 指定的
-`572a94bda` 为基线，包含实验所需的参数暴露、原生 CV depth 语义，以及在
+该分支固定的 AscendNPU-IR gitlink 是 `f67dc61f0`。它以 main-dev 指定的
+`aea934a666` 为基线，包含实验所需的参数暴露、原生 CV depth 语义，以及在
 调用旧版 `hivmc-a5` 前执行的 SSBuffer 兼容转换层。
 
 ## 3. 维护环境配置
@@ -142,7 +142,7 @@ TIMEOUT_RETRIES = 1
 | 配置项 | A3 | A5 |
 | --- | --- | --- |
 | `A3_DEPTH_VALUES` | 静态 CV `depth`，DynamicCV 固定关闭 | 不使用 |
-| `A5_INTRA_CACHE_NUM_VALUES` | 不使用 | `"off"` 关闭 DynamicCV；数字表示开启并设置 `intra_cache_num` |
+| `A5_INTRA_CACHE_NUM_VALUES` | 不使用 | `"off"` 关闭 DynamicCV；数字表示开启并通过兼容映射设置 `buf_slot_num_of_veccore` |
 | `MULTIBUFFER_NUM_VALUES` | `"off"` 关闭普通 MultiBuffer；数字表示开启并设置 local buffer 数量 | 同 A3 |
 | `VF_MERGE_LEVEL_VALUES` | `0` 关闭 VF merge，`1` 开启 level 1 | 同 A3 |
 

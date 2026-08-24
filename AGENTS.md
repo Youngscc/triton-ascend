@@ -23,9 +23,9 @@ Keep the unified A3 and A5/Ascend 950 experiment procedure in
 - Source remote: `upstream` (`triton-lang/triton-ascend`)
 - Experiment branch: local `codex/experiment-main-dev`, based on
   `upstream/main-dev`
-- Triton-Ascend source baseline: `bf3fb15dff5e4500e4db9bbcbf7b3ddfabfb4ab2`
-- AscendNPU-IR upstream baseline: `572a94bda9c13f8a8bf9c0ad65f4341d16ad1d8b`
-- AscendNPU-IR experiment gitlink: `4b9f1a56092d66a991b857ca4ca2b40f2cf06e53`
+- Triton-Ascend source baseline: `41509cb78d0fda91b521b3ad8a896e915f208829`
+- AscendNPU-IR upstream baseline: `aea934a66646e837c54fea11e87db54d42eb3221`
+- AscendNPU-IR experiment gitlink: `f67dc61f0143f625984c54a0f96bddd9829ba933`
 - Active server SSH alias: `huaweiyun`
 - Active server project path: `/home/y00969467/triton-ascend`
 - Active experiment container: `triton-ascend-exp`

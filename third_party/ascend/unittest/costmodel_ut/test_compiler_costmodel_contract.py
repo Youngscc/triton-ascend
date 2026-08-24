@@ -31,13 +31,12 @@ class CompilerCostmodelContractTest(unittest.TestCase):
         debug_line_rewriter_mod = types.ModuleType("triton.backends.ascend.debug_line_rewriter")
         debug_line_rewriter_mod.rewrite_debug_line = lambda artifact, **_kwargs: artifact
         libtriton_mod = types.ModuleType("triton._C.libtriton")
-        libtriton_mod.ir = Dummy()
-        libtriton_mod.passes = Dummy()
-        libtriton_mod.ascend = Dummy()
-        libtriton_mod.buffer_ir = Dummy()
         libtriton_ascend_mod = types.ModuleType("triton._C.libtriton.ascend")
         libtriton_ascend_mod.ir = Dummy()
-
+        libtriton_mod.ir = Dummy()
+        libtriton_mod.passes = Dummy()
+        libtriton_mod.ascend = libtriton_ascend_mod
+        libtriton_mod.buffer_ir = Dummy()
         utils_mod = types.ModuleType("triton.backends.ascend.utils")
         for name in [
                 "_check_bishengir_api_change",
@@ -47,8 +46,6 @@ class CompilerCostmodelContractTest(unittest.TestCase):
                 "_enable_dump_memory_info",
                 "_enable_msdebug",
                 "_get_kernel_target",
-                "_get_llvm_path",
-                "_get_mlir_path",
                 "_get_npucompiler_path",
                 "_get_triton_adapter_opt_path",
                 "_get_triton_mlir_opt_path",
@@ -67,6 +64,20 @@ class CompilerCostmodelContractTest(unittest.TestCase):
         utils_mod._get_auto_blockify_blacklist_reasons = lambda *args, **kwargs: []
         utils_mod._is_auto_map_parallel_blocks_enabled = lambda *args, **kwargs: False
         utils_mod._warn_auto_blockify_disabled = lambda *args, **kwargs: None
+        def remove_deprecated_npu_options(options, *, in_place=False):
+            normalized = options if in_place else dict(options)
+            for old_name, new_name in {
+                    "intra_cache_num": "buf_slot_num_of_veccore",
+                    "inter_cache_num": "buf_slot_num_of_crosscore",
+                    "load_cache_num": "buf_slot_num_of_gm",
+            }.items():
+                if old_name in normalized:
+                    normalized.setdefault(new_name, normalized[old_name])
+                    normalized.pop(old_name)
+            return normalized
+
+        utils_mod._remove_deprecated_npu_options = remove_deprecated_npu_options
+        utils_mod._warn_deprecated_ascend_env_vars = lambda: None
         utils_mod.get_cann_version_file_hash = lambda *args, **kwargs: ""
         utils_mod.graph_ub_budget_bytes_for_arch = lambda *args, **kwargs: 0
 
@@ -109,7 +120,7 @@ class CompilerCostmodelContractTest(unittest.TestCase):
         cache_mod.get_dump_manager = lambda *args, **kwargs: dump_mgr
         cache_mod._base32 = lambda value: value
 
-        utils_mod.is_compile_on_910_95 = lambda: False
+        utils_mod.is_compile_on_910_95 = lambda *_args: False
 
         sys.modules.update({
             "triton": triton_mod,
@@ -126,7 +137,7 @@ class CompilerCostmodelContractTest(unittest.TestCase):
         })
 
         module_path = Path(__file__).resolve().parents[2] / "backend" / "compiler.py"
-        module_name = "triton.backends.ascend.compiler_under_test"
+        module_name = "triton.backends.ascend.compiler_costmodel_contract_under_test"
         spec = importlib.util.spec_from_file_location(module_name, module_path)
         module = importlib.util.module_from_spec(spec)
         assert spec and spec.loader
@@ -134,35 +145,42 @@ class CompilerCostmodelContractTest(unittest.TestCase):
         spec.loader.exec_module(module)
         return module, dump_mgr, GPUTarget
 
-    def test_parse_options_costmodel_forces_no_bytecode(self):
+    def test_obsolete_costmodel_and_bytecode_switches_are_not_npu_options(self):
         cmplr, _dump_mgr, GPUTarget = self._load_compiler_module()
 
         backend = cmplr.AscendBackend(GPUTarget(backend="npu", arch="910B"))
+        options = backend.parse_options({
+            "enable_costmodel_backend": True,
+            "use_bytecode": True,
+        })
 
-        opt_plain = backend.parse_options({})
-        self.assertTrue(opt_plain.use_bytecode)
-
-        opt_costmodel = backend.parse_options({"enable_costmodel_backend": True})
-        self.assertTrue(opt_costmodel.enable_costmodel_backend)
-        self.assertFalse(opt_costmodel.use_bytecode)
+        self.assertFalse(hasattr(options, "enable_costmodel_backend"))
+        self.assertFalse(hasattr(options, "use_bytecode"))
 
     def test_experiment_options_preserve_main_dev_controls(self):
-        cmplr, _dump_mgr, _GPUTarget = self._load_compiler_module()
+        cmplr, _dump_mgr, GPUTarget = self._load_compiler_module()
 
-        options = cmplr.NPUOptions(
-            arch="Ascend950PR_9579",
-            compile_on_910_95=True,
-            enable_dynamic_cv_pipeline=True,
-            intra_cache_num=4,
-            multibuffer_num=3,
-            vf_merge_level=1,
-        )
+        backend = cmplr.AscendBackend(GPUTarget(backend="npu", arch="Ascend950PR_9579"))
+        raw_options = {
+            "enable_dynamic_cv_pipeline": True,
+            "intra_cache_num": 4,
+            "inter_cache_num": 1,
+            "load_cache_num": 1,
+            "multibuffer_num": 3,
+            "vf_merge_level": 1,
+        }
+        options = backend.parse_options(raw_options)
 
         self.assertTrue(options.enable_dynamic_cv_pipeline)
-        self.assertEqual(options.intra_cache_num, 4)
+        self.assertEqual(options.buf_slot_num_of_veccore, 4)
+        self.assertEqual(options.buf_slot_num_of_crosscore, 1)
+        self.assertEqual(options.buf_slot_num_of_gm, 1)
         self.assertEqual(options.multibuffer_num, 3)
         self.assertEqual(options.limit_auto_multi_buffer_buffer, "no-limit")
         self.assertEqual(options.vf_merge_level, 1)
+        self.assertNotIn("intra_cache_num", raw_options)
+        self.assertNotIn("inter_cache_num", raw_options)
+        self.assertNotIn("load_cache_num", raw_options)
 
         with self.assertRaises(ValueError):
             cmplr.NPUOptions(multibuffer_num=0)

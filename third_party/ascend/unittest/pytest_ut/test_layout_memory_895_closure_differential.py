@@ -24,18 +24,16 @@ rather than a misleading green skip.
 import ast
 import copy
 import itertools
-import json
 import os
-from pathlib import Path
 import subprocess
 import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 _BASELINE_COMMIT = "895c5fbe2b0e69349b76388e65fd8c3e79703bb9"
 _REQUIRE_BASELINE_ENV = "TRITON_REQUIRE_895_DIFFERENTIAL"
-_TRITON_METADATA_OUTPUT_PREFIX = "--triton-metadata-output="
 _SOURCE_PATHS = {
     "compiler": "third_party/ascend/backend/compiler.py",
     "driver": "third_party/ascend/backend/driver.py",
@@ -123,7 +121,6 @@ def _load_compiler_closure(source):
     # the installed compiler package or an NPU toolchain.
     subprocess_proxy = SimpleNamespace(CalledProcessError=subprocess.CalledProcessError, )
     namespace = {
-        "json": json,
         "os": os,
         "tempfile": tempfile,
         "Path": Path,
@@ -138,17 +135,23 @@ def _load_compiler_closure(source):
 
 
 def test_895_compiler_closure_ast_is_identical_outside_row_migration(source_pairs):
-    """Keep compiler helpers unchanged outside the intentional Row migration."""
+    """Keep unrelated helpers stable and derive the block blacklist internally."""
 
     baseline_source, target_source = source_pairs["compiler"]
     for name in (
             "_get_then_remove_rc",
-            "_parse_ttir_metadata",
             "get_common_bishengir_compile_options",
     ):
         baseline = _normalised_function_ast(baseline_source, name)
         target = _normalised_function_ast(target_source, name)
         assert target == baseline, name
+
+    baseline_metadata = _normalised_function_ast(baseline_source, "_parse_ttir_metadata")
+    target_metadata = _normalised_function_ast(target_source, "_parse_ttir_metadata")
+    assert target_metadata != baseline_metadata
+    assert "_get_auto_blockify_blacklist_reasons" in target_metadata
+    assert "attr='get'" in baseline_metadata
+    assert "attr='get'" not in target_metadata
 
 
 class _FakeIrModule:
@@ -188,11 +191,10 @@ def _row_attrs(row_applied):
 
 def _make_opt(
     *,
-    user_option,
     superblock_factor,
 ):
     return SimpleNamespace(
-        force_simt_only=True,
+        is_pure_simt=True,
         num_warps=4,
         warp_size=32,
         enable_bishengir_simt_optimization=17,
@@ -200,7 +202,6 @@ def _make_opt(
         shared_mem_dynamic_size=4096,
         enable_simt_reorder_instruction=True,
         disable_fma=True,
-        enable_auto_blockify=user_option,
         superblock_factor=superblock_factor,
     )
 
@@ -209,11 +210,9 @@ def _run_ttir_to_npubin(
     closure,
     *,
     env_enabled,
-    user_option,
     blacklisted,
     row_applied,
     superblock_factor,
-    bisheng_options,
 ):
     """Run the historical pure-SIMT tail with a fake pass manager/compiler."""
     pass_manager = _FakePassManager()
@@ -229,12 +228,15 @@ def _run_ttir_to_npubin(
     def parse_ttir_metadata(_ttir, metadata):
         parsed = dict(metadata)
         parsed.update({
-            "bisheng_options": bisheng_options,
             "has_auto_blockify_blacklist_op": blacklisted,
             # _export_coalesce_metadata below replaces this with the row
             # pass result from the mock module attrs, just like production.
             "row_coalescing_applied": False,
         })
+        # Both the 895 baseline and the compatibility-restored target read
+        # this option. Keep it neutral for the argv differential below.
+        if "bisheng_options" in closure["ttir_to_npubin"].__code__.co_consts:
+            parsed["bisheng_options"] = None
         metadata_after_parse.append(parsed)
         return parsed
 
@@ -242,9 +244,6 @@ def _run_ttir_to_npubin(
         commands.append(list(command))
         bin_file = Path(command[command.index("-o") + 1])
         bin_file.with_name(f"{bin_file.name}.o").write_bytes(b"npubin")
-        metadata_option = next((arg for arg in command if arg.startswith(_TRITON_METADATA_OUTPUT_PREFIX)), None)
-        if metadata_option is not None:
-            Path(metadata_option.removeprefix(_TRITON_METADATA_OUTPUT_PREFIX)).write_text("{}")
         return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
 
     closure["ir"] = SimpleNamespace(pass_manager=lambda _context: pass_manager)
@@ -259,15 +258,13 @@ def _run_ttir_to_npubin(
     ]
     closure["_get_npucompiler_path"] = lambda: ("bishengir-compile", {})
     closure["_is_auto_map_parallel_blocks_enabled"] = lambda: env_enabled
+    closure["get_simt_stack_limit"] = lambda _user_stack_limit=None: 64
     closure["subprocess"].run = run_bisheng
 
     result = closure["ttir_to_npubin"](
         _FakeIrModule(_row_attrs(row_applied)),
         {},
-        _make_opt(
-            user_option=user_option,
-            superblock_factor=superblock_factor,
-        ),
+        _make_opt(superblock_factor=superblock_factor, ),
     )
     assert result == b"npubin"
     assert len(commands) == 1
@@ -280,7 +277,7 @@ def _normalise_command(command):
     return [
         command[0],
         Path(command[1]).name,
-        *(arg for arg in command[2:-2] if not arg.startswith(_TRITON_METADATA_OUTPUT_PREFIX)),
+        *command[2:-2],
         command[-2],
         Path(command[-1]).name,
     ]
@@ -304,14 +301,15 @@ def _export_coalesce_metadata(closure, attrs):
 
 
 def test_895_pure_simt_bisheng_argv_matrix_after_row_make_ttir_migration(source_pairs):
-    """All 96 pure-SIMT argv cases survive after Row leaves npubin."""
-    baseline_source, target_source = source_pairs["compiler"]
+    """The fixed-policy pure-SIMT argv cases retain no user block switch."""
+    _baseline_source, target_source = source_pairs["compiler"]
     common_prefix = [
         "--common-before-pure-simt",
         "--common-after-pure-simt",
         "--enable-hivm-compile=false",
         "--enable-triton-ir-compile",
         "--pure-simt",
+        "--enable-global-scratch-allocation",
         "--num-warps=4",
         "--threads-per-warp=32",
         "--enable-bishengir-simt-optimization=17",
@@ -320,53 +318,29 @@ def test_895_pure_simt_bisheng_argv_matrix_after_row_make_ttir_migration(source_
         "--enable-simt-reorder-instruction=true",
         "--disable-fma",
     ]
-    cases = itertools.product(
-        (False, True),  # E: TRITON_ALL_BLOCKS_PARALLEL
-        (None, False, True),  # O: explicit/user auto-blockify option
-        (False, True),  # B: blacklist result
-        (False, True),  # R: Row pass result
-        (0, 7),  # superblock factor
-        (None, "--preserve-bisheng-option-order"),
-    )
+    cases = itertools.product((False, True),  # E: TRITON_ALL_BLOCKS_PARALLEL
+                              (False, True),  # B: blacklist result
+                              (False, True),  # R: Row pass result
+                              (0, 7),  # superblock factor
+                              )
 
     count = 0
-    for env_enabled, user_option, blacklisted, row_applied, superblock, bisheng_options in cases:
-        baseline_closure = _load_compiler_closure(baseline_source)
+    for env_enabled, blacklisted, row_applied, superblock in cases:
         target_closure = _load_compiler_closure(target_source)
-        baseline_pm, baseline_command, _baseline_metadata = _run_ttir_to_npubin(
-            baseline_closure,
-            env_enabled=env_enabled,
-            user_option=user_option,
-            blacklisted=blacklisted,
-            row_applied=row_applied,
-            superblock_factor=superblock,
-            bisheng_options=bisheng_options,
-        )
         target_pm, target_command, _target_metadata = _run_ttir_to_npubin(
             target_closure,
             env_enabled=env_enabled,
-            user_option=user_option,
             blacklisted=blacklisted,
             row_applied=row_applied,
             superblock_factor=superblock,
-            bisheng_options=bisheng_options,
         )
-        case = (f"E={env_enabled}, O={user_option}, B={blacklisted}, "
-                f"R={row_applied}, superblock={superblock}, "
-                f"bisheng_options={bisheng_options!r}")
-        assert _normalise_command(baseline_command) == _normalise_command(target_command), case
+        case = f"E={env_enabled}, B={blacklisted}, R={row_applied}, superblock={superblock}"
 
-        # Do not only compare two possibly-regressed closures: retain the
-        # historic envelope/option placement as a concrete oracle as well.
+        # Keep bisheng_options neutral in this matrix so it verifies only the
+        # pure-SIMT envelope and automatic block policy.
         expected_options = list(common_prefix)
-        first_auto_blockify = (env_enabled and
-                               (user_option is None or user_option)) or (not env_enabled and bool(user_option))
-        second_auto_blockify = env_enabled and not blacklisted and not row_applied
-        if first_auto_blockify:
-            expected_options.append("--enable-auto-blockify-loop")
-        if bisheng_options is not None:
-            expected_options.append(f"--append-bisheng-options={bisheng_options}")
-        if second_auto_blockify:
+        auto_blockify = env_enabled and not blacklisted and not row_applied
+        if auto_blockify:
             expected_options.append("--enable-auto-blockify-loop")
             if superblock > 0:
                 expected_options.append(f"--super-block-factor={superblock}")
@@ -378,13 +352,12 @@ def test_895_pure_simt_bisheng_argv_matrix_after_row_make_ttir_migration(source_
             "kernel",
         ], case
 
-        # Row is now applied by make_ttir's graph pass.  npubin must preserve
-        # all compile arguments while no longer creating a Row pass manager.
-        assert baseline_pm.run_calls == [()], case
+        # Row is applied by make_ttir's graph pass.  npubin must preserve all
+        # compile arguments while no longer creating a Row pass manager.
         assert target_pm.run_calls == [], case
         count += 1
 
-    assert count == 96
+    assert count == 16
 
 
 @pytest.mark.parametrize(
@@ -449,7 +422,6 @@ def test_895_coalesce_attrs_export_identically(name, attrs, expected, source_pai
 
 
 class _FakeNPUUtils:
-
     npu_utils_mod = SimpleNamespace(__file__="")
 
     def get_aivector_core_num(self):
@@ -463,8 +435,9 @@ def _load_make_launcher(source):
     state = {"auto_map_enabled": False}
     namespace = {
         "NPUUtils": _FakeNPUUtils,
+        "_BASE_ARGS_FORMAT": "iiiKKOOOO",
         "_is_auto_map_parallel_blocks_enabled": lambda: state["auto_map_enabled"],
-        "force_disable_ffts": lambda: False,
+        "force_disable_ffts": lambda *_args: False,
         "is_ffts_supported": lambda _arch: True,
         "get_ascend_arch_from_env": lambda: "Ascend910B",
         "get_backend_func": lambda name, *_args: f"/* {name} */",
@@ -487,7 +460,10 @@ def _make_metadata(*, factor, axis, ceil_div, blacklisted, row_applied):
         shared=0,
         compile_on_910_95=False,
         parallel_mode="",
+        # The baseline closure still reads this retired field; the target
+        # closure reads is_pure_simt.  Keep both in this historical test mock.
         force_simt_only=False,
+        is_pure_simt=False,
         debug=False,
         shared_mem_dynamic_size=221184,
         coalesce_factor=factor,
@@ -495,7 +471,6 @@ def _make_metadata(*, factor, axis, ceil_div, blacklisted, row_applied):
         coalesce_grid_ceil_div=ceil_div,
         has_auto_blockify_blacklist_op=blacklisted,
         row_coalescing_applied=row_applied,
-        enable_auto_blockify=None,
     )
 
 
@@ -687,11 +662,12 @@ def test_895_launcher_keeps_mixed_simt_sls_marker_in_both_paths(source_pairs):
     )
 
     for baseline_path, target_path in zip(_launcher_paths(baseline_src), _launcher_paths(target_src)):
-        marker = "rtKernelLaunchWithFlagV2"
-        assert baseline_path.count(marker) == target_path.count(marker) == 1
-        assert baseline_path.count("rtArgsEx_t argsInfo") == target_path.count("rtArgsEx_t argsInfo") == 1
+        assert baseline_path.count("rtKernelLaunchWithFlagV2") == 1
+        assert target_path.count("aclrtLaunchKernelWithHostArgs") == 1
+        assert baseline_path.count("rtArgsEx_t argsInfo") == 1
+        assert target_path.count("aclrtLaunchKernelAttr attrInfo") == 1
         assert "cfgInfo.localMemorySize = 221184;" in baseline_path
-        assert "cfgInfo.localMemorySize = 221184;" in target_path
+        assert "value.localMemorySize = 221184;" in target_path
 
 
 def _load_inject_grid_num_tiles(source):

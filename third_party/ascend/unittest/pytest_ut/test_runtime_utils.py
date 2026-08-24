@@ -27,6 +27,11 @@ from triton.backends.ascend import utils
 from triton.backends.ascend.runtime import utils as runtime_utils
 
 
+@pytest.fixture(autouse=True)
+def _reset_deprecated_npu_option_warnings(monkeypatch):
+    monkeypatch.setattr(utils, "_WARNED_DEPRECATED_NPU_OPTIONS", set())
+
+
 def test_get_logger():
     logger = utils.get_logger("test_utils", "INFO")
     assert logger.level == logging.INFO
@@ -35,7 +40,7 @@ def test_get_logger():
 def test_get_ascend_arch_from_env_is_deprecated(monkeypatch):
     monkeypatch.setattr(utils, "_WARNED_DEPRECATED_ASCEND_ENV_VARS", set(), raising=False)
     monkeypatch.setenv("TRITON_ASCEND_ARCH", "Ascend910_9599")
-    with pytest.warns(FutureWarning, match=r"TRITON_ASCEND_ARCH.*deprecated and ignored"):
+    with pytest.warns(FutureWarning, match=r"TRITON_ASCEND_ARCH.*will be removed.*GPUTarget.arch"):
         result = utils.get_ascend_arch_from_env()
     assert result == ""
 
@@ -56,16 +61,16 @@ def test_deprecated_ascend_env_var_warns_only_once_per_process(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "legacy_option, compile_mode",
+    ("legacy_option", "compile_mode"),
     [
         pytest.param("force_simt_only", "simt_only", id="simt-only"),
-        pytest.param("force_simt_template", "unstructured_in_simt", id="unstructured-in-simt"),
+        pytest.param("force_simt_template", "simd_simt_template", id="simt-template"),
     ],
 )
 def test_deprecated_simt_option_routes_to_compile_mode(legacy_option, compile_mode):
     options = {legacy_option: True}
 
-    with pytest.warns(FutureWarning, match=rf"{legacy_option}.*use compile_mode='{compile_mode}' instead"):
+    with pytest.warns(FutureWarning, match=rf"{legacy_option}.*compile_mode={compile_mode!r}"):
         normalized = utils._remove_deprecated_npu_options(options)
 
     assert normalized == {"compile_mode": compile_mode}
@@ -75,20 +80,22 @@ def test_deprecated_simt_option_routes_to_compile_mode(legacy_option, compile_mo
 def test_explicit_compile_mode_takes_precedence_over_deprecated_simt_option():
     options = {"compile_mode": "simd", "force_simt_only": True}
 
-    with pytest.warns(FutureWarning, match=r"force_simt_only.*use compile_mode='simt_only' instead"):
+    with pytest.warns(FutureWarning, match=r"force_simt_only.*compile_mode='simt_only'"):
         normalized = utils._remove_deprecated_npu_options(options)
 
     assert normalized == {"compile_mode": "simd"}
+    assert options == {"compile_mode": "simd", "force_simt_only": True}
 
 
-def test_deprecated_simt_option_warns_only_once_after_in_place_normalization():
+def test_deprecated_simt_option_is_routed_once_during_in_place_normalization():
     options = {"force_simt_only": True}
 
-    with pytest.warns(FutureWarning) as warnings:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         first = utils._remove_deprecated_npu_options(options, in_place=True)
         second = utils._remove_deprecated_npu_options(options, in_place=True)
 
-    assert len(warnings) == 1
+    assert len(caught) == 1
     assert first is second is options
     assert options == {"compile_mode": "simt_only"}
 

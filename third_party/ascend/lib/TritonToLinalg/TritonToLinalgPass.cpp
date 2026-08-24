@@ -58,7 +58,6 @@
 
 #include "bishengir/Dialect/Annotation/IR/Annotation.h"
 #include "bishengir/Dialect/HIVM/IR/HIVM.h"
-#include "bishengir/Dialect/Scope/IR/Scope.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
@@ -100,6 +99,7 @@ using namespace triton;
 int nd2nzFlag = 0;
 bool compileOn91095Flag = false;
 bool existDotFlag = false;
+triton::ascend::CompileMode compileModeFlag = triton::ascend::CompileMode::Simd;
 
 static bool containsTritonPointer(Type type) {
   if (isa<triton::PointerType>(type))
@@ -981,13 +981,13 @@ void TritonToLinalgPass::convertTTFunc(triton::FuncOp func, const bool existDot,
 
 void TritonToLinalgPass::addDynamicLegal(
     ConversionTarget &target, TritonTypeConverter &tritonTypeConverter) {
-  target.addLegalDialect<
-      func::FuncDialect, arith::ArithDialect, math::MathDialect,
-      linalg::LinalgDialect, affine::AffineDialect, scf::SCFDialect,
-      cf::ControlFlowDialect, tensor::TensorDialect, LLVM::LLVMDialect,
-      bufferization::BufferizationDialect, memref::MemRefDialect,
-      annotation::AnnotationDialect, hivm::HIVMDialect, hfusion::HFusionDialect,
-      scope::ScopeDialect>();
+  target.addLegalDialect<func::FuncDialect, arith::ArithDialect,
+                         math::MathDialect, linalg::LinalgDialect,
+                         affine::AffineDialect, scf::SCFDialect,
+                         cf::ControlFlowDialect, tensor::TensorDialect,
+                         LLVM::LLVMDialect, bufferization::BufferizationDialect,
+                         memref::MemRefDialect, annotation::AnnotationDialect,
+                         hivm::HIVMDialect, hfusion::HFusionDialect>();
 
   // add legal dialect on condition
   target.addLegalOp<ModuleOp>();
@@ -1041,8 +1041,8 @@ void TritonToLinalgPass::addDynamicLegal(
     Operation *parent = op->getParentOp();
     if (parent &&
         parent->hasAttr(TTOpConverters::kScalarPointerCarrierBoundaryAttr)) {
-      auto parentIf = cast<scf::IfOp>(parent);
-      return llvm::equal(op->getOperandTypes(), parentIf.getResultTypes());
+      if (auto parentIf = dyn_cast<scf::IfOp>(parent))
+        return llvm::equal(op->getOperandTypes(), parentIf.getResultTypes());
     }
 
     if (parent && parent->hasAttr(controlflow::kPointerDescriptorBoundaryAttr))
@@ -1260,12 +1260,12 @@ void TritonToLinalgPass::populateTritonToLinalgConversionPatterns(
 }
 
 void TritonToLinalgPass::getDependentDialects(DialectRegistry &registry) const {
-  registry.insert<func::FuncDialect, arith::ArithDialect, math::MathDialect,
-                  linalg::LinalgDialect, affine::AffineDialect, scf::SCFDialect,
-                  tensor::TensorDialect, bufferization::BufferizationDialect,
-                  memref::MemRefDialect, hfusion::HFusionDialect,
-                  hivm::HIVMDialect, annotation::AnnotationDialect,
-                  LLVM::LLVMDialect, scope::ScopeDialect>();
+  registry
+      .insert<func::FuncDialect, arith::ArithDialect, math::MathDialect,
+              linalg::LinalgDialect, affine::AffineDialect, scf::SCFDialect,
+              tensor::TensorDialect, bufferization::BufferizationDialect,
+              memref::MemRefDialect, hfusion::HFusionDialect, hivm::HIVMDialect,
+              annotation::AnnotationDialect, LLVM::LLVMDialect>();
 }
 
 LogicalResult
@@ -1373,7 +1373,8 @@ LogicalResult TritonToLinalgPass::processStridedLoadStoreRewriteOperations(
     ModuleOp moduleOp) {
   // The strided-axis rewrites below only apply in 950 SIMT mode. On other
   // targets we leave strided loads to the legacy strided DMA lowering.
-  if (!(compileOn91095Flag && forceSimtTemplateFlag)) {
+  if (!(compileOn91095Flag &&
+        triton::ascend::isSimtTemplateMode(compileModeFlag))) {
     return success();
   }
 
@@ -1432,6 +1433,14 @@ TritonToLinalgPass::processLegalStrideOperations(ModuleOp moduleOp) {
 
 void TritonToLinalgPass::runOnOperation() {
   compileOn91095Flag = this->compileOn91095;
+  auto compileMode = triton::ascend::parseCompileMode(this->compileMode);
+  if (!compileMode) {
+    getOperation().emitError()
+        << "triton-to-linalg compile-mode is invalid: " << this->compileMode;
+    signalPassFailure();
+    return;
+  }
+  compileModeFlag = *compileMode;
 
   auto moduleOp = getOperation();
 
@@ -1660,8 +1669,8 @@ void TritonToLinalgPass::runOnOperation() {
     op->removeAttr(controlflow::kPointerDescriptorOffsetFormAttr);
     op->removeAttr(controlflow::kPointerDescriptorStructuredAxesAttr);
   });
-  moduleOp.walk([](scf::IfOp ifOp) {
-    ifOp->removeAttr(TTOpConverters::kScalarPointerCarrierBoundaryAttr);
+  moduleOp.walk([](Operation *op) {
+    op->removeAttr(TTOpConverters::kScalarPointerCarrierBoundaryAttr);
   });
 
   // 7.1 Workaround: fold duplicated one-hot reconstruction emitted after
@@ -2048,12 +2057,14 @@ void TritonToLinalgPass::runOnOperation() {
   });
 }
 
-std::unique_ptr<OperationPass<ModuleOp>> triton::createTritonToLinalgPass(
-    bool globalKernel, bool namedOps, bool enableNd2nzOnVector,
-    bool enableSelectAnalysis, bool compileOn91095) {
+std::unique_ptr<OperationPass<ModuleOp>>
+triton::createTritonToLinalgPass(bool globalKernel, bool namedOps,
+                                 bool enableNd2nzOnVector,
+                                 bool enableSelectAnalysis, bool compileOn91095,
+                                 const std::string &compileMode) {
   return std::make_unique<TritonToLinalgPass>(
       globalKernel, namedOps, enableNd2nzOnVector, enableSelectAnalysis,
-      compileOn91095);
+      compileOn91095, compileMode);
 }
 
 std::unique_ptr<OperationPass<ModuleOp>> triton::createTritonToLinalgPass() {
