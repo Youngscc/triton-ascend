@@ -175,7 +175,7 @@ def kernel_unified_attention_2d(output_ptr,  # [num_tokens, num_query_heads, hea
             order=(1, 0),
         )
 
-        K_load = tl.load(K_block_ptr, boundary_check=(1,), padding_option="zero")
+        K_load = tl.load(K_block_ptr, boundary_check=(1, ), padding_option="zero")
 
         V_block_ptr = tl.make_block_ptr(
             base=value_cache_ptr + physical_block_idx * stride_v_cache_0 + kv_head_idx * stride_v_cache_2,
@@ -194,7 +194,7 @@ def kernel_unified_attention_2d(output_ptr,  # [num_tokens, num_query_heads, hea
         else:
             K = K_load
 
-        V_load = tl.load(V_block_ptr, boundary_check=(1,), padding_option="zero")
+        V_load = tl.load(V_block_ptr, boundary_check=(1, ), padding_option="zero")
 
         if V_load.dtype.is_fp8():
             if Q.dtype.is_fp8():
@@ -561,19 +561,20 @@ def benchmark_unified_attention(warmup=5, active=30):
 
 
 if __name__ == "__main__":
-    print("[EXPERIMENT] operator_parameters=" + json.dumps({
-        "sequence_lengths": [[1, 1328], [5, 18], [129, 463]],
-        "num_query_heads": 8,
-        "num_kv_heads": 2,
-        "head_size": 128,
-        "block_size": 32,
-        "num_blocks": 2048,
-        "dtype": "float16",
-        "causal": True,
-        "sliding_window": None,
-        "soft_cap": None,
-        "q_dtype": None,
-    }, sort_keys=True))
+    print("[EXPERIMENT] operator_parameters=" + json.dumps(
+        {
+            "sequence_lengths": [[1, 1328], [5, 18], [129, 463]],
+            "num_query_heads": 8,
+            "num_kv_heads": 2,
+            "head_size": 128,
+            "block_size": 32,
+            "num_blocks": 2048,
+            "dtype": "float16",
+            "causal": True,
+            "sliding_window": None,
+            "soft_cap": None,
+            "q_dtype": None,
+        }, sort_keys=True))
     # A small, deterministic case used by the operator-screening smoke test.
     # Keep the full parametrized pytest cases above for later coverage runs.
     test_triton_unified_attn(

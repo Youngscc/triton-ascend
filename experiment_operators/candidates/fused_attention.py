@@ -61,6 +61,7 @@ def _experiment_compile_options():
         options["vf_merge_level"] = int(merge)
     return options
 
+
 import torch
 import torch_npu
 import triton
@@ -365,18 +366,19 @@ def benchmark_attention_fused(warmup=5, active=30):
 
 
 if __name__ == "__main__":
-    print("[EXPERIMENT] operator_parameters=" + json.dumps({
-        "batch": 4,
-        "num_heads": 32,
-        "sequence_length": 1024,
-        "head_dim": 64,
-        "causal": False,
-        "dtype": "bfloat16",
-        "block_m": 64,
-        "block_n": 128,
-        "sm_scale": 0.5,
-        "program_count": 20,
-    }, sort_keys=True))
+    print("[EXPERIMENT] operator_parameters=" + json.dumps(
+        {
+            "batch": 4,
+            "num_heads": 32,
+            "sequence_length": 1024,
+            "head_dim": 64,
+            "causal": False,
+            "dtype": "bfloat16",
+            "block_m": 64,
+            "block_n": 128,
+            "sm_scale": 0.5,
+            "program_count": 20,
+        }, sort_keys=True))
     test_attention_fused()
     print("======Fused Attention Test Passed!======")
     benchmark_attention_fused(

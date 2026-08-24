@@ -60,6 +60,8 @@ def _experiment_compile_options():
     if merge is not None:
         options["vf_merge_level"] = int(merge)
     return options
+
+
 from triton.backends.ascend.testing import do_bench_npu
 
 DEVICE = "npu"
@@ -998,16 +1000,17 @@ def benchmark_hstu_attention_fwd(warmup=5, active=30):
 
 
 if __name__ == "__main__":
-    print("[EXPERIMENT] operator_parameters=" + json.dumps({
-        "batch_size": 2,
-        "max_seq_len": 1024,
-        "num_heads": 2,
-        "attention_dim": 32,
-        "dtype": "float32",
-        "alpha": 1,
-        "causal": True,
-        "direction": "forward",
-    }, sort_keys=True))
+    print("[EXPERIMENT] operator_parameters=" + json.dumps(
+        {
+            "batch_size": 2,
+            "max_seq_len": 1024,
+            "num_heads": 2,
+            "attention_dim": 32,
+            "dtype": "float32",
+            "alpha": 1,
+            "causal": True,
+            "direction": "forward",
+        }, sort_keys=True))
     # Forward is the initial CVPipeline screening case. Backward remains
     # available through pytest but is intentionally outside this smoke test.
     test_hstu_attention_fwd(2, 1024, 2, 32, torch.float32)
