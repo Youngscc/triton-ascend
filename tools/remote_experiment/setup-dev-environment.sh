@@ -13,10 +13,11 @@ source "$SCRIPT_DIR/load-cann-environment.sh"
 # shellcheck source=tools/remote_experiment/config.sh
 source "$SCRIPT_DIR/config.sh"
 
-mkdir -p "$REMOTE_TMP_DIR"
+mkdir -p "$REMOTE_TMP_DIR" "$REMOTE_CCACHE_DIR"
 export TMPDIR="$REMOTE_TMP_DIR"
 export TMP="$REMOTE_TMP_DIR"
 export TEMP="$REMOTE_TMP_DIR"
+export CCACHE_DIR="$REMOTE_CCACHE_DIR"
 
 jobs="${JOBS:-32}"
 host_toolchain="$REMOTE_PROJECT/.codex-remote/host-toolchain-bin"
