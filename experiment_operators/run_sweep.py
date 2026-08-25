@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RESULTS_ROOT = ROOT / ".codex-remote/results"
 BENCHMARK_RE = re.compile(r"BENCHMARK operator=(?P<operator>\S+) latency_ms=(?P<latency>[0-9.]+) "
                           r"warmup=(?P<warmup>\d+) active=(?P<active>\d+)")
+BENCHMARK_METHOD_RE = re.compile(r"NPU_BENCHMARK_METHOD=(?P<method>[A-Za-z0-9_.-]+)")
 MISMATCHED_ELEMENTS_RE = re.compile(r"Mismatched elements:\s*(?P<count>[0-9,]+)\s*/", re.IGNORECASE)
 DOMINANCE_ERROR_RE = re.compile(
     r"operand\s+#(?P<operand>\d+)\s+does(?:n't| not)\s+dominate\s+this\s+use",
@@ -47,6 +48,7 @@ RESULTS_CSV_SUFFIX_FIELDS = [
     "结果",
     "原因",
     "运行延迟_ms",
+    "测量方式",
     "UB使用_KiB",
     "本轮总耗时_s",
     "尝试次数",
@@ -493,6 +495,7 @@ def write_results(rows: list[dict], result_dir: Path, pipeline_axis: str) -> Pat
                 "结果": result_label(row.get("status", "missing")),
                 "原因": simple_reason(row),
                 "运行延迟_ms": row.get("latency_ms"),
+                "测量方式": row.get("benchmark_method"),
                 "UB使用_KiB": row.get("required_ub_kib"),
                 "本轮总耗时_s": row.get("wall_time_s"),
                 "尝试次数": row.get("attempt_count", 1),
@@ -526,6 +529,28 @@ def terminate_process_group(process: subprocess.Popen, grace_seconds: float = 5.
     except ProcessLookupError:
         return
     process.wait()
+
+
+def write_timeout_process_snapshot(log_handle, session_id: int) -> None:
+    log_handle.write(b"\n[EXPERIMENT] TIMEOUT_PROCESS_SNAPSHOT\n")
+    log_handle.flush()
+    try:
+        subprocess.run(
+            [
+                "ps",
+                "-o",
+                "pid,ppid,pgid,sid,stat,etime,comm,args",
+                "--sid",
+                str(session_id),
+            ],
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        log_handle.write(f"process snapshot unavailable: {error}\n".encode("utf-8"))
+    log_handle.flush()
 
 
 def requested_parameters(
@@ -643,6 +668,7 @@ def execute_case(
             returncode = process.wait(timeout=experiment.CASE_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             timed_out = True
+            write_timeout_process_snapshot(log_handle, process.pid)
             terminate_process_group(process)
             returncode = 124
         except KeyboardInterrupt:
@@ -654,6 +680,7 @@ def execute_case(
         output = log_handle.read().decode("utf-8", errors="replace")
 
     benchmark = BENCHMARK_RE.search(output)
+    benchmark_method_match = BENCHMARK_METHOD_RE.search(output)
     correctness = returncode == 0 and benchmark is not None
     artifacts = artifact_row(
         cache_dir,
@@ -730,6 +757,8 @@ def execute_case(
         "passed" if correctness else "failed",
         "latency_ms":
         float(benchmark.group("latency")) if benchmark else None,
+        "benchmark_method":
+        ((benchmark_method_match.group("method") if benchmark_method_match else "npu_profiler") if benchmark else None),
         "reported_operator":
         benchmark.group("operator") if benchmark else None,
         "warmup": (int(benchmark.group("warmup")) if benchmark else experiment.WARMUP),
@@ -861,7 +890,7 @@ def build_manifest(
         "timeout_retry_order":
         "after_initial_sweep",
         "benchmark_method":
-        os.environ.get("TRITON_BENCH_METHOD", "npu/default"),
+        "npu_profiler_with_explicit_event_fallback",
         "requested_configuration_count":
         configuration_count,
         "executed_configuration_count":
@@ -1022,6 +1051,7 @@ def load_legacy_results(result_dir: Path, manifest: dict) -> list[dict]:
                 "correctness_status": correctness,
                 "diagnostic": reason,
                 "latency_ms": optional_float(raw.get("运行延迟_ms")),
+                "benchmark_method": raw.get("测量方式") or None,
                 "required_ub_kib": ub_kib,
                 "required_ub_bytes": ub_kib * 1024 if ub_kib is not None else None,
                 "required_ub_bits": ub_kib * 8192 if ub_kib is not None else None,
@@ -1057,7 +1087,8 @@ def parse_run_time(run_id: str) -> datetime:
     return datetime.strptime(normalized, "%Y%m%dT%H%M%S%z")
 
 
-def find_latest_operator_run(operator: str, pipeline_axis: str) -> tuple[Path, dict, list[dict]]:
+def find_latest_operator_run(operator: str, pipeline_axis: str,
+                             experiment_schema: str) -> tuple[Path, dict, list[dict]]:
     latest = None
     if not RESULTS_ROOT.is_dir():
         raise SystemExit(f"results directory does not exist: {RESULTS_ROOT}")
@@ -1070,6 +1101,8 @@ def find_latest_operator_run(operator: str, pipeline_axis: str) -> tuple[Path, d
         except (OSError, json.JSONDecodeError):
             continue
         if manifest.get("operator") != operator:
+            continue
+        if manifest.get("experiment_schema") != experiment_schema:
             continue
         if pipeline_axis not in manifest.get("axes", {}):
             continue
@@ -1090,7 +1123,8 @@ def find_latest_operator_run(operator: str, pipeline_axis: str) -> tuple[Path, d
         if latest is None or candidate[:2] > latest[:2]:
             latest = candidate
     if latest is None:
-        raise SystemExit(f"no complete {pipeline_axis} result found for operator {operator!r}")
+        raise SystemExit(f"no complete {pipeline_axis} result with schema {experiment_schema!r} "
+                         f"found for operator {operator!r}")
     return latest[2], latest[3], latest[4]
 
 
@@ -1146,7 +1180,7 @@ def rerun_case(operator_file: Path, first_axis: str, multibuffer: str, vf_merge:
     is_a5, pipeline_axis, schema = experiment_context()
     configured_values(is_a5)
     config = parse_manual_config(first_axis, multibuffer, vf_merge, is_a5)
-    result_dir, manifest, rows = find_latest_operator_run(operator, pipeline_axis)
+    result_dir, manifest, rows = find_latest_operator_run(operator, pipeline_axis, schema)
     matching_indexes = [index for index, row in enumerate(rows) if row_matches_config(row, config, is_a5)]
     if len(matching_indexes) != 1:
         raise SystemExit("the requested combination is not a unique row in the latest complete "

@@ -80,6 +80,8 @@ class SweepRetryTest(unittest.TestCase):
                     print("RETRY_TEST_INITIAL_TIMEOUT", flush=True)
                     time.sleep(60)
 
+                if os.environ["EXPERIMENT_VF_MERGE_LEVEL"] == "1":
+                    print("NPU_BENCHMARK_METHOD=npu_event_fallback", flush=True)
                 print("BENCHMARK operator=retry_test latency_ms=1.25 warmup=1 active=1", flush=True)
                 """),
             encoding="utf-8",
@@ -208,6 +210,7 @@ class SweepRetryTest(unittest.TestCase):
             self.assertEqual(len(rows), 2)
             self.assertEqual(rows[0]["attempt_count"], 2)
             self.assertEqual(rows[0]["timeout_retries_used"], 1)
+            self.assertEqual(rows[0]["benchmark_method"], "npu_profiler")
             self.assertTrue(rows[0]["initial_timed_out"])
             self.assertFalse(rows[0]["timed_out"])
             self.assertEqual(
@@ -215,8 +218,10 @@ class SweepRetryTest(unittest.TestCase):
                 [True, False],
             )
             self.assertEqual(rows[1]["attempt_count"], 1)
+            self.assertEqual(rows[1]["benchmark_method"], "npu_event_fallback")
             self.assertTrue((directory / "results.csv").is_file())
             first_log = (directory / "logs/d1-b1-m0.log").read_text()
+            self.assertIn("[EXPERIMENT] TIMEOUT_PROCESS_SNAPSHOT", first_log)
             self.assertLess(
                 first_log.index("attempt 1 (initial)"),
                 first_log.index("attempt 2 (automatic_retry)"),
@@ -285,6 +290,7 @@ class SweepRetryTest(unittest.TestCase):
                 "correctness_status": "passed",
                 "diagnostic": "",
                 "latency_ms": 1.0 + merge,
+                "benchmark_method": "npu_profiler" if merge == 0 else "npu_event_fallback",
                 "required_ub_kib": 64.0,
                 "wall_time_s": 2.0,
                 "attempt_count": 1,
@@ -310,6 +316,7 @@ class SweepRetryTest(unittest.TestCase):
             self.assertEqual(report["operators"][0]["measured_count"], 2)
             self.assertEqual(report["operators"][0]["rows"][0]["multibuffer_num"], "off")
             self.assertFalse(report["operators"][0]["rows"][0]["enable_auto_multi_buffer"])
+            self.assertEqual(report["operators"][0]["rows"][1]["benchmark_method"], "npu_event_fallback")
 
             combined_path = root / "latest-summary/combined-results.csv"
             self.assertEqual(generate_experiment_report.write_combined_results_csv(latest, combined_path), 2)
@@ -372,6 +379,33 @@ class SweepRetryTest(unittest.TestCase):
                 [operator for operator in sorted(operators) for _ in range(2)],
             )
             self.assertEqual([row["vf_merge_level"] for row in combined_rows[:2]], ["0", "1"])
+
+    def test_case_refill_selects_only_current_experiment_schema(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def write_result(run_id: str, schema: str) -> Path:
+                result = root / f"{run_id}-retry_test"
+                result.mkdir()
+                (result / "manifest.json").write_text(
+                    json.dumps({
+                        "run_id": run_id,
+                        "operator": "retry_test",
+                        "experiment_schema": schema,
+                        "requested_configuration_count": 1,
+                        "executed_configuration_count": 1,
+                        "axes": {"depth": [1]},
+                    }))
+                (result / "measurements.jsonl").write_text(json.dumps({"status": "measured"}) + "\n")
+                return result
+
+            expected = write_result("20260825T120000+0800", run_sweep.A3_EXPERIMENT_SCHEMA)
+            write_result("20260825T130000+0800", "incompatible-newer-schema")
+            with patch.object(run_sweep, "RESULTS_ROOT", root):
+                selected, _, _ = run_sweep.find_latest_operator_run("retry_test", "depth",
+                                                                    run_sweep.A3_EXPERIMENT_SCHEMA)
+
+            self.assertEqual(selected, expected)
 
 
 if __name__ == "__main__":

@@ -164,6 +164,51 @@ def test_do_bench_npu_preserves_profile_when_collection_fails(monkeypatch, tmp_p
     assert cleanup_args == [((True, str(tmp_path)), {})]
 
 
+def test_do_bench_npu_can_fall_back_to_event_timing(monkeypatch, tmp_path, capsys):
+    profile = _FakeProfilerContext()
+    cleanup_args = []
+    fallback_args = []
+
+    fake_profiler = SimpleNamespace(
+        _ExperimentalConfig=lambda **kwargs: kwargs,
+        AiCMetrics=SimpleNamespace(PipeUtilization="pipe-utilization"),
+        ProfilerLevel=SimpleNamespace(Level1="level1"),
+        ProfilerActivity=SimpleNamespace(NPU="npu"),
+        schedule=lambda **kwargs: "complete-schedule",
+        profile=lambda **kwargs: profile,
+        tensorboard_trace_handler=lambda path: ("trace-handler", path),
+    )
+    fake_torch = SimpleNamespace(npu=SimpleNamespace(synchronize=lambda: None))
+    fake_torch_npu = SimpleNamespace(profiler=fake_profiler)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "torch_npu", fake_torch_npu)
+
+    def fail_collection(*args, **kwargs):
+        raise ascend_testing.ProfilerDataUnavailableError(str(tmp_path))
+
+    def event_fallback(*args, **kwargs):
+        fallback_args.append((args, kwargs))
+        return 1.25
+
+    monkeypatch.setattr(ascend_testing, "_collect_prof_result", fail_collection)
+    monkeypatch.setattr(ascend_testing, "_do_bench_npu_events", event_fallback)
+    monkeypatch.setattr(ascend_testing, "_rm_dic", lambda *args, **kwargs: cleanup_args.append((args, kwargs)))
+
+    fn = lambda: None
+    result = ascend_testing.do_bench_npu(
+        fn,
+        warmup=2,
+        active=3,
+        prof_dir=str(tmp_path),
+        fallback_to_event_timing=True,
+    )
+
+    assert result == 1.25
+    assert fallback_args == [(([fn], 2, 3, False), {})]
+    assert cleanup_args == [((True, str(tmp_path)), {})]
+    assert "NPU_BENCHMARK_METHOD=npu_event_fallback" in capsys.readouterr().out
+
+
 def test_batch_bench_supports_do_bench_with_quantiles():
     record = {}
 
