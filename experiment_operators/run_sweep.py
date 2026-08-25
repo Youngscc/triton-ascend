@@ -36,8 +36,8 @@ DOMINANCE_ERROR_RE = re.compile(
 OPERATOR_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 SOURCE_BENCHMARK_OPERATOR_RE = re.compile(r"BENCHMARK\s+operator=([A-Za-z0-9][A-Za-z0-9_.-]*)")
 OPERATOR_ALIASES = {"hstu_attention_fwd": "hstu_attention"}
-A3_EXPERIMENT_SCHEMA = ("native-cv-depth+no-dynamic-cv+local-multibuffer-off-v10")
-A5_EXPERIMENT_SCHEMA = ("dynamic-cv-slots+no-static-cv+local-multibuffer-off-v10")
+A3_EXPERIMENT_SCHEMA = ("native-cv-depth+no-dynamic-cv+local-multibuffer-off-v11")
+A5_EXPERIMENT_SCHEMA = ("dynamic-cv-slots+no-static-cv+local-multibuffer-off-v11")
 OFF = "off"
 RESULTS_CSV_SUFFIX_FIELDS = [
     "序号",
