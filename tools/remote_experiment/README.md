@@ -19,17 +19,31 @@ From the project root:
 source tools/remote_experiment/activate-dev-environment.sh
 ```
 
+To discard all project build products and caches before a known-clean rebuild:
+
+```bash
+./tools/remote_experiment/clean-build-cache.sh
+./tools/remote_experiment/setup-dev-environment.sh
+./tools/remote_experiment/rebuild-compiler.sh
+```
+
 Script roles:
 
 | Script | Purpose |
 | --- | --- |
 | `setup-dev-environment.sh` | Create or repair `.codex-remote/venv` and build this checkout's Triton Python/core. |
 | `rebuild-compiler.sh` | Build the pinned AscendNPU-IR compiler and architecture-matched bitcode package. |
+| `clean-build-cache.sh` | Remove allowlisted Triton, AscendNPU-IR, runtime, Python, and temporary build caches without deleting experiment records or the venv. |
 | `activate-dev-environment.sh` | Select the project venv, backend, compiler, CANN tools, SoC, and project-local temporary directory for the current shell. |
 | `load-cann-environment.sh` | Locate and source the installed CANN environment. |
 | `config.sh` | Define repository-local build, cache, result, and temporary paths. |
 
-Build products, caches, temporary files, and experiment results remain under `.codex-remote/` or `tmp/`; they are not written into tracked source directories.
+Generated files are ignored by Git. The clean script removes only explicit
+paths under the current project. It preserves `.codex-remote/results`,
+`.codex-remote/logs`, `.codex-remote/venv`, `.codex-remote/top-git`, downloaded
+Triton LLVM packages, and all tracked source files. Triton's `ccache` is fixed
+at `.codex-remote/ccache` so cleaning this project never touches a shared
+container cache.
 
 ## Offline source sync
 

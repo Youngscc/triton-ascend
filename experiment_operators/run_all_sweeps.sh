@@ -108,3 +108,5 @@ PYTHON_BIN="$DEV_VENV/bin/python" "$SCRIPT_DIR/generate_latest_report.sh"
 
 printf 'HTML report: %s\n' \
   "$PROJECT_ROOT/.codex-remote/results/latest-summary/experiment-report.html"
+printf 'Combined CSV: %s\n' \
+  "$PROJECT_ROOT/.codex-remote/results/latest-summary/combined-results.csv"
