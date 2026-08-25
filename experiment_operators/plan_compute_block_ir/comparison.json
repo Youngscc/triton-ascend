@@ -1,0 +1,62 @@
+[
+  {
+    "diff_lines": 0,
+    "diff_path": "diffs/fused_attention.diff",
+    "main_dev_lines": 238,
+    "main_dev_operation_count": 102,
+    "main_dev_sha256": "1a1f1f5249950ef660c737bebf8f8d02d329d4c937214b5e361f97cab9287931",
+    "main_lines": 238,
+    "main_operation_count": 102,
+    "main_sha256": "e2764781ac268481487984e6843fff2ac44dbd4ad60f192744137ebb7a2f7c7b",
+    "normalized_equal": true,
+    "operation_count_delta": {},
+    "operation_count_removed": {},
+    "operator": "fused_attention",
+    "raw_equal": false
+  },
+  {
+    "diff_lines": 0,
+    "diff_path": "diffs/flash_attention_npu_v8.diff",
+    "main_dev_lines": 430,
+    "main_dev_operation_count": 234,
+    "main_dev_sha256": "bc59deacaf5d8a5d93588980922dde17666ff2a6cbcce47fdc7aea089ae5e605",
+    "main_lines": 430,
+    "main_operation_count": 234,
+    "main_sha256": "e75f86b7404c51e8a9f5acc3964b6031513e172d401827c35f77589f6c7b46ea",
+    "normalized_equal": true,
+    "operation_count_delta": {},
+    "operation_count_removed": {},
+    "operator": "flash_attention_npu_v8",
+    "raw_equal": false
+  },
+  {
+    "diff_lines": 0,
+    "diff_path": "diffs/hstu_attention.diff",
+    "main_dev_lines": 370,
+    "main_dev_operation_count": 185,
+    "main_dev_sha256": "4f30acc02cc411e36761b0eaa70ff52caf048f4fa7424d93f2851d487205491b",
+    "main_lines": 370,
+    "main_operation_count": 185,
+    "main_sha256": "bf289a7dd27b0217e6b3fa054983ff189cd291a6c4fe914a00adf26039d3a9ce",
+    "normalized_equal": true,
+    "operation_count_delta": {},
+    "operation_count_removed": {},
+    "operator": "hstu_attention",
+    "raw_equal": false
+  },
+  {
+    "diff_lines": 0,
+    "diff_path": "diffs/unified_attention.diff",
+    "main_dev_lines": 463,
+    "main_dev_operation_count": 225,
+    "main_dev_sha256": "acabfb4b27f48815c1938b0d3252d93910cadf364eeccb76dbc7611407bee44b",
+    "main_lines": 463,
+    "main_operation_count": 225,
+    "main_sha256": "77616d3b044b92baf0f1f35e2a5067032c37554e2c34695cbdc3940f96ae2eca",
+    "normalized_equal": true,
+    "operation_count_delta": {},
+    "operation_count_removed": {},
+    "operator": "unified_attention",
+    "raw_equal": false
+  }
+]

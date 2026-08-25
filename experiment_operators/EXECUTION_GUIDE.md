@@ -212,7 +212,11 @@ UnitFlag synchronization 不是实验轴，算子不会显式传入 `unit_flag`�
 
 ```text
 .codex-remote/results/latest-summary/experiment-report.html
+.codex-remote/results/latest-summary/combined-results.csv
 ```
+
+`combined-results.csv` 与 HTML 使用完全相同的各算子最新完整实验目录，保留每份
+`results.csv` 的全部行，并增加算子、run ID 和结果目录三列用于追溯来源。
 
 ## 7. 补测一个 case
 

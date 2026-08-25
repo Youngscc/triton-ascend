@@ -336,6 +336,68 @@ class SweepRetryTest(unittest.TestCase):
             self.assertEqual(report["operators"][0]["rows"][0]["multibuffer_num"], "off")
             self.assertFalse(report["operators"][0]["rows"][0]["enable_auto_multi_buffer"])
 
+            combined_path = root / "latest-summary/combined-results.csv"
+            self.assertEqual(generate_experiment_report.write_combined_results_csv(latest, combined_path), 2)
+            with combined_path.open(newline="", encoding="utf-8-sig") as handle:
+                combined_rows = list(csv.DictReader(handle))
+            self.assertEqual(len(combined_rows), 2)
+            self.assertEqual(combined_rows[0]["算子"], "retry_test")
+            self.assertEqual(combined_rows[0]["run_id"], "20260819T120000+0800")
+            self.assertEqual(combined_rows[0]["结果目录"], result.name)
+            self.assertEqual(combined_rows[0]["multibuffer_num"], "off")
+            self.assertEqual(combined_rows[1]["vf_merge_level"], "1")
+
+    def test_combined_report_csv_contains_all_four_operators(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            operators = [
+                "fused_attention",
+                "flash_attention_npu_v8",
+                "hstu_attention",
+                "unified_attention",
+            ]
+            for operator in operators:
+                result = root / f"20260825T120000+0800-{operator}"
+                result.mkdir()
+                rows = [{
+                    "depth": 1,
+                    "enable_dynamic_cv_pipeline": False,
+                    "enable_auto_multi_buffer": False,
+                    "multibuffer_num": "off",
+                    "vf_merge_level": merge,
+                    "status": "measured",
+                    "correctness_status": "passed",
+                    "diagnostic": "",
+                    "latency_ms": 1.0 + merge,
+                    "required_ub_kib": 64.0,
+                    "wall_time_s": 2.0,
+                    "attempt_count": 1,
+                    "timed_out": False,
+                    "log_path": str(result / f"d1-boff-m{merge}.log"),
+                } for merge in (0, 1)]
+                run_sweep.write_results(rows, result, "depth")
+                (result / "manifest.json").write_text(
+                    json.dumps({
+                        "run_id": "20260825T120000+0800",
+                        "operator": operator,
+                        "requested_configuration_count": 2,
+                        "executed_configuration_count": 2,
+                    }))
+
+            latest = generate_experiment_report.find_latest_report_runs(root)
+            combined_path = root / "latest-summary/combined-results.csv"
+            self.assertEqual(generate_experiment_report.write_combined_results_csv(latest, combined_path), 8)
+            with combined_path.open(newline="", encoding="utf-8-sig") as handle:
+                reader = csv.DictReader(handle)
+                self.assertEqual(reader.fieldnames[:3], ["算子", "run_id", "结果目录"])
+                combined_rows = list(reader)
+            self.assertEqual(len(combined_rows), 8)
+            self.assertEqual(
+                [row["算子"] for row in combined_rows],
+                [operator for operator in sorted(operators) for _ in range(2)],
+            )
+            self.assertEqual([row["vf_merge_level"] for row in combined_rows[:2]], ["0", "1"])
+
 
 if __name__ == "__main__":
     unittest.main()

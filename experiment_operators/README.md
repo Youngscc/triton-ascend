@@ -76,7 +76,22 @@ The top-level command also refreshes:
 
 ```text
 .codex-remote/results/latest-summary/experiment-report.html
+.codex-remote/results/latest-summary/combined-results.csv
 ```
+
+The combined CSV uses the same latest complete run for each operator as the
+HTML report. It preserves every source `results.csv` row and prefixes the
+operator, run ID, and result-directory provenance.
+
+Compare UB usage from two result tables with:
+
+```bash
+python experiment_operators/compare_ub_csv.py \
+  path/to/first/results.csv path/to/second/results.csv
+```
+
+Only rows with the same compiler parameter values are compared. The command prints each UB difference and a summary; exit status `0` means the comparable rows have the same UB, `1` means at least one UB value differs, and `2` means the input is invalid or contains no comparable UB. Missing UB values and parameter combinations present in only one file are counted but are not treated as UB differences.
+The old `intra_cache_num` and new `buf_slot_num_of_veccore` CSV columns are treated as the same DynamicCV axis.
 
 The statuses are:
 

@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RESULTS_DIR = ROOT / ".codex-remote/results"
 DEFAULT_TEMPLATE = Path(__file__).with_name("experiment_report_template.html")
 DEFAULT_OUTPUT = DEFAULT_RESULTS_DIR / "latest-summary/experiment-report.html"
+DEFAULT_COMBINED_CSV = DEFAULT_RESULTS_DIR / "latest-summary/combined-results.csv"
 ASCEND_NPU_IR_PATH = "third_party/ascend/AscendNPU-IR"
 RUN_DIR_RE = re.compile(r"^(?P<run_id>\d{8}T\d{6}(?:Z|[+-]\d{4}))-(?P<operator>.+)$")
 OPERATOR_LABELS = {
@@ -31,6 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
     parser.add_argument("--template", type=Path, default=DEFAULT_TEMPLATE)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--combined-csv", type=Path)
     return parser.parse_args()
 
 
@@ -358,11 +360,55 @@ def safe_json(data: dict) -> str:
                        ensure_ascii=False).replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e"))
 
 
+def write_combined_results_csv(latest: dict[str, dict], output_path: Path) -> int:
+    provenance_fields = ["算子", "run_id", "结果目录"]
+    source_records = []
+    combined_fields = []
+    for operator, run in sorted(latest.items()):
+        csv_path = run["result_dir"] / "results.csv"
+        if not csv_path.is_file():
+            raise ValueError(f"selected report run has no results.csv: {csv_path}")
+        with csv_path.open(newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            source_fields = list(reader.fieldnames or ())
+            if not source_fields:
+                raise ValueError(f"results.csv has no header: {csv_path}")
+            source_rows = list(reader)
+        if len(source_rows) != len(run["rows"]):
+            raise ValueError(f"results.csv row count does not match selected run: {csv_path} "
+                             f"({len(source_rows)} != {len(run['rows'])})")
+        for field in source_fields:
+            if field not in provenance_fields and field not in combined_fields:
+                combined_fields.append(field)
+        source_records.append((operator, run, source_rows))
+
+    fieldnames = [*provenance_fields, *combined_fields]
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output_path.with_name(f".{output_path.name}.tmp")
+    row_count = 0
+    with temporary.open("w", newline="", encoding="utf-8-sig") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for operator, run, source_rows in source_records:
+            for source_row in source_rows:
+                writer.writerow({
+                    **source_row,
+                    "算子": operator,
+                    "run_id": run["run_id"],
+                    "结果目录": run["result_dir"].name,
+                })
+                row_count += 1
+    temporary.replace(output_path)
+    return row_count
+
+
 def main() -> int:
     args = parse_args()
     results_dir = args.results_dir.resolve()
     template_path = args.template.resolve()
     output_path = args.output.resolve()
+    combined_csv_path = (args.combined_csv.resolve()
+                         if args.combined_csv else output_path.with_name(DEFAULT_COMBINED_CSV.name))
     if not results_dir.is_dir():
         raise SystemExit(f"results directory does not exist: {results_dir}")
     if not template_path.is_file():
@@ -377,9 +423,12 @@ def main() -> int:
         raise SystemExit(f"template must contain exactly one {placeholder} placeholder")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(template.replace(placeholder, safe_json(data)), encoding="utf-8")
+    combined_row_count = write_combined_results_csv(latest, combined_csv_path)
     print(f"operators={len(data['operators'])}")
     print(f"rows={sum(operator['row_count'] for operator in data['operators'])}")
     print(f"output={output_path}")
+    print(f"combined_csv_rows={combined_row_count}")
+    print(f"combined_csv={combined_csv_path}")
     return 0
 
 

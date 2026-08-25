@@ -1,0 +1,5 @@
+operator,raw_equal,normalized_equal,main_lines,main_dev_lines,main_ops,main_dev_ops,diff_lines
+fused_attention,False,True,238,238,102,102,0
+flash_attention_npu_v8,False,True,430,430,234,234,0
+hstu_attention,False,True,370,370,185,185,0
+unified_attention,False,True,463,463,225,225,0

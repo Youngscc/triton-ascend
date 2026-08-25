@@ -1,0 +1,25 @@
+{
+  "ascend_npu_ir_commit": "4b9f1a56092d66a991b857ca4ca2b40f2cf06e53",
+  "capture_host": "macOS arm64",
+  "compiler_options": {
+    "arch": "Ascend950PR_9579",
+    "dynamic_cv_enabled": true,
+    "gm_or_load_cache_count": 1,
+    "local_multibuffer_count": 2,
+    "local_multibuffer_enabled": true,
+    "static_workspace_multibuffer": 0,
+    "veccore_or_intra_cache_count": 4,
+    "vf_merge_level": 0,
+    "crosscore_or_inter_cache_count": 1
+  },
+  "main_commit": "d2dfc8b77e0fb05cf463bcdaf168ce90cd47cb2b",
+  "main_dev_commit": "9ffbfdb9ee7d81de0de05e4275e868c47c3bdd8e",
+  "npu_runtime_used": false,
+  "operators": [
+    "fused_attention",
+    "flash_attention_npu_v8",
+    "hstu_attention",
+    "unified_attention"
+  ],
+  "snapshot_boundary": "input to OpClassifierPass immediately after PlanComputeBlockPass"
+}
