@@ -64,7 +64,6 @@ class CompilerCostmodelContractTest(unittest.TestCase):
         utils_mod._get_auto_blockify_blacklist_reasons = lambda *args, **kwargs: []
         utils_mod._is_auto_map_parallel_blocks_enabled = lambda *args, **kwargs: False
         utils_mod._warn_auto_blockify_disabled = lambda *args, **kwargs: None
-
         def remove_deprecated_npu_options(options, *, in_place=False):
             normalized = options if in_place else dict(options)
             for old_name, new_name in {
@@ -78,6 +77,7 @@ class CompilerCostmodelContractTest(unittest.TestCase):
             return normalized
 
         utils_mod._remove_deprecated_npu_options = remove_deprecated_npu_options
+        utils_mod._warn_deprecated_npu_option = lambda *_args, **_kwargs: None
         utils_mod._warn_deprecated_ascend_env_vars = lambda: None
         utils_mod.get_cann_version_file_hash = lambda *args, **kwargs: ""
         utils_mod.graph_ub_budget_bytes_for_arch = lambda *args, **kwargs: 0
