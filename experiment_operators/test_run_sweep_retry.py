@@ -199,6 +199,22 @@ class SweepRetryTest(unittest.TestCase):
                 self.assertTrue(options["multibuffer"])
                 self.assertEqual(options["multibuffer_num"], 3)
 
+    def test_every_candidate_emits_case_stage_markers(self):
+        candidate_dir = Path(__file__).with_name("candidates")
+        for name in (
+                "fused_attention.py",
+                "flash_attention_npu_v8.py",
+                "hstu_attention.py",
+                "unified_attention.py",
+        ):
+            source = (candidate_dir / name).read_text(encoding="utf-8")
+            with self.subTest(candidate=name):
+                self.assertIn("CASE_STAGE=correctness_start", source)
+                self.assertIn("CASE_STAGE=benchmark_start", source)
+        flash_source = (candidate_dir / "flash_attention_npu_v8.py").read_text(encoding="utf-8")
+        self.assertIn("CASE_STAGE=correctness_kernel_launch_returned", flash_source)
+        self.assertIn("CASE_STAGE=correctness_kernel_sync_done", flash_source)
+
     def result_dir(self, root: Path) -> Path:
         directories = list((root / "results").glob("*-retry_test"))
         self.assertEqual(len(directories), 1)
