@@ -178,6 +178,7 @@ def normalize_csv_row(raw: dict[str, str], axis: str) -> dict:
         "status": status,
         "correctness_status": correctness,
         "latency_ms": optional_float(raw.get("运行延迟_ms")),
+        "benchmark_method": raw.get("测量方式") or None,
         "required_ub_kib": ub_kib,
         "required_ub_bits": round(ub_kib * 8192) if ub_kib is not None else None,
         "binary_hash": None,
