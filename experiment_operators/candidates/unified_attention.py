@@ -560,7 +560,6 @@ def benchmark_unified_attention(warmup=5, active=30):
         warmup=warmup,
         active=active,
         target_kernel_name="kernel_unified_attention_2d",
-        fallback_to_event_timing=True,
     )
     print(f"BENCHMARK operator=unified_attention latency_ms={latency_ms:.6f} warmup={warmup} active={active}")
     return latency_ms

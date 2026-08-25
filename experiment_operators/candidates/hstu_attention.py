@@ -999,7 +999,6 @@ def benchmark_hstu_attention_fwd(warmup=5, active=30):
         warmup=warmup,
         active=active,
         target_kernel_name="_hstu_attn_fwd",
-        fallback_to_event_timing=True,
     )
     print(f"BENCHMARK operator=hstu_attention_fwd latency_ms={latency_ms:.6f} warmup={warmup} active={active}")
     return latency_ms

@@ -235,7 +235,6 @@
           <thead><tr>
             <th id="table-axis">变量</th>
             <th>latency_ms</th>
-            <th>测量方式</th>
             <th>性能变化</th>
             <th>UB_KiB</th>
             <th>UB变化</th>
@@ -558,7 +557,6 @@
           const values = [
             String(row[elements.axis.value]),
             formatNumber(row.latency_ms),
-            row.benchmark_method || "—",
             formatDelta(delta(row.latency_ms, latencyBaseline)),
             formatNumber(row.required_ub_kib, 3),
             formatDelta(delta(row.required_ub_kib, ubBaseline)),

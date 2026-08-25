@@ -39,13 +39,6 @@ class ProfilerResultMismatchError(RuntimeError):
             f"target_kernel_name={target_kernel_name!r}, expected_rows={expected_rows}, actual_rows={actual_rows}")
 
 
-class ProfilerDataUnavailableError(RuntimeError):
-
-    def __init__(self, profile_path: str):
-        self.profile_path = profile_path
-        super().__init__(f"NPU profiler did not produce kernel_details.csv; profile data preserved at {profile_path}")
-
-
 def do_bench_npu(
     funcs,
     warmup=5,
@@ -54,7 +47,6 @@ def do_bench_npu(
     prof_dir=None,
     keep_res=False,
     target_kernel_name: Optional[str] = None,
-    fallback_to_event_timing=False,
 ):
     import torch
     import torch_npu
@@ -91,10 +83,8 @@ def do_bench_npu(
         torch.npu.synchronize()  # shake out of any npu error
 
     total = warmup + active
-    profile_steps = len(funcs) * total
     with torch_npu.profiler.profile(
             activities=[torch_npu.profiler.ProfilerActivity.NPU],
-            schedule=torch_npu.profiler.schedule(wait=0, warmup=1, active=profile_steps, repeat=1),
             on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(torch_path),
             record_shapes=False,
             profile_memory=False,
@@ -103,12 +93,6 @@ def do_bench_npu(
             with_modules=False,
             experimental_config=experimental_config,
     ) as prof:
-        # Give torch_npu's profiler state machine a real warmup step before it
-        # starts recording. These launches are not present in kernel_details.csv.
-        for fn in funcs:
-            fn()
-            torch.npu.synchronize()
-        prof.step()
         for fn in funcs:
             for _ in builtins.range(total):
                 if clear_l2_cache:
@@ -116,13 +100,11 @@ def do_bench_npu(
                     torch.npu.synchronize()
                 fn()
                 torch.npu.synchronize()
-                prof.step()
     if clear_l2_cache:
         del buffer
 
-    collected = False
     try:
-        result = _collect_prof_result(
+        return _collect_prof_result(
             torch_path,
             funcs,
             warmup,
@@ -130,56 +112,8 @@ def do_bench_npu(
             target_kernel_name=target_kernel_name,
             clear_l2_cache=clear_l2_cache,
         )
-        collected = True
-        return result
-    except ProfilerDataUnavailableError as error:
-        if not fallback_to_event_timing:
-            raise
-        print(
-            "[WARNING] NPU profiler data is unavailable; falling back to "
-            f"NPU event timing. profile_path={error.profile_path}",
-            flush=True,
-        )
-        print("NPU_BENCHMARK_METHOD=npu_event_fallback", flush=True)
-        return _do_bench_npu_events(funcs, warmup, active, clear_l2_cache)
     finally:
-        _rm_dic(keep_res or not collected, torch_path)
-
-
-def _do_bench_npu_events(funcs, warmup, active, clear_l2_cache=False):
-    import torch
-
-    device_interface = runtime.driver.active.get_device_interface()
-    cache_buffer = None
-    if clear_l2_cache:
-        cache_buffer = runtime.driver.active.get_empty_cache_for_benchmark().float()
-
-    def prepare_launch():
-        if cache_buffer is not None:
-            cache_buffer.sum()
-            torch.npu.synchronize()
-
-    time_cost = []
-    for fn in funcs:
-        for _ in builtins.range(warmup):
-            prepare_launch()
-            fn()
-        torch.npu.synchronize()
-
-        start_events = [device_interface.Event(enable_timing=True) for _ in builtins.range(active)]
-        end_events = [device_interface.Event(enable_timing=True) for _ in builtins.range(active)]
-        for start_event, end_event in zip(start_events, end_events):
-            prepare_launch()
-            start_event.record()
-            fn()
-            end_event.record()
-        torch.npu.synchronize()
-        samples = [start.elapsed_time(end) for start, end in zip(start_events, end_events)]
-        time_cost.append(sum(samples) / active)
-
-    if cache_buffer is not None:
-        del cache_buffer
-    return time_cost[0] if len(time_cost) == 1 else time_cost
+        _rm_dic(keep_res, torch_path)
 
 
 def _rm_dic(keep_res, torch_path):
@@ -226,7 +160,10 @@ def _collect_prof_result(
                 break
     num_funcs = len(funcs)
     if kernel_details_file is None:
-        raise ProfilerDataUnavailableError(base_dir)
+        if num_funcs == 1:
+            return float("inf")
+        else:
+            return [float("inf")] * num_funcs
 
     df = pd.read_csv(kernel_details_file)
     # filter out l2 cache clearing operation
