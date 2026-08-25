@@ -156,11 +156,16 @@ LLVM must match the top-level repository gitlinks in the server checkout.
   current Python/core with the CANN-matched compiler.
 - The top-level Triton and `triton-mlir-opt` use the repository-selected MLIR
   22, while the standalone `bishengir-compile` uses AscendNPU-IR's pinned MLIR
-  19.1.7. Bytecode version 4 is the shared format. CANN's older `bishengir-opt`
-  cannot decode DynamicCV's `HIVM_AddressSpaceAttr<ssbuf>`, so the rebuild
-  produces the repository-matched MLIR 19 `bishengir-opt` as the compatibility
-  reader. `rebuild-compiler.sh` verifies an MLIR 22-to-19 SSBUF round trip with
-  the project-built `bishengir-opt` and prints
+  19.1.7. Use upstream's default bytecode emission together with its patched
+  MLIR 22 writer and the repository-matched MLIR 19 reader; do not force an
+  older bytecode version. Both default bytecode version 6 and version 4 decode
+  successfully with the project-built reader. CANN's older `bishengir-opt`
+  rejects DynamicCV's `HIVM_AddressSpaceAttr<ssbuf>` with either version
+  because its HIVM schema lacks `ssbuf`, not because of the bytecode container
+  version. Development activation puts the repository-built compiler directory
+  first on `PATH`, following the backend's upstream tool lookup order.
+  `rebuild-compiler.sh` verifies the default MLIR 22-to-19 SSBUF round trip with
+  that project-built `bishengir-opt` and prints
   `HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK`. It does not run a post-build SSBUF input
   through the full compiler or use downstream `hivmc-a5` as an SSBUF parsing
   gate. Development activation must clear

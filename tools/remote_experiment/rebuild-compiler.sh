@@ -203,7 +203,7 @@ printf '%s\n' \
   '  }' \
   '}' >"$ssbuf_check_dir/input.mlir"
 "$triton_mlir_opt" "$ssbuf_check_dir/input.mlir" --emit-bytecode \
-  --emit-bytecode-version=4 -o "$ssbuf_check_dir/input.mlirbc"
+  -o "$ssbuf_check_dir/input.mlirbc"
 "$custom_bishengir_opt" "$ssbuf_check_dir/input.mlirbc" \
   -o "$ssbuf_check_dir/roundtrip.mlir"
 grep -q '#hivm.address_space<ssbuf>' "$ssbuf_check_dir/roundtrip.mlir"

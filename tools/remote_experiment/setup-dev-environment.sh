@@ -191,7 +191,6 @@ printf '%s\n' \
   '  }' \
   '}' >"$bytecode_check_dir/input.mlir"
 "$triton_mlir_opt" "$bytecode_check_dir/input.mlir" --emit-bytecode \
-  --emit-bytecode-version=4 \
   -o "$bytecode_check_dir/input.mlirbc"
 "$bishengir_opt" "$bytecode_check_dir/input.mlirbc" \
   -o "$bytecode_check_dir/roundtrip.mlir"

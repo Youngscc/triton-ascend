@@ -188,7 +188,7 @@ class CompilerCostmodelContractTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             cmplr.NPUOptions(vf_merge_level=3)
 
-    def test_bytecode_writer_targets_bishengir_compatible_version(self):
+    def test_bytecode_writer_uses_upstream_default_version(self):
         cmplr, _dump_mgr, _GPUTarget = self._load_compiler_module()
 
         def fake_run(command, **_kwargs):
@@ -210,7 +210,7 @@ class CompilerCostmodelContractTest(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertEqual(command[0], "/llvm22/bin/triton-mlir-opt")
         self.assertIn("--emit-bytecode", command)
-        self.assertIn("--emit-bytecode-version=4", command)
+        self.assertFalse(any(arg.startswith("--emit-bytecode-version=") for arg in command))
 
     def test_bishengir_failure_includes_captured_diagnostics(self):
         cmplr, _dump_mgr, _GPUTarget = self._load_compiler_module()
