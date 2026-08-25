@@ -360,6 +360,7 @@ def benchmark_attention_fused(warmup=5, active=30):
         warmup=warmup,
         active=active,
         target_kernel_name="_attn_fwd",
+        fallback_to_event_timing=True,
     )
     print(f"BENCHMARK operator=fused_attention latency_ms={latency_ms:.6f} warmup={warmup} active={active}")
     return latency_ms

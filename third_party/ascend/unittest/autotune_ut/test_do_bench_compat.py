@@ -18,12 +18,29 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from types import MethodType
+import sys
+from types import MethodType, SimpleNamespace
 
 import pytest
 import triton
+import triton.backends.ascend.testing as ascend_testing
 from triton.runtime.autotuner import Config
 from triton.backends.ascend.runtime.autotuner import AutoTilingTuner
+
+
+class _FakeProfilerContext:
+
+    def __init__(self):
+        self.steps = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+    def step(self):
+        self.steps += 1
 
 
 def _make_tuner(do_bench):
@@ -41,6 +58,134 @@ def _make_tuner(do_bench):
 
     tuner._make_kernel_call = MethodType(_make_kernel_call, tuner)
     return tuner
+
+
+def test_do_bench_npu_completes_scheduled_profile(monkeypatch, tmp_path):
+    schedule_args = {}
+    profile_args = {}
+    profile = _FakeProfilerContext()
+    synchronize_calls = []
+    function_calls = [0, 0]
+    cleanup_args = []
+
+    def schedule(**kwargs):
+        schedule_args.update(kwargs)
+        return "complete-schedule"
+
+    def make_profile(**kwargs):
+        profile_args.update(kwargs)
+        return profile
+
+    fake_profiler = SimpleNamespace(
+        _ExperimentalConfig=lambda **kwargs: kwargs,
+        AiCMetrics=SimpleNamespace(PipeUtilization="pipe-utilization"),
+        ProfilerLevel=SimpleNamespace(Level1="level1"),
+        ProfilerActivity=SimpleNamespace(NPU="npu"),
+        schedule=schedule,
+        profile=make_profile,
+        tensorboard_trace_handler=lambda path: ("trace-handler", path),
+    )
+    fake_torch = SimpleNamespace(npu=SimpleNamespace(synchronize=lambda: synchronize_calls.append(True)))
+    fake_torch_npu = SimpleNamespace(profiler=fake_profiler)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "torch_npu", fake_torch_npu)
+    monkeypatch.setattr(ascend_testing, "_collect_prof_result", lambda *args, **kwargs: [1.0, 2.0])
+    monkeypatch.setattr(ascend_testing, "_rm_dic", lambda *args, **kwargs: cleanup_args.append((args, kwargs)))
+
+    def first():
+        function_calls[0] += 1
+
+    def second():
+        function_calls[1] += 1
+
+    result = ascend_testing.do_bench_npu(
+        [first, second],
+        warmup=2,
+        active=3,
+        prof_dir=str(tmp_path),
+        target_kernel_name="target",
+    )
+
+    assert result == [1.0, 2.0]
+    assert schedule_args == {"wait": 0, "warmup": 1, "active": 10, "repeat": 1}
+    assert profile_args["schedule"] == "complete-schedule"
+    assert profile.steps == 11
+    assert function_calls == [7, 7]
+    assert len(synchronize_calls) == 14
+    assert cleanup_args == [((False, str(tmp_path)), {})]
+
+
+def test_do_bench_npu_preserves_profile_when_collection_fails(monkeypatch, tmp_path):
+    profile = _FakeProfilerContext()
+    cleanup_args = []
+    fake_profiler = SimpleNamespace(
+        _ExperimentalConfig=lambda **kwargs: kwargs,
+        AiCMetrics=SimpleNamespace(PipeUtilization="pipe-utilization"),
+        ProfilerLevel=SimpleNamespace(Level1="level1"),
+        ProfilerActivity=SimpleNamespace(NPU="npu"),
+        schedule=lambda **kwargs: "complete-schedule",
+        profile=lambda **kwargs: profile,
+        tensorboard_trace_handler=lambda path: ("trace-handler", path),
+    )
+    fake_torch = SimpleNamespace(npu=SimpleNamespace(synchronize=lambda: None))
+    fake_torch_npu = SimpleNamespace(profiler=fake_profiler)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "torch_npu", fake_torch_npu)
+
+    def fail_collection(*args, **kwargs):
+        raise ascend_testing.ProfilerDataUnavailableError(str(tmp_path))
+
+    monkeypatch.setattr(ascend_testing, "_collect_prof_result", fail_collection)
+    monkeypatch.setattr(ascend_testing, "_rm_dic", lambda *args, **kwargs: cleanup_args.append((args, kwargs)))
+
+    with pytest.raises(ascend_testing.ProfilerDataUnavailableError, match="profile data preserved"):
+        ascend_testing.do_bench_npu(lambda: None, warmup=1, active=1, prof_dir=str(tmp_path))
+
+    assert cleanup_args == [((True, str(tmp_path)), {})]
+
+
+def test_do_bench_npu_can_fall_back_to_event_timing(monkeypatch, tmp_path, capsys):
+    profile = _FakeProfilerContext()
+    cleanup_args = []
+    fallback_args = []
+    fake_profiler = SimpleNamespace(
+        _ExperimentalConfig=lambda **kwargs: kwargs,
+        AiCMetrics=SimpleNamespace(PipeUtilization="pipe-utilization"),
+        ProfilerLevel=SimpleNamespace(Level1="level1"),
+        ProfilerActivity=SimpleNamespace(NPU="npu"),
+        schedule=lambda **kwargs: "complete-schedule",
+        profile=lambda **kwargs: profile,
+        tensorboard_trace_handler=lambda path: ("trace-handler", path),
+    )
+    fake_torch = SimpleNamespace(npu=SimpleNamespace(synchronize=lambda: None))
+    fake_torch_npu = SimpleNamespace(profiler=fake_profiler)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "torch_npu", fake_torch_npu)
+
+    def fail_collection(*args, **kwargs):
+        raise ascend_testing.ProfilerDataUnavailableError(str(tmp_path))
+
+    def event_fallback(*args, **kwargs):
+        fallback_args.append((args, kwargs))
+        return 1.25
+
+    monkeypatch.setattr(ascend_testing, "_collect_prof_result", fail_collection)
+    monkeypatch.setattr(ascend_testing, "_do_bench_npu_events", event_fallback)
+    monkeypatch.setattr(ascend_testing, "_rm_dic", lambda *args, **kwargs: cleanup_args.append((args, kwargs)))
+
+    fn = lambda: None
+    result = ascend_testing.do_bench_npu(
+        fn,
+        warmup=2,
+        active=3,
+        prof_dir=str(tmp_path),
+        fallback_to_event_timing=True,
+    )
+
+    assert result == 1.25
+    assert fallback_args == [(([fn], 2, 3, False), {})]
+    assert cleanup_args == [((True, str(tmp_path)), {})]
+    assert "NPU_BENCHMARK_METHOD=npu_event_fallback" in capsys.readouterr().out
 
 
 def test_batch_bench_supports_do_bench_with_quantiles():

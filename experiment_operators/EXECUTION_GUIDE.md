@@ -195,6 +195,11 @@ TIMEOUT_RETRIES = 1
 - `manifest.json`：实验取值、源码版本、编译器依赖版本和测量策略。
 - `logs/<case>.log`：该组合的完整编译、正确性和 benchmark 输出。
 
+延迟默认来自 CANN NPU profiler。若 CANN 未生成 `kernel_details.csv`，该 case
+会保留失败的 profiling 目录，并用 NPU Event 测量相同的单-kernel 调用；
+`results.csv` 的“测量方式”和 `measurements.jsonl` 的 `benchmark_method` 会记录
+`npu_event_fallback`。
+
 运行完成后会自动刷新：
 
 ```text
