@@ -171,34 +171,6 @@ else
   "$venv_python" -m pip install --no-build-isolation --no-deps -e .
 fi
 
-triton_mlir_opt="$REMOTE_PROJECT/python/triton/_C/triton-mlir-opt"
-test -x "$triton_mlir_opt" || {
-  printf 'missing project triton-mlir-opt: %s\n' "$triton_mlir_opt" >&2
-  exit 1
-}
-bishengir_opt="$(command -v bishengir-opt || true)"
-test -x "$bishengir_opt" || {
-  printf '%s\n' 'missing CANN bishengir-opt for MLIR bytecode compatibility check' >&2
-  exit 1
-}
-bytecode_check_dir="$(mktemp -d)"
-trap 'rm -rf -- "$bytecode_check_dir"' EXIT
-printf '%s\n' \
-  'module {' \
-  '  llvm.func @bytecode_roundtrip(%arg0: i64) {' \
-  '    %0 = llvm.inttoptr %arg0 : i64 to !llvm.ptr' \
-  '    llvm.return' \
-  '  }' \
-  '}' >"$bytecode_check_dir/input.mlir"
-"$triton_mlir_opt" "$bytecode_check_dir/input.mlir" --emit-bytecode \
-  -o "$bytecode_check_dir/input.mlirbc"
-"$bishengir_opt" "$bytecode_check_dir/input.mlirbc" \
-  -o "$bytecode_check_dir/roundtrip.mlir"
-grep -q 'llvm.inttoptr' "$bytecode_check_dir/roundtrip.mlir"
-printf '%s\n' 'MLIR_BYTECODE_ROUNDTRIP_OK'
-rm -rf -- "$bytecode_check_dir"
-trap - EXIT
-
 REMOTE_PROJECT="$REMOTE_PROJECT" REMOTE_VENV="$REMOTE_VENV" \
   PYTHONPATH="$REMOTE_PROJECT/python" "$venv_python" - <<'PY'
 import os

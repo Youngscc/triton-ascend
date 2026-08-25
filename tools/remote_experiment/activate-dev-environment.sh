@@ -58,10 +58,6 @@ PY
 )"
 export TRITON_ASCEND_SOC_NAME
 
-# Clear the retired A5 text-IR workaround from shells that sourced an older
-# version of this script.
-unset TRITON_ASCEND_USE_BYTECODE
-
 case "$TRITON_ASCEND_SOC_NAME" in
   *Ascend910_95*|*Ascend950*|*910_958*)
     export TRITON_ASCEND_BITCODE_ARCH=c310
