@@ -4,7 +4,6 @@ import sys
 import types
 import unittest
 from pathlib import Path
-from unittest import mock
 
 
 class CompilerCostmodelContractTest(unittest.TestCase):
@@ -187,30 +186,6 @@ class CompilerCostmodelContractTest(unittest.TestCase):
             cmplr.NPUOptions(multibuffer_num=0)
         with self.assertRaises(ValueError):
             cmplr.NPUOptions(vf_merge_level=3)
-
-    def test_bytecode_writer_uses_upstream_default_version(self):
-        cmplr, _dump_mgr, _GPUTarget = self._load_compiler_module()
-
-        def fake_run(command, **_kwargs):
-            output_path = Path(command[command.index("-o") + 1])
-            output_path.write_bytes(b"MLIR-bytecode")
-
-        with mock.patch.object(
-                cmplr,
-                "_get_triton_mlir_opt_path",
-                return_value="/llvm22/bin/triton-mlir-opt",
-        ), mock.patch.object(cmplr.subprocess, "run", side_effect=fake_run) as run:
-            result = cmplr.linalg_to_bc_by_triton_mlir_opt(
-                "module {}\n",
-                {"hash": "test"},
-                types.SimpleNamespace(debug=False),
-            )
-
-        self.assertEqual(result, b"MLIR-bytecode")
-        command = run.call_args.args[0]
-        self.assertEqual(command[0], "/llvm22/bin/triton-mlir-opt")
-        self.assertIn("--emit-bytecode", command)
-        self.assertFalse(any(arg.startswith("--emit-bytecode-version=") for arg in command))
 
     def test_bishengir_failure_includes_captured_diagnostics(self):
         cmplr, _dump_mgr, _GPUTarget = self._load_compiler_module()

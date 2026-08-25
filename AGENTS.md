@@ -166,14 +166,10 @@ LLVM must match the top-level repository gitlinks in the server checkout.
   because its HIVM schema lacks `ssbuf`, not because of the bytecode container
   version. Development activation puts the repository-built compiler directory
   first on `PATH`, following the backend's upstream tool lookup order.
-  `rebuild-compiler.sh` verifies the default MLIR 22-to-19 SSBUF round trip with
-  that project-built `bishengir-opt` and prints
-  `HIVM_SSBUF_BYTECODE_ROUNDTRIP_OK`. It does not run a post-build SSBUF input
-  through the full compiler or use downstream `hivmc-a5` as an SSBUF parsing
-  gate. Development activation must clear
-  `BISHENGIR_LEGACY_A5_REGBASE`; otherwise the wrapper delegates to CANN's old
-  A5 compiler, which lacks SSBUF. Do not globally disable bytecode: direct
-  TTAdapter text changes the input path and regresses Vector Add.
+  Development activation must clear `BISHENGIR_LEGACY_A5_REGBASE`; otherwise
+  the wrapper delegates to CANN's old A5 compiler, which lacks SSBUF. Do not
+  globally disable bytecode: direct TTAdapter text changes the input path and
+  regresses Vector Add.
   The compiler build stores AscendNPU-IR and vendored LLVM source identities in
   `.source-revisions`; Git checkouts use commits and offline rsync checkouts use
   content fingerprints because nested `.git` metadata is intentionally absent.
