@@ -150,10 +150,12 @@ LLVM must match the top-level repository gitlinks in the server checkout.
   BiShengLIR to binary`. Running `hivmc` directly on an earlier
   `kernel.npuir.mlir` can additionally report an unknown intermediate op; that
   is not the final IR handed to `hivmc` and must not be used as the root cause.
-- The current Triton core now honors an Ascend backend's declared binary
-  extensions (including `.mlirbc`) and forwards `mix_mode` when the backend
-  metadata provides it. These compatibility fixes are required to combine the
-  current Python/core with the CANN-matched compiler.
+- `setup_ascend.py` applies upstream's official
+  `third_party/ascend/patch/triton-ascend-3.6.0.patch`, which makes Triton core
+  honor the Ascend backend's declared binary extensions (including `.mlirbc`)
+  and forwards `mix_mode` to the NPU loader. Keep the generic core source and
+  that patch aligned with upstream rather than carrying these changes directly
+  in `python/triton/compiler/compiler.py`.
 - The top-level Triton and `triton-mlir-opt` use the repository-selected MLIR
   22, while the standalone `bishengir-compile` uses AscendNPU-IR's pinned MLIR
   19.1.7. Use upstream's default bytecode emission together with its patched
