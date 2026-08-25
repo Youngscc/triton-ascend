@@ -380,8 +380,10 @@ if __name__ == "__main__":
             "sm_scale": 0.5,
             "program_count": 20,
         }, sort_keys=True))
+    print("[EXPERIMENT] CASE_STAGE=correctness_start", flush=True)
     test_attention_fused()
     print("======Fused Attention Test Passed!======")
+    print("[EXPERIMENT] CASE_STAGE=benchmark_start", flush=True)
     benchmark_attention_fused(
         warmup=int(os.getenv("EXPERIMENT_WARMUP", "5")),
         active=int(os.getenv("EXPERIMENT_ACTIVE", "30")),
