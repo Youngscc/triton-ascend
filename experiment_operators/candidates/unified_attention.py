@@ -578,6 +578,7 @@ if __name__ == "__main__":
         }, sort_keys=True))
     # A small, deterministic case used by the operator-screening smoke test.
     # Keep the full parametrized pytest cases above for later coverage runs.
+    print("[EXPERIMENT] CASE_STAGE=correctness_start", flush=True)
     test_triton_unified_attn(
         seq_lens=[(1, 1328), (5, 18), (129, 463)],
         num_heads=(8, 2),
@@ -590,6 +591,7 @@ if __name__ == "__main__":
         q_dtype=None,
     )
     print("======Unified Attention Test Passed!======")
+    print("[EXPERIMENT] CASE_STAGE=benchmark_start", flush=True)
     benchmark_unified_attention(
         warmup=int(os.getenv("EXPERIMENT_WARMUP", "5")),
         active=int(os.getenv("EXPERIMENT_ACTIVE", "30")),

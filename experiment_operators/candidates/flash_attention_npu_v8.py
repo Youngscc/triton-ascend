@@ -1331,7 +1331,10 @@ def _make_flash_attention_inputs(seed=0):
 
 
 def test_flash_attention_fwd():
+    print("[EXPERIMENT] CASE_STAGE=correctness_inputs_start", flush=True)
     data = _make_flash_attention_inputs(seed=0)
+    print("[EXPERIMENT] CASE_STAGE=correctness_inputs_done", flush=True)
+    print("[EXPERIMENT] CASE_STAGE=correctness_kernel_launch_start", flush=True)
     out = flash_attention_forward(
         data["q"],
         data["k"],
@@ -1345,6 +1348,10 @@ def test_flash_attention_fwd():
         data["max_seqlen_k"],
         data["scale"],
     )
+    print("[EXPERIMENT] CASE_STAGE=correctness_kernel_launch_returned", flush=True)
+    torch.npu.synchronize()
+    print("[EXPERIMENT] CASE_STAGE=correctness_kernel_sync_done", flush=True)
+    print("[EXPERIMENT] CASE_STAGE=correctness_reference_start", flush=True)
     ref = reference_attention(
         data["q"],
         data["k"],
@@ -1355,6 +1362,8 @@ def test_flash_attention_fwd():
         data["bs"],
         data["scale"],
     )
+    torch.npu.synchronize()
+    print("[EXPERIMENT] CASE_STAGE=correctness_reference_done", flush=True)
     torch.testing.assert_close(out, ref, atol=1e-2, rtol=1e-2, equal_nan=True)
     print(f"forward max abs diff: {torch.max(torch.abs(out - ref)).item():.6f}")
 
@@ -1403,8 +1412,10 @@ if __name__ == "__main__":
             "sparse_opt": False,
             "direction": "forward",
         }, sort_keys=True))
+    print("[EXPERIMENT] CASE_STAGE=correctness_start", flush=True)
     test_flash_attention_fwd()
     print("======Flash Attention NPU V8 Test Passed!======")
+    print("[EXPERIMENT] CASE_STAGE=benchmark_start", flush=True)
     benchmark_flash_attention(
         warmup=int(os.getenv("EXPERIMENT_WARMUP", "5")),
         active=int(os.getenv("EXPERIMENT_ACTIVE", "30")),
