@@ -876,6 +876,46 @@ def make_launcher(constants, signature, metadata):
     # the METH_FASTCALL fast path in launch().
     fastcall_sig_parse_stmts = '\n  '.join(
         _format_to_fastcall_stmt(ty, f"_arg{i}", _BASE_ARGS_FORMAT_LEN + i) for i, ty in signature.items())
+    use_legacy_python_launcher = os.getenv("TRITON_ASCEND_USE_LEGACY_PY_LAUNCHER", "0").lower() in ("true", "1")
+    if use_legacy_python_launcher:
+        python_launch_signature = "static PyObject* launch(PyObject* self, PyObject* args)"
+        python_launch_parse = f"""
+  // Compatibility path: retain the current device argument layout
+  // while using CPython's established tuple parser.
+  if (!PyArg_ParseTuple(
+      args, \"{format}\",
+      &gridX, &gridY, &gridZ, &stream, &function,
+      &packedMetadata, &launch_metadata,
+      &launch_enter_hook, &launch_exit_hook{args_list})) {{
+    return nullptr;
+  }}
+"""
+        python_launch_method_flag = "METH_VARARGS"
+    else:
+        python_launch_signature = "static PyObject* launch(PyObject* self, PyObject* const* args, Py_ssize_t nargs)"
+        python_launch_parse = f"""
+  // METH_FASTCALL fast path: avoid per-call tuple allocation (METH_VARARGS)
+  // and skip PyArg_ParseTuple's format-string interpreter by parsing manually.
+  // Borrowed-reference semantics match PyArg_ParseTuple(\"O\").
+  if (nargs != {total_nargs}) {{
+    PyErr_Format(PyExc_TypeError, \"launch expects %d arguments, got %zd\", {total_nargs}, nargs);
+    return nullptr;
+  }}
+  gridX = (int)PyLong_AsLong(args[0]);
+  gridY = (int)PyLong_AsLong(args[1]);
+  gridZ = (int)PyLong_AsLong(args[2]);
+  stream = reinterpret_cast<cann_stream>(PyLong_AsUnsignedLongLong(args[3]));
+  function = reinterpret_cast<cann_func_handle>(PyLong_AsUnsignedLongLong(args[4]));
+  packedMetadata = args[5];
+  launch_metadata = args[6];
+  launch_enter_hook = args[7];
+  launch_exit_hook = args[8];
+  {fastcall_sig_parse_stmts}
+  if (PyErr_Occurred()) {{
+    return nullptr;
+  }}
+"""
+        python_launch_method_flag = "METH_FASTCALL"
     # Record the end of regular arguments;
     # subsequent arguments are architecture-specific descriptors.
     arg_decls = ', '.join(f"{ty_to_cpp(ty)} arg{i}" for i, ty in signature.items() if ty != "constexpr")
@@ -1322,7 +1362,7 @@ static void _launch(const char* kernelName, cann_func_handle func, cann_stream s
 
 {_CPP_GET_TENSOR_SHAPE}
 
-static PyObject* launch(PyObject* self, PyObject* const* args, Py_ssize_t nargs) {{
+{python_launch_signature} {{
   int gridX, gridY, gridZ;
   cann_stream stream;
   cann_func_handle function;
@@ -1333,26 +1373,7 @@ static PyObject* launch(PyObject* self, PyObject* const* args, Py_ssize_t nargs)
   std::vector<std::vector<int64_t>> tensorShapes;
 
   {newline.join([f"{_extracted_type(ty)} _arg{i};" for i, ty in signature.items()])}
-  // METH_FASTCALL fast path: avoid per-call tuple allocation (METH_VARARGS) and
-  // skip PyArg_ParseTuple's format-string interpreter by parsing manually.
-  // Borrowed-reference semantics match PyArg_ParseTuple("O").
-  if (nargs != {total_nargs}) {{
-    PyErr_Format(PyExc_TypeError, "launch expects %d arguments, got %zd", {total_nargs}, nargs);
-    return nullptr;
-  }}
-  gridX = (int)PyLong_AsLong(args[0]);
-  gridY = (int)PyLong_AsLong(args[1]);
-  gridZ = (int)PyLong_AsLong(args[2]);
-  stream = reinterpret_cast<cann_stream>(PyLong_AsUnsignedLongLong(args[3]));
-  function = reinterpret_cast<cann_func_handle>(PyLong_AsUnsignedLongLong(args[4]));
-  packedMetadata = args[5];
-  launch_metadata = args[6];
-  launch_enter_hook = args[7];
-  launch_exit_hook = args[8];
-  {fastcall_sig_parse_stmts}
-  if (PyErr_Occurred()) {{
-    return nullptr;
-  }}
+{python_launch_parse}
   if (__MsprofFlagL1) {{
     {
       LINE_CHANGE_CHAR.join(
@@ -1412,7 +1433,7 @@ static PyObject* launch(PyObject* self, PyObject* const* args, Py_ssize_t nargs)
 }}
 
 static PyMethodDef ModuleMethods[] = {{
-  {{"launch", (PyCFunction)launch, METH_FASTCALL, "Entry point for all kernels with this signature"}},
+  {{"launch", (PyCFunction)launch, {python_launch_method_flag}, "Entry point for all kernels with this signature"}},
   {{nullptr, nullptr, 0, nullptr}} // sentinel
 }};
 

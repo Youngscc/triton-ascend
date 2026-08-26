@@ -85,6 +85,35 @@ def test_make_launcher_exposes_triton_launch_kernel(
 @patch.object(driver, "force_disable_ffts", return_value=False)
 @patch.object(driver, "is_ffts_supported", return_value=True)
 @patch.object(driver, "get_backend_func", side_effect=_mock_backend_func)
+def test_make_launcher_can_use_legacy_python_argument_parser(
+    _mock_backend_func_patch,
+    _mock_ffts,
+    _mock_disable_ffts,
+    _mock_auto_map,
+    mock_npu_utils,
+    monkeypatch,
+):
+    mock_npu_utils.return_value.get_aivector_core_num.return_value = 40
+    mock_npu_utils.return_value.get_aicore_num.return_value = 20
+    monkeypatch.setenv("TRITON_ASCEND_USE_LEGACY_PY_LAUNCHER", "1")
+
+    src = driver.make_launcher(
+        constants={},
+        signature={0: "*fp32", 1: "*fp32", 2: "i32"},
+        metadata=_make_metadata(),
+    )
+
+    assert "static PyObject* launch(PyObject* self, PyObject* args)" in src
+    assert 'args, "iiiKKOOOOOOi"' in src
+    assert "METH_VARARGS" in src
+    assert "METH_FASTCALL" not in src
+
+
+@patch.object(driver, "NPUUtils")
+@patch.object(driver, "_is_auto_map_parallel_blocks_enabled", return_value=False)
+@patch.object(driver, "force_disable_ffts", return_value=False)
+@patch.object(driver, "is_ffts_supported", return_value=True)
+@patch.object(driver, "get_backend_func", side_effect=_mock_backend_func)
 def test_make_launcher_resolves_npu_utils_from_active_cache_root(
     _mock_backend_func_patch,
     _mock_ffts,
