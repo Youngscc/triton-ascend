@@ -693,6 +693,7 @@ def _build_npu_ext(obj_name: str, header_or_src_path, src_path=None, *, kernel_l
         else:
             cc_cmd += get_backend_func("get_cc_cmd")
 
+    cc_cmd += cann_version_compile_args()
     cc_cmd += ["-std=c++17", "-shared", "-fPIC", "-o", so_path]
 
     result = subprocess.run(cc_cmd, capture_output=True, text=True)
@@ -826,21 +827,75 @@ def force_disable_ffts(arch: str) -> bool:
     return is_compile_on_910_95(arch)
 
 
+def _parse_cann_version(line: str):
+    m = re.search(r'(\d+)\.(\d+)(?:\.(\d+))?', line)
+    if m:
+        major = int(m.group(1))
+        minor = int(m.group(2))
+        patch = int(m.group(3)) if m.group(3) is not None else 0
+        return (major, minor, patch)
+    return None
+
+
+def _find_cann_version_file():
+    ascend_path = str(_get_ascend_path())
+    arch = get_machine_arch()
+    candidates = [
+        os.path.join(ascend_path, arch + "-linux", "ascend_toolkit_install.info"),
+        os.path.join(ascend_path, arch + "-linux", "ascend_all_cann_install.info"),
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def get_cann_version():
+    _cann_version = None
+    try:
+        version_file = _find_cann_version_file()
+        if version_file is None:
+            _cann_version = None
+            return None
+        with open(version_file, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if "version" in line.lower():
+                    parsed = _parse_cann_version(line)
+                    if parsed is not None:
+                        _cann_version = parsed
+                        return _cann_version
+        _cann_version = None
+    except Exception:
+        raise EnvironmentError("Could not parse CANN version file")
+
+
+def is_cann_version_at_least(major: int, minor: int = 0, patch: int = 0) -> bool:
+    v = get_cann_version()
+    if v is None:
+        return False
+    return v >= (major, minor, patch)
+
+
+def cann_version_compile_args():
+    if is_cann_version_at_least(9, 1, 0):
+        return ["-DTRITON_CANN_910"]
+    return []
+
+
 def triton_enable_libdevice_simt(arch: str = None) -> bool:
     """Return whether the environment switch selects SIMT libdevice."""
     return bool(os.getenv("TRITON_ENABLE_LIBDEVICE_SIMT", False)) and is_compile_on_910_95(arch)
 
 
 def get_cann_version_file_hash():
-    ascend_path = _get_ascend_path()
-    arch = get_machine_arch()
-    cann_version_file_path = os.path.join(ascend_path, arch + "-linux", "ascend_toolkit_install.info")
-    if not os.path.exists(cann_version_file_path):
-        cann_version_file_path = os.path.join(ascend_path, arch + "-linux", "ascend_all_cann_install.info")
+    cann_version_file_path = _find_cann_version_file()
     return get_file_hash256(cann_version_file_path)
 
 
 def get_file_hash256(file_path):
+    if file_path is None:
+        raise ValueError("file_path is None")
     sha256 = hashlib.sha256()
     try:
         with open(file_path, "rb") as f:

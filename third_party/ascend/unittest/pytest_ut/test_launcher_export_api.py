@@ -208,9 +208,10 @@ def test_make_launcher_enables_91095_simt_for_sls_mixed_parallel_mode(
         metadata=metadata,
     )
 
-    assert src.count("aclrtLaunchKernelWithHostArgs") == 2
-    assert src.count("aclrtLaunchKernelCfg cfgCfgInfo = {};") == 2
-    assert src.count("attrInfo.id = ACL_RT_LAUNCH_KERNEL_ATTR_DYN_UBUF_SIZE;") == 2
+    assert src.count("cann_launch_kernel(func, blockNum") == 2
+    assert src.count("cann_get_launch_kernel_cfg(221184)") == 2
+    assert src.count("aclrtLaunchKernelWithHostArgs") == 1
+    assert src.count("attrInfo.id = ACL_RT_LAUNCH_KERNEL_ATTR_DYN_UBUF_SIZE;") == 1
     c_abi_launch, cpp_launch = _split_launch_functions(src)
     assert "static_cast<void*>(launch_args.data())" in c_abi_launch
     assert "&args" in cpp_launch
@@ -372,7 +373,7 @@ def test_merged_code_preamble_shared_variables_present(
         assert "void* workspace_handle = nullptr;" in section, f"{section_name}: missing workspace_handle"
         assert "uint32_t blockNum4Workspace = gridX * gridY * gridZ;" in section, f"{section_name}: missing blockNum4Workspace"
         assert "uint32_t blockNum = gridX * gridY * gridZ;" in section, f"{section_name}: missing blockNum"
-        assert "aclError ret = ACL_SUCCESS;" in section, f"{section_name}: missing ret"
+        assert "cann_error ret = CANN_SUCCESS;" in section, f"{section_name}: missing ret"
 
 
 @patch.object(driver, "NPUUtils")
@@ -398,8 +399,8 @@ def test_merged_code_taskqueue_mode_in_both_paths(
 
     c_abi_launch, cpp_launch = _split_launch_functions(src)
 
-    assert c_abi_launch.count("std::function<aclError()> launch_call") == 1
-    assert cpp_launch.count("std::function<aclError()> launch_call") == 1
+    assert c_abi_launch.count("std::function<cann_error()> launch_call") == 1
+    assert cpp_launch.count("std::function<cann_error()> launch_call") == 1
     # The dlsym helpers in cpp_npu_utils_dlopen reference "async_launch" multiple
     # times (typedef, static decl, dlsym). Use the call site marker returned by
     # the mocked get_backend_func to verify the actual call appears in both paths.

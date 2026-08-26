@@ -33,7 +33,7 @@ from triton.backends.driver import DriverBase
 from triton.backends.compiler import GPUTarget
 from triton.backends.ascend.utils import (_build_npu_ext, _check_cxx11_abi, convert_sigtype_to_int,
                                           _is_auto_map_parallel_blocks_enabled, is_ffts_supported, force_disable_ffts,
-                                          get_backend_func)
+                                          get_backend_func, get_cann_version)
 # Bind the already-imported utils module once so the launch hot path can write
 # TRITON_PROFILER_REGISTERED without a per-launch `import triton` + attribute walk.
 import triton.backends.ascend.utils as _ascend_utils
@@ -51,7 +51,9 @@ class NPUUtils(object):
         src_path = os.path.join(dirname, "npu_utils.cpp")
         src = Path(src_path).read_text()
         version_info = get_backend_func("version_hash")
-        key = hashlib.md5((src + "_".join(version_info)).encode("utf-8")).hexdigest()
+        cann_version = get_cann_version()
+        cann_version_str = ".".join(map(str, cann_version)) if cann_version else ""
+        key = hashlib.md5((src + "_".join(version_info) + "_" + cann_version_str).encode("utf-8")).hexdigest()
         cache = get_cache_manager(key)
         fname = "npu_utils.so"
         cache_path = cache.get_file(fname)
@@ -411,6 +413,67 @@ def generate_npu_header_src():
 #include <acl/acl.h>
 {get_backend_func("header_file", enable_taskqueue)}
 #endif
+
+// Compatibility shim for CANN runtime API transition (rt -> aclrt in 9.0.0).
+#ifdef TRITON_CANN_910
+using cann_error = aclError;
+using cann_stream = aclrtStream;
+using cann_func_handle = aclrtFuncHandle;
+using cann_memcpy_kind = aclrtMemcpyKind;
+static constexpr cann_error CANN_SUCCESS = ACL_SUCCESS;
+static constexpr cann_memcpy_kind CANN_MEMCPY_HOST_TO_DEVICE = ACL_MEMCPY_HOST_TO_DEVICE;
+static inline cann_error cann_malloc_host(void **ptr, size_t size) {{ return aclrtMallocHost(ptr, size); }}
+static inline cann_error cann_free_host(void *ptr) {{ return aclrtFreeHost(ptr); }}
+static inline cann_error cann_memcpy(void *dst, size_t destMax, const void *src, size_t count, cann_memcpy_kind kind) {{ return aclrtMemcpy(dst, destMax, src, count, kind); }}
+static inline cann_error cann_memset_async(void *dst, size_t destMax, int32_t value, size_t count, cann_stream stream) {{ return aclrtMemsetAsync(dst, destMax, value, count, stream); }}
+static inline cann_error cann_synchronize_stream(cann_stream stream) {{ return aclrtSynchronizeStream(stream); }}
+static inline cann_error cann_get_hardware_sync_addr(void **addr) {{ return aclrtGetHardwareSyncAddr(addr); }}
+static inline cann_error cann_launch_kernel(cann_func_handle func, uint32_t block_dim, cann_stream stream, void *cfg, void *args, size_t arg_size) {{
+  return aclrtLaunchKernelWithHostArgs(func, block_dim, stream, static_cast<aclrtLaunchKernelCfg *>(cfg), args, arg_size, nullptr, 0);
+}}
+static inline void* cann_get_launch_kernel_cfg(uint32_t shared_mem_dynamic_size) {{
+  // thread_local storage: launch is synchronous on the launcher thread, so the
+  // returned pointer remains valid until cann_launch_kernel returns.
+  static thread_local aclrtLaunchKernelAttr attrInfo;
+  static thread_local aclrtLaunchKernelCfg cfgCfgInfo;
+  attrInfo.id = ACL_RT_LAUNCH_KERNEL_ATTR_DYN_UBUF_SIZE;
+  aclrtLaunchKernelAttrValue attrValue;
+  attrValue.localMemorySize = shared_mem_dynamic_size;
+  attrInfo.value = attrValue;
+  cfgCfgInfo.attrs = &attrInfo;
+  cfgCfgInfo.numAttrs = 1;
+  return &cfgCfgInfo;
+}}
+#else
+using cann_error = rtError_t;
+using cann_stream = rtStream_t;
+using cann_func_handle = const void*;
+using cann_memcpy_kind = rtMemcpyKind_t;
+static constexpr cann_error CANN_SUCCESS = RT_ERROR_NONE;
+static constexpr cann_memcpy_kind CANN_MEMCPY_HOST_TO_DEVICE = RT_MEMCPY_HOST_TO_DEVICE;
+static inline cann_error cann_malloc_host(void **ptr, size_t size) {{ return rtMallocHost(ptr, size, RT_MEMORY_HOST); }}
+static inline cann_error cann_free_host(void *ptr) {{ return rtFreeHost(ptr); }}
+static inline cann_error cann_memcpy(void *dst, size_t destMax, const void *src, size_t count, cann_memcpy_kind kind) {{ return rtMemcpy(dst, destMax, src, count, kind); }}
+static inline cann_error cann_memset_async(void *dst, size_t destMax, int32_t value, size_t count, cann_stream stream) {{ return rtMemsetAsync(dst, destMax, value, count, stream); }}
+static inline cann_error cann_synchronize_stream(cann_stream stream) {{ return rtStreamSynchronize(stream); }}
+static inline cann_error cann_get_hardware_sync_addr(void **addr) {{ uint32_t len = 0; return rtGetC2cCtrlAddr(reinterpret_cast<uint64_t *>(addr), &len); }}
+static inline cann_error cann_launch_kernel(cann_func_handle func, uint32_t block_dim, cann_stream stream, void *cfg, void *args, size_t arg_size) {{
+  if (cfg != nullptr) {{
+    rtArgsEx_t argsInfo = {{}};
+    argsInfo.args = args;
+    argsInfo.argsSize = arg_size;
+    return rtKernelLaunchWithFlagV2(func, block_dim, &argsInfo, NULL, stream, 0, static_cast<rtTaskCfgInfo_t *>(cfg));
+  }}
+  return rtKernelLaunch(func, block_dim, args, arg_size, NULL, stream);
+}}
+static inline void* cann_get_launch_kernel_cfg(uint32_t shared_mem_dynamic_size) {{
+  // thread_local storage: launch is synchronous on the launcher thread, so the
+  // returned pointer remains valid until cann_launch_kernel returns.
+  static thread_local rtTaskCfgInfo_t cfgInfo;
+  cfgInfo.localMemorySize = shared_mem_dynamic_size;
+  return &cfgInfo;
+}}
+#endif
 """
 
 
@@ -565,22 +628,21 @@ static inline size_t _align_launch_offset(size_t offset, size_t alignment) {
   return (offset + alignment - 1) & ~(alignment - 1);
 }
 
-// aclrtGetHardwareSyncAddr returns a per-process per-stream constant address;
+// cann_get_hardware_sync_addr returns a per-process per-stream constant address;
 // re-querying it on every kernel launch is pure overhead. Cache the most
 // recently observed (stream, ffts_addr) pair on the calling thread.
 // Thread-safety: launch_call is invoked synchronously from the launcher thread
-// by triton_async_launch (see npu_utils.cpp), so thread_local is safe.
-static thread_local aclrtStream g_last_ffts_stream = nullptr;
+// by cann_async_launch (see npu_utils.cpp), so thread_local is safe.
+static thread_local cann_stream g_last_ffts_stream = nullptr;
 static thread_local void* g_last_ffts_addr = nullptr;
-static inline aclError get_ffts_addr(aclrtStream stream, void** out_addr) {
+static inline cann_error get_ffts_addr(cann_stream stream, void** out_addr) {
   if (stream == g_last_ffts_stream && g_last_ffts_addr) {
     *out_addr = g_last_ffts_addr;
-    return ACL_SUCCESS;
+    return CANN_SUCCESS;
   }
   void* ffts_addr = nullptr;
-  uint32_t ffts_len = 0;
-  aclError ret = aclrtGetHardwareSyncAddr(&ffts_addr);
-  if (ret == ACL_SUCCESS) {
+  cann_error ret = cann_get_hardware_sync_addr(&ffts_addr);
+  if (ret == CANN_SUCCESS) {
     g_last_ffts_stream = stream;
     g_last_ffts_addr = ffts_addr;
     *out_addr = ffts_addr;
@@ -646,17 +708,17 @@ def make_launcher(constants, signature, metadata):
          lockOffset += syncBlockLockStrideI64) {{
       lockInitData[lockOffset] = syncBlockLockParticipantNum;
     }}
-    ret = aclrtMemcpy(syncBlockLock_ptr, syncBlockLockSize,
+    ret = cann_memcpy(syncBlockLock_ptr, syncBlockLockSize,
                    reinterpret_cast<void *>(lockInitData.data()),
-                   syncBlockLockSize, ACL_MEMCPY_HOST_TO_DEVICE);"""
+                   syncBlockLockSize, CANN_MEMCPY_HOST_TO_DEVICE);"""
     elif lock_init_value == 0:
-        lock_init_stmt = ("ret = aclrtMemsetAsync(syncBlockLock_ptr, syncBlockLockSize, 0, "
+        lock_init_stmt = ("ret = cann_memset_async(syncBlockLock_ptr, syncBlockLockSize, 0, "
                           "syncBlockLockSize, stream);")
     else:
         lock_init_stmt = (f"std::vector<int64_t> lockInitData({lock_num}, {lock_init_value});\n"
-                          "    ret = aclrtMemcpy(syncBlockLock_ptr, syncBlockLockSize, "
+                          "    ret = cann_memcpy(syncBlockLock_ptr, syncBlockLockSize, "
                           "reinterpret_cast<void *>(lockInitData.data()), syncBlockLockSize, "
-                          "ACL_MEMCPY_HOST_TO_DEVICE);")
+                          "CANN_MEMCPY_HOST_TO_DEVICE);")
     bs_task_type = metadata.bs_task_type if hasattr(metadata, 'bs_task_type') else 0
     mix_mode = metadata.mix_mode
     compile_on_910_95 = metadata.compile_on_910_95
@@ -1046,19 +1108,12 @@ static void release_npu_tensor_handle(void* handle) {{
 """
 
     def _make_kernel_launch(args_ptr, args_size, indent="    "):
-        cfg = "&cfgCfgInfo" if (compile_on_910_95 and enable_simt) else "nullptr"
         cfg_setup = ""
         if compile_on_910_95 and enable_simt:
-            cfg_setup = f"""{indent}aclrtLaunchKernelAttr attrInfo = {{}};
-{indent}attrInfo.id = ACL_RT_LAUNCH_KERNEL_ATTR_DYN_UBUF_SIZE;
-{indent}aclrtLaunchKernelAttrValue value = {{}};
-{indent}value.localMemorySize = {metadata.shared_mem_dynamic_size};
-{indent}attrInfo.value = value;
-{indent}aclrtLaunchKernelCfg cfgCfgInfo = {{}};
-{indent}cfgCfgInfo.attrs = &attrInfo;
-{indent}cfgCfgInfo.numAttrs = 1;
-"""
-        return f"""{cfg_setup}{indent}ret = aclrtLaunchKernelWithHostArgs(func, blockNum, stream, {cfg}, {args_ptr}, {args_size}, nullptr, 0);
+            cfg_setup = f"{indent}void *kernel_cfg = cann_get_launch_kernel_cfg({metadata.shared_mem_dynamic_size});\n"
+        else:
+            cfg_setup = f"{indent}void *kernel_cfg = nullptr;\n"
+        return f"""{cfg_setup}{indent}ret = cann_launch_kernel(func, blockNum, stream, kernel_cfg, {args_ptr}, {args_size});
 """
 
     cpp_kernel_launch = _make_kernel_launch("static_cast<void*>(launch_args.data())", "launch_args.size()")
@@ -1081,7 +1136,7 @@ static void release_npu_tensor_handle(void* handle) {{
   }}
   ''' if workspace_size > 0 else ''}"""
 
-    _launch_lambda_pre = f"""  {'std::function<aclError()> launch_call = [=]() -> aclError' if enable_taskqueue else ''} {{
+    _launch_lambda_pre = f"""  {'std::function<cann_error()> launch_call = [=]() -> cann_error' if enable_taskqueue else ''} {{
     {get_backend_func("pre_launch", False)}
     uint32_t blockNum = gridX * gridY * gridZ;
 
@@ -1098,9 +1153,9 @@ static void release_npu_tensor_handle(void* handle) {{
     uint32_t nodeBasicBlockDim = (mixBlockNumRation << 16) + blockNum;
 
     {'cce::internal::DebugTunnelData *DTData = cce::internal::DebugTunnel::Open(blockNum);' if enable_device_print else ''}
-    aclError ret = ACL_SUCCESS;
+    cann_error ret = CANN_SUCCESS;
     {'void *ffts_addr = nullptr; ret = get_ffts_addr(stream, &ffts_addr);' if target_support_ffts else ''}
-    {'if (ret != ACL_SUCCESS) return ret;' if (target_support_ffts and enable_taskqueue) else 'if (ret != ACL_SUCCESS) return;' if (target_support_ffts and (not enable_taskqueue)) else ''}
+    {'if (ret != CANN_SUCCESS) return ret;' if (target_support_ffts and enable_taskqueue) else 'if (ret != CANN_SUCCESS) return;' if (target_support_ffts and (not enable_taskqueue)) else ''}
     // stub argument for workspace
     void *syncBlockLock_ptr = nullptr;
     void *syncBlockLock_handle = nullptr;
@@ -1113,11 +1168,11 @@ static void release_npu_tensor_handle(void* handle) {{
       {alloc_success_code if enable_taskqueue else sync_lock_fail_code}
     }}
     {lock_init_stmt}
-    if (ret != ACL_SUCCESS) {{
+    if (ret != CANN_SUCCESS) {{
       return {'ret' if enable_taskqueue else ''};
     }}
     ''' if lock_num > 0 else ''}
-    {'if (ret != ACL_SUCCESS) {{ return ret; }}' if (workspace_size > 0 and enable_taskqueue) else 'if (ret != ACL_SUCCESS) {{ return; }}' if (workspace_size > 0 and not enable_taskqueue) else ''}"""
+    {'if (ret != CANN_SUCCESS) {{ return ret; }}' if (workspace_size > 0 and enable_taskqueue) else 'if (ret != CANN_SUCCESS) {{ return; }}' if (workspace_size > 0 and not enable_taskqueue) else ''}"""
 
     _launch_lambda_post = f"""
     {cpp_msprof_call_before_launch}
@@ -1125,7 +1180,7 @@ static void release_npu_tensor_handle(void* handle) {{
     {'void*& stream_ref = const_cast<void*&>(stream);' if enable_device_print else ''}
     {'cce::internal::DebugTunnel::Close(DTData, stream_ref);' if enable_device_print else ''}
     {cpp_msprof_call_after_launch}
-    {'return ret;' if enable_taskqueue else 'ret = aclrtSynchronizeStream(stream);'}
+    {'return ret;' if enable_taskqueue else 'ret = cann_synchronize_stream(stream);'}
   }};
   {f'''{get_backend_func("async_launch", "launch_call") if enable_taskqueue else ''}'''}
   return;
@@ -1150,7 +1205,7 @@ static void release_npu_tensor_handle(void* handle) {{
 {_CPP_ALIGN_LAUNCH_OFFSET}
 
 extern "C" {{
-void triton_launch_kernel(const char* kernelName, aclrtFuncHandle func, aclrtStream stream,
+void triton_launch_kernel(const char* kernelName, cann_func_handle func, cann_stream stream,
     int gridX, int gridY, int gridZ,
     const int64_t* shapes_data, const int* shape_dims, int num_tensors,
     const int* tensor_kinds,
@@ -1236,7 +1291,7 @@ void triton_launch_kernel(const char* kernelName, aclrtFuncHandle func, aclrtStr
 {_launch_lambda_post.replace('__KERNEL_LAUNCH_CALL__', cpp_kernel_launch)}
 }} // extern "C"
 
-static void _launch(const char* kernelName, aclrtFuncHandle func, aclrtStream stream,
+static void _launch(const char* kernelName, cann_func_handle func, cann_stream stream,
     int gridX, int gridY, int gridZ,
     std::vector<std::vector<int64_t>> &tensorShapes, std::vector<int> &tensorKinds{(', ' + arg_decls) if len(arg_decls) > 0 else ''}) {{
   // Keep Python launcher on the stable local packing path.
@@ -1269,8 +1324,8 @@ static void _launch(const char* kernelName, aclrtFuncHandle func, aclrtStream st
 
 static PyObject* launch(PyObject* self, PyObject* const* args, Py_ssize_t nargs) {{
   int gridX, gridY, gridZ;
-  aclrtStream stream;
-  aclrtFuncHandle function;
+  cann_stream stream;
+  cann_func_handle function;
   PyObject *packedMetadata = nullptr;
   PyObject *launch_metadata = nullptr;
   PyObject *launch_enter_hook = nullptr;
@@ -1288,8 +1343,8 @@ static PyObject* launch(PyObject* self, PyObject* const* args, Py_ssize_t nargs)
   gridX = (int)PyLong_AsLong(args[0]);
   gridY = (int)PyLong_AsLong(args[1]);
   gridZ = (int)PyLong_AsLong(args[2]);
-  stream = reinterpret_cast<aclrtStream>(PyLong_AsUnsignedLongLong(args[3]));
-  function = reinterpret_cast<aclrtFuncHandle>(PyLong_AsUnsignedLongLong(args[4]));
+  stream = reinterpret_cast<cann_stream>(PyLong_AsUnsignedLongLong(args[3]));
+  function = reinterpret_cast<cann_func_handle>(PyLong_AsUnsignedLongLong(args[4]));
   packedMetadata = args[5];
   launch_metadata = args[6];
   launch_enter_hook = args[7];
