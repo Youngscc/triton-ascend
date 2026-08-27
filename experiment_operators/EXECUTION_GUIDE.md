@@ -190,7 +190,10 @@ TIMEOUT_RETRIES = 1
     └── <case>.log
 ```
 
-- `results.csv`：直接查看每个组合的成功、失败、不支持、延迟、UB 和原因。
+- `results.csv`：直接查看每个组合的成功、失败、不支持、Bisheng
+  编译耗时、运行延迟、UB 和原因。`Bisheng编译耗时_ms` 从 TTAdapter
+  输入进入 `bishengir-compile` 开始计时，到 NPU 二进制生成后返回为止；
+  它不包含正确性检查和 benchmark。
 - `measurements.jsonl`：唯一的完整机器记录，包含编译审计字段和尝试历史。
 - `manifest.json`：实验取值、源码版本、编译器依赖版本和测量策略。
 - `logs/<case>.log`：该组合的完整编译、正确性和 benchmark 输出。
