@@ -47,6 +47,7 @@ class SweepRetryTest(unittest.TestCase):
         stream = TtyBuffer()
         row = {
             "status": "measured",
+            "compile_time_ms": 123.5,
             "latency_ms": 1.25,
             "required_ub_kib": 64.0,
             "log_path": "logs/d1-boff-m0.log",
@@ -61,8 +62,36 @@ class SweepRetryTest(unittest.TestCase):
         self.assertIn("current: running 1/2 depth=1 multibuffer_num=off", output)
         self.assertIn("\033[1A", output)
         self.assertIn("current: finished case=d1-boff-m0 status=measured", output)
+        self.assertIn("compile_ms=123.5", output)
         self.assertNotIn("CASE_START", output)
         self.assertTrue(output.endswith("\n"))
+
+    def test_results_csv_preserves_bisheng_compile_time(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            result_dir = Path(temporary)
+            row = {
+                "status": "measured",
+                "depth": 1,
+                "enable_dynamic_cv_pipeline": False,
+                "enable_auto_multi_buffer": False,
+                "multibuffer_num": "off",
+                "vf_merge_level": 0,
+                "compile_time_ms": 123.5,
+                "latency_ms": 1.25,
+                "benchmark_method": "npu_event",
+                "required_ub_kib": 64.0,
+                "wall_time_s": 2.0,
+                "log_path": str(result_dir / "logs/case.log"),
+            }
+
+            csv_path = run_sweep.write_results([row], result_dir, "depth")
+            with csv_path.open(newline="", encoding="utf-8") as handle:
+                written = next(csv.DictReader(handle))
+
+        self.assertEqual(written["Bisheng编译耗时_ms"], "123.5")
+        normalized = generate_experiment_report.normalize_csv_row(written, "depth")
+        self.assertEqual(normalized["compile_time_ms"], 123.5)
+        self.assertEqual(generate_experiment_report.compact_row(normalized)["compile_time_ms"], 123.5)
 
     def write_candidate(self, root: Path) -> Path:
         candidate = root / "retry_candidate.py"

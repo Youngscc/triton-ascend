@@ -175,6 +175,7 @@ def normalize_csv_row(raw: dict[str, str], axis: str) -> dict:
         "vf_merge_level": optional_int(raw.get("vf_merge_level")),
         "status": status,
         "correctness_status": correctness,
+        "compile_time_ms": optional_float(raw.get("Bisheng编译耗时_ms")),
         "latency_ms": optional_float(raw.get("运行延迟_ms")),
         "required_ub_kib": ub_kib,
         "required_ub_bits": round(ub_kib * 8192) if ub_kib is not None else None,
@@ -276,6 +277,8 @@ def compact_row(row: dict) -> dict:
         row.get("status", "missing"),
         "correctness_status":
         row.get("correctness_status", "missing"),
+        "compile_time_ms":
+        row.get("compile_time_ms"),
         "latency_ms":
         row.get("latency_ms"),
         "benchmark_method":
