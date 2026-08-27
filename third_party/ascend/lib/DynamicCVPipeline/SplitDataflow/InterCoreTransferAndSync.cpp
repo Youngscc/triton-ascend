@@ -1035,8 +1035,9 @@ void InterCoreTransferAndSyncPass::insertInterCoreSync(
 }
 
 void InterCoreTransferAndSyncPass::insertMemDepSync(
-    OpBuilder &builder, Operation *producerOp, Operation *consumerOp, int flag,
-    Location loc, bool isCubeToVector, FlagIdReuseManager &flagIdReuseManager) {
+    OpBuilder &builder, Operation *producerOp, Operation *consumerOp,
+    Operation *consumerEndOp, int flag, Location loc, bool isCubeToVector,
+    FlagIdReuseManager &flagIdReuseManager) {
   LOG_DEBUG("Inserting Memdep sync: "
             << (isCubeToVector ? "CUBE->VECTOR" : "VECTOR->CUBE")
             << ", flag = " << flag << "\n");
@@ -1059,6 +1060,7 @@ void InterCoreTransferAndSyncPass::insertMemDepSync(
   auto srcPipeAttr = PipeAttr::get(builder.getContext(), srcPipe);
   auto dstPipeAttr = PipeAttr::get(builder.getContext(), dstPipe);
   auto flagId = builder.getIntegerAttr(builder.getI64Type(), flag);
+  Operation *mainLoopOp = findMainLoopforTransfer(producerOp, consumerOp);
 
   builder.setInsertionPointAfter(producerOp);
   auto setOp = builder.create<SyncBlockSetOp>(loc, srcCoreAttr, srcPipeAttr,
@@ -1070,19 +1072,52 @@ void InterCoreTransferAndSyncPass::insertMemDepSync(
 
   auto prodBlockIdOpt = CVPipeline::getOpBlockId(producerOp);
   auto consBlockIdOpt = CVPipeline::getOpBlockId(consumerOp);
-  if (prodBlockIdOpt) {
-    StringRef prodCoreType = isCubeToVector ? CVPipeline::kCoreTypeCube
-                                            : CVPipeline::kCoreTypeVector;
-    attachCommonTags(setOp, *prodBlockIdOpt, prodCoreType);
+  if (!prodBlockIdOpt || !consBlockIdOpt) {
+    LOG_DEBUG("Failed to get block IDs for producer or consumer operation.\n");
+    CVPipeline::setFallbackAttr(module, CVPipeline::ERRCODE_FAILED);
+    return;
   }
-  if (consBlockIdOpt) {
-    StringRef consCoreType = isCubeToVector ? CVPipeline::kCoreTypeVector
-                                            : CVPipeline::kCoreTypeCube;
-    attachCommonTags(waitOp, *consBlockIdOpt, consCoreType);
-  }
+  StringRef prodCoreType =
+      isCubeToVector ? CVPipeline::kCoreTypeCube : CVPipeline::kCoreTypeVector;
+  StringRef consCoreType =
+      isCubeToVector ? CVPipeline::kCoreTypeVector : CVPipeline::kCoreTypeCube;
+  attachCommonTags(setOp, *prodBlockIdOpt, prodCoreType);
+  attachCommonTags(waitOp, *consBlockIdOpt, consCoreType);
   attachAnalyzeFlagIdTag(setOp);
   attachAnalyzeFlagIdTag(waitOp);
   flagIdReuseManager.insertRelationBetweenSetAndWait(setOp, waitOp);
+
+  if (mainLoopOp) {
+    builder.setInsertionPoint(producerOp);
+    auto waitOpForWrite = builder.create<SyncBlockWaitOp>(
+        loc, srcCoreAttr, dstPipeAttr, srcPipeAttr, flagId);
+    attachCommonTags(waitOpForWrite, *prodBlockIdOpt, prodCoreType);
+
+    builder.setInsertionPointAfter(consumerEndOp);
+    auto setOpForWrite = builder.create<SyncBlockSetOp>(
+        loc, dstCoreAttr, dstPipeAttr, srcPipeAttr, flagId);
+    attachCommonTags(setOpForWrite, *consBlockIdOpt, consCoreType);
+
+    builder.setInsertionPoint(mainLoopOp);
+    auto setOpForStart = builder.create<SyncBlockSetOp>(
+        loc, dstCoreAttr, dstPipeAttr, srcPipeAttr, flagId);
+    builder.setInsertionPointAfter(mainLoopOp);
+    auto waitOpForEnd = builder.create<SyncBlockWaitOp>(
+        loc, srcCoreAttr, dstPipeAttr, srcPipeAttr, flagId);
+
+    int startEndBlockId = CVPipeline::getOpBlockId(mainLoopOp).value_or(-1);
+    attachCommonTags(setOpForStart, startEndBlockId, consCoreType);
+    attachCommonTags(waitOpForEnd, startEndBlockId, prodCoreType);
+
+    attachAnalyzeFlagIdTag(waitOpForWrite);
+    attachAnalyzeFlagIdTag(setOpForWrite);
+    attachAnalyzeFlagIdTag(setOpForStart);
+    attachAnalyzeFlagIdTag(waitOpForEnd);
+    flagIdReuseManager.insertRelationBetweenSetAndWait(setOpForWrite,
+                                                       waitOpForWrite);
+    flagIdReuseManager.insertRelationBetweenSetAndWait(setOpForStart,
+                                                       waitOpForEnd);
+  }
   LOG_DEBUG("[PIPE_MTE2 setOp]: " << *setOp << "\n");
   LOG_DEBUG("[PIPE_MTE2 waitOp]: " << *waitOp << "\n");
 }
@@ -1672,8 +1707,8 @@ LogicalResult InterCoreTransferAndSyncPass::handleMemoryDependency(
   Location loc = prodEnd->getLoc();
 
   // Insert Memdep sync
-  insertMemDepSync(builder, prodEnd, consStart, flagId, loc, isCubeToVector,
-                   flagIdReuseManager);
+  insertMemDepSync(builder, dep.predOp, consStart, consEnd, flagId, loc,
+                   isCubeToVector, flagIdReuseManager);
 
   transferIndex++;
 
