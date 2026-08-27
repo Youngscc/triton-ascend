@@ -163,6 +163,38 @@ export GIT_DIR="$repo_git_dir"
 export GIT_WORK_TREE="$REMOTE_PROJECT"
 
 if [[ -f "$REMOTE_PROJECT/setup_ascend.py" ]]; then
+  apply_ascend_patch_if_needed() {
+    local patch_file="$1"
+    if git apply --reverse --check "$patch_file" >/dev/null 2>&1; then
+      return 0
+    fi
+    if ! git apply --check "$patch_file"; then
+      printf 'cannot safely apply Ascend compatibility patch: %s\n' \
+        "$patch_file" >&2
+      return 1
+    fi
+    git apply "$patch_file"
+  }
+
+  # The build_ext hook normally applies these patches. An up-to-date editable
+  # build can skip that hook after a branch switch, so apply them explicitly
+  # without resetting any locally modified source file.
+  ascend_patch_dir="$REMOTE_PROJECT/third_party/ascend/patch"
+  if [[ -f "$ascend_patch_dir/triton-ascend-dev-3.6.0.patch" ]]; then
+    apply_ascend_patch_if_needed \
+      "$ascend_patch_dir/triton-ascend-dev-3.6.0.patch"
+  fi
+  apply_ascend_patch_if_needed \
+    "$ascend_patch_dir/triton-ascend-3.6.0.patch"
+  unset -f apply_ascend_patch_if_needed
+
+  grep -q 'binary_extensions = getattr' \
+    "$REMOTE_PROJECT/python/triton/compiler/compiler.py" || {
+      printf '%s\n' 'Ascend core compatibility patch was not applied.' >&2
+      exit 1
+    }
+  printf '%s\n' 'TRITON_ASCEND_CORE_PATCH_OK'
+
   # Current upstream keeps the Ascend backend registration and tool-copying
   # hooks in setup_ascend.py. The generic setup.py builds a libtriton without
   # the Ascend bindings and does not install triton-mlir-opt.
