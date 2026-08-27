@@ -14,6 +14,7 @@
       --border: #d8dee8;
       --grid: #e7ebf1;
       --latency: #2563eb;
+      --compile: #0f766e;
       --ub: #d97706;
       --ok: #15803d;
       --bad: #b42318;
@@ -29,6 +30,7 @@
         --border: #344156;
         --grid: #2b374a;
         --latency: #60a5fa;
+        --compile: #2dd4bf;
         --ub: #fbbf24;
         --ok: #4ade80;
         --bad: #fb7185;
@@ -112,7 +114,7 @@
       display: grid;
       width: 100%;
       min-width: 0;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 18px;
     }
     .chart-panel {
@@ -176,7 +178,7 @@
       white-space: nowrap;
     }
     th { color: var(--muted); font-weight: 500; }
-    th:first-child, td:first-child, th:nth-child(6), td:nth-child(6) { text-align: left; }
+    th:first-child, td:first-child, th:nth-child(8), td:nth-child(8) { text-align: left; }
     .status-measured { color: var(--ok); }
     .status-failed { color: var(--bad); }
     .footnote { margin: 14px 2px 0; font-size: 12px; }
@@ -196,7 +198,7 @@
   <main>
     <header>
       <h1>Triton Ascend 参数实验</h1>
-      <p class="subtitle">固定两个编译参数，观察第三个参数对执行时间和 UB 使用量的影响。</p>
+      <p class="subtitle">固定两个编译参数，观察第三个参数对 Bisheng 编译耗时、执行时间和 UB 使用量的影响。</p>
       <div id="run-meta" class="run-meta" aria-live="polite"></div>
     </header>
 
@@ -221,6 +223,11 @@
         <svg id="latency-chart" role="img" aria-label="执行时间趋势图"></svg>
         <div id="latency-tooltip" class="tooltip" role="tooltip"></div>
       </article>
+      <article class="chart-panel" id="compile-panel">
+        <div class="chart-heading"><h2>Bisheng 编译耗时</h2><span id="compile-unit" class="chart-unit"></span></div>
+        <svg id="compile-chart" role="img" aria-label="Bisheng 编译耗时趋势图"></svg>
+        <div id="compile-tooltip" class="tooltip" role="tooltip"></div>
+      </article>
       <article class="chart-panel" id="ub-panel">
         <div class="chart-heading"><h2>UB 使用量</h2><span id="ub-unit" class="chart-unit"></span></div>
         <svg id="ub-chart" role="img" aria-label="UB 使用量趋势图"></svg>
@@ -236,6 +243,8 @@
             <th id="table-axis">变量</th>
             <th>latency_ms</th>
             <th>性能变化</th>
+            <th>compile_ms</th>
+            <th>编译耗时变化</th>
             <th>UB_KiB</th>
             <th>UB变化</th>
             <th>状态</th>
@@ -246,7 +255,7 @@
       </div>
     </section>
 
-    <p class="footnote">相对变化以当前切片中横轴最小且成功测量的配置为基线。负的性能变化表示更快；正的 UB 变化表示使用更多片上内存。页面不选择或推荐最佳配置。</p>
+    <p class="footnote">相对变化以当前切片中横轴最小且具有该项数据的配置为基线。Bisheng 编译耗时从 TTAdapter 输入进入编译器起，到 NPU 二进制生成后返回为止，不包含正确性检查和 benchmark。页面不选择或推荐最佳配置。</p>
     <p id="source-versions" class="footnote source-versions" aria-live="polite"></p>
   </main>
 
@@ -262,6 +271,11 @@
         multibuffer_num: { label: "普通 multibuffer off / 数量", short: "multibuffer" },
         vf_merge_level: { label: "VF merge level", short: "merge" }
       };
+      const metrics = {
+        latency_ms: { label: "执行时间", short: "latency", unit: "ms", digits: 6 },
+        compile_time_ms: { label: "Bisheng 编译耗时", short: "compile", unit: "ms", digits: 3 },
+        required_ub_kib: { label: "UB 使用量", short: "UB", unit: "KiB", digits: 3 }
+      };
       const elements = {
         operator: document.getElementById("operator-select"),
         axis: document.getElementById("axis-select"),
@@ -273,6 +287,7 @@
         runMeta: document.getElementById("run-meta"),
         summary: document.getElementById("selection-summary"),
         latencyUnit: document.getElementById("latency-unit"),
+        compileUnit: document.getElementById("compile-unit"),
         ubUnit: document.getElementById("ub-unit"),
         tableAxis: document.getElementById("table-axis"),
         detailsBody: document.getElementById("details-body"),
@@ -405,8 +420,13 @@
         return row.status === "measured" && row.correctness_status === "passed";
       }
 
+      function metricAvailable(row, metric) {
+        const value = row[metric];
+        return value !== null && value !== undefined && (metric === "compile_time_ms" || measured(row));
+      }
+
       function baselineFor(rows, metric) {
-        const row = rows.find(item => measured(item) && item[metric] !== null && item[metric] !== undefined);
+        const row = rows.find(item => metricAvailable(item, metric));
         return row ? Number(row[metric]) : null;
       }
 
@@ -419,16 +439,17 @@
 
       function chartValue(row, metric, baseline) {
         const raw = row[metric];
-        if (!measured(row) || raw === null || raw === undefined) return null;
+        if (!metricAvailable(row, metric)) return null;
         return elements.mode.value === "relative" ? delta(Number(raw), baseline) : Number(raw);
       }
 
       function showTooltip(panel, tooltip, event, row, metric, value) {
         const bounds = panel.getBoundingClientRect();
         const axis = axes[elements.axis.value];
+        const info = metrics[metric];
         tooltip.innerHTML = [
           `<strong>${axis.label}=${row[elements.axis.value]}</strong>`,
-          `${metric === "latency_ms" ? "latency" : "UB"}: ${metric === "latency_ms" ? formatNumber(row[metric]) + " ms" : formatNumber(row[metric], 3) + " KiB"}`,
+          `${info.short}: ${formatNumber(row[metric], info.digits)} ${info.unit}`,
           elements.mode.value === "relative" ? `相对变化: ${formatDelta(value)}` : "",
           `状态: ${row.status}`
         ].filter(Boolean).join("<br>");
@@ -451,7 +472,7 @@
         const plotWidth = width - margin.left - margin.right;
         const plotHeight = height - margin.top - margin.bottom;
         svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-        const title = svgElement("title", {}, `${metric === "latency_ms" ? "执行时间" : "UB使用量"}随${axes[elements.axis.value].label}变化`);
+        const title = svgElement("title", {}, `${metrics[metric].label}随${axes[elements.axis.value].label}变化`);
         svg.appendChild(title);
 
         const baseline = baselineFor(rows, metric);
@@ -532,7 +553,7 @@
             y: Math.max(13, pointY - 10),
             "text-anchor": anchor,
             class: "chart-value"
-          }, elements.mode.value === "relative" ? formatDelta(point.value) : formatNumber(point.value, metric === "latency_ms" ? 6 : 3)));
+          }, elements.mode.value === "relative" ? formatDelta(point.value) : formatNumber(point.value, metrics[metric].digits)));
           svg.appendChild(svgElement("circle", { cx: pointX, cy: pointY, r: 5, fill: color, class: "chart-point" }));
           const hit = svgElement("circle", { cx: pointX, cy: pointY, r: 18, class: "chart-hit", "aria-label": `${axes[elements.axis.value].label} ${point.row[elements.axis.value]}, ${point.value} ${unit}` });
           hit.addEventListener("pointerenter", event => showTooltip(panel, tooltip, event, point.row, metric, point.value));
@@ -550,6 +571,7 @@
         elements.detailsBody.replaceChildren();
         elements.tableAxis.textContent = axes[elements.axis.value].label;
         const latencyBaseline = baselineFor(rows, "latency_ms");
+        const compileBaseline = baselineFor(rows, "compile_time_ms");
         const ubBaseline = baselineFor(rows, "required_ub_kib");
         rows.forEach(row => {
           const tr = document.createElement("tr");
@@ -558,6 +580,8 @@
             String(row[elements.axis.value]),
             formatNumber(row.latency_ms),
             formatDelta(delta(row.latency_ms, latencyBaseline)),
+            formatNumber(row.compile_time_ms, 3),
+            formatDelta(delta(row.compile_time_ms, compileBaseline)),
             formatNumber(row.required_ub_kib, 3),
             formatDelta(delta(row.required_ub_kib, ubBaseline)),
             row.diagnostic ? `${row.status}: ${row.diagnostic}` : row.status,
@@ -566,7 +590,7 @@
           values.forEach((value, index) => {
             const td = document.createElement("td");
             td.textContent = value;
-            if (index === 6) td.className = statusClass;
+            if (index === 7) td.className = statusClass;
             tr.appendChild(td);
           });
           elements.detailsBody.appendChild(tr);
@@ -579,6 +603,7 @@
         const allAxisValues = uniqueNumeric(operator.rows, elements.axis.value);
         const measuredRows = currentRows.filter(measured);
         const latencyValues = measuredRows.map(row => row.latency_ms).filter(value => value !== null);
+        const compileValues = currentRows.map(row => row.compile_time_ms).filter(value => value !== null && value !== undefined);
         const ubValues = measuredRows.map(row => row.required_ub_kib).filter(value => value !== null);
         const binaries = new Set(measuredRows.map(row => row.binary_hash).filter(Boolean));
         const coverage = `${currentRows.length}/${allAxisValues.length}`;
@@ -610,6 +635,7 @@
         elements.summary.className = `selection-summary${warning}`;
         elements.summary.textContent = [
           `${axes[elements.axis.value].label} 覆盖 ${coverage}`,
+          `compile ${range(compileValues)} ms`,
           `latency ${range(latencyValues)} ms`,
           `UB ${range(ubValues)} KiB`,
           `${binaries.size} 个二进制`
@@ -617,8 +643,10 @@
 
         const relative = elements.mode.value === "relative";
         elements.latencyUnit.textContent = relative ? "相对变化 (%)" : "毫秒 (ms)";
+        elements.compileUnit.textContent = relative ? "相对变化 (%)" : "毫秒 (ms)";
         elements.ubUnit.textContent = relative ? "相对变化 (%)" : "KiB";
         drawChart("latency-chart", "latency-panel", "latency-tooltip", currentRows, "latency_ms", "var(--latency)", "ms");
+        drawChart("compile-chart", "compile-panel", "compile-tooltip", currentRows, "compile_time_ms", "var(--compile)", "ms");
         drawChart("ub-chart", "ub-panel", "ub-tooltip", currentRows, "required_ub_kib", "var(--ub)", "KiB");
         renderTable(currentRows);
       }

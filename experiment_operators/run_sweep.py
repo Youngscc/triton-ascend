@@ -46,6 +46,7 @@ RESULTS_CSV_SUFFIX_FIELDS = [
     "vf_merge_level",
     "结果",
     "原因",
+    "Bisheng编译耗时_ms",
     "运行延迟_ms",
     "UB使用_KiB",
     "本轮总耗时_s",
@@ -245,8 +246,10 @@ class SweepProgress:
         else:
             self.failed += 1
         latency = row.get("latency_ms")
+        compile_time_ms = row.get("compile_time_ms")
         ub_kib = row.get("required_ub_kib")
-        details = (f"latency_ms={latency if latency is not None else '-'} "
+        details = (f"compile_ms={compile_time_ms if compile_time_ms is not None else '-'} "
+                   f"latency_ms={latency if latency is not None else '-'} "
                    f"ub_kib={ub_kib if ub_kib is not None else '-'}")
         if status != "measured":
             details += f" reason={simple_reason(row)}"
@@ -497,6 +500,7 @@ def write_results(rows: list[dict], result_dir: Path, pipeline_axis: str) -> Pat
                 "vf_merge_level": row.get("vf_merge_level"),
                 "结果": result_label(row.get("status", "missing")),
                 "原因": simple_reason(row),
+                "Bisheng编译耗时_ms": row.get("compile_time_ms"),
                 "运行延迟_ms": row.get("latency_ms"),
                 "UB使用_KiB": row.get("required_ub_kib"),
                 "本轮总耗时_s": row.get("wall_time_s"),
@@ -1065,6 +1069,7 @@ def load_legacy_results(result_dir: Path, manifest: dict) -> list[dict]:
                 "status": status,
                 "correctness_status": correctness,
                 "diagnostic": reason,
+                "compile_time_ms": optional_float(raw.get("Bisheng编译耗时_ms")),
                 "latency_ms": optional_float(raw.get("运行延迟_ms")),
                 "required_ub_kib": ub_kib,
                 "required_ub_bytes": ub_kib * 1024 if ub_kib is not None else None,
