@@ -44,6 +44,14 @@ Running `dump_plan_compute_block.py` also generates `optimized.ttir.mlir`,
 `final.ttadapter.mlir`, and the complete `mlir-pass-dump.log`. Those larger,
 reproducible diagnostics are intentionally not tracked.
 
+The dump command accepts `--dynamic-cv off|1|2|3|4`. `--constants-json` accepts
+one JSON object of compile-time constant overrides, and `--source-path` selects
+an auditable Python source variant. For Fused Attention, changing
+`Z`, `H`, `N_CTX`, or `HEAD_DIM` automatically recomputes all contiguous tensor
+strides, so the resulting IR is generated through the normal Python frontend
+rather than edited after lowering. The DynamicCV shape-corpus driver and its
+four-layer compiler comparison live in `../cost_model_demo/run_shape_validation.py`.
+
 ## Result
 
 All four raw stage files differ because the experiment wrappers add lines and

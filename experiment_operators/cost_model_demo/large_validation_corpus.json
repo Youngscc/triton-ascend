@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "operator": "fused_attention",
+  "dynamic_values": [1, 2, 3],
+  "fixed_controls": {
+    "multibuffer_num": 1,
+    "vf_merge_level": 0
+  },
+  "cases": [
+    {
+      "case_id": "reference_current",
+      "class": "known_reference",
+      "description": "Published Fused Attention reference shape.",
+      "constants": {}
+    },
+    {
+      "case_id": "block_n16",
+      "class": "local_tile_size",
+      "description": "Small K/V tile with the reference row and head dimensions.",
+      "constants": {"BLOCK_N": 16}
+    },
+    {
+      "case_id": "block_n32",
+      "class": "local_tile_size",
+      "description": "K/V tile used as the one-factor shape baseline.",
+      "constants": {"BLOCK_N": 32}
+    },
+    {
+      "case_id": "block_n64",
+      "class": "local_tile_size",
+      "description": "Medium K/V tile with the reference row and head dimensions.",
+      "constants": {"BLOCK_N": 64}
+    },
+    {
+      "case_id": "global_n256",
+      "class": "global_size_control",
+      "description": "Short context while preserving local tiles.",
+      "constants": {"N_CTX": 256, "BLOCK_N": 32}
+    },
+    {
+      "case_id": "global_n512",
+      "class": "global_size_control",
+      "description": "Half-length context while preserving local tiles.",
+      "constants": {"N_CTX": 512, "BLOCK_N": 32}
+    },
+    {
+      "case_id": "global_n2048",
+      "class": "global_size_control",
+      "description": "Double-length context while preserving local tiles.",
+      "constants": {"N_CTX": 2048, "BLOCK_N": 32}
+    },
+    {
+      "case_id": "global_n4096",
+      "class": "global_size_control",
+      "description": "Long context while preserving local tiles.",
+      "constants": {"N_CTX": 4096, "BLOCK_N": 32}
+    },
+    {
+      "case_id": "block_m16",
+      "class": "local_tile_size",
+      "description": "Quarter-size Vector row tile.",
+      "constants": {"BLOCK_M": 16, "BLOCK_N": 16}
+    },
+    {
+      "case_id": "block_m32",
+      "class": "local_tile_size",
+      "description": "Half-size Vector row tile.",
+      "constants": {"BLOCK_M": 32, "BLOCK_N": 32}
+    },
+    {
+      "case_id": "block_m128",
+      "class": "local_tile_size",
+      "description": "Double-size Vector row tile.",
+      "constants": {"BLOCK_M": 128, "BLOCK_N": 32}
+    },
+    {
+      "case_id": "block_m256",
+      "class": "resource_boundary",
+      "description": "Large Vector row tile that exercises UB pressure.",
+      "constants": {"BLOCK_M": 256, "BLOCK_N": 32}
+    },
+    {
+      "case_id": "head_dim16",
+      "class": "local_matrix_size",
+      "description": "Minimum head width accepted by the kernel contract.",
+      "constants": {"HEAD_DIM": 16, "BLOCK_N": 32}
+    },
+    {
+      "case_id": "head_dim32",
+      "class": "local_matrix_size",
+      "description": "Half-width accumulator and output.",
+      "constants": {"HEAD_DIM": 32, "BLOCK_N": 32}
+    },
+    {
+      "case_id": "head_dim128",
+      "class": "local_matrix_size",
+      "description": "Double-width accumulator and output.",
+      "constants": {"HEAD_DIM": 128, "BLOCK_N": 32}
+    },
+    {
+      "case_id": "head_dim256_boundary",
+      "class": "topology_boundary",
+      "description": "Sliced accumulator branch selected at HEAD_DIM 256.",
+      "constants": {"HEAD_DIM": 256, "BLOCK_N": 32}
+    },
+    {
+      "case_id": "paired_m32_h128",
+      "class": "shape_interaction",
+      "description": "Small row tile with a wide accumulator.",
+      "constants": {"BLOCK_M": 32, "BLOCK_N": 32, "HEAD_DIM": 128}
+    },
+    {
+      "case_id": "paired_m128_h32",
+      "class": "shape_interaction",
+      "description": "Large row tile with a narrow accumulator.",
+      "constants": {"BLOCK_M": 128, "BLOCK_N": 32, "HEAD_DIM": 32}
+    },
+    {
+      "case_id": "paired_m128_h128",
+      "class": "shape_interaction",
+      "description": "Large row tile and wide accumulator together.",
+      "constants": {"BLOCK_M": 128, "BLOCK_N": 32, "HEAD_DIM": 128}
+    },
+    {
+      "case_id": "batch_head_small",
+      "class": "launch_geometry_control",
+      "description": "One batch and one head with unchanged local computation.",
+      "constants": {"Z": 1, "H": 1, "BLOCK_N": 32}
+    },
+    {
+      "case_id": "batch_head_large",
+      "class": "launch_geometry_control",
+      "description": "More batches and heads with unchanged local computation.",
+      "constants": {"Z": 8, "H": 64, "BLOCK_N": 32}
+    },
+    {
+      "case_id": "causal_two_stage",
+      "class": "topology_boundary",
+      "description": "Compile both off-band and on-band attention loops.",
+      "constants": {"STAGE": 3, "BLOCK_N": 32}
+    },
+    {
+      "case_id": "variant_alpha_identity",
+      "class": "source_metamorphic_control",
+      "source_variant": "alpha_identity",
+      "description": "Insert an algebraic identity after alpha; canonicalization should preserve the dependency graph.",
+      "constants": {"BLOCK_N": 32},
+      "source_edits": [
+        {
+          "old": "        alpha = tl.math.exp(m_i - m_ij)  # Update factor: exp difference between old and new max\n",
+          "new": "        alpha_base = tl.math.exp(m_i - m_ij)\n        alpha = alpha_base * 1.0  # Metamorphic identity\n"
+        }
+      ]
+    },
+    {
+      "case_id": "variant_denominator_diamond",
+      "class": "source_dependency_dag",
+      "source_variant": "denominator_diamond",
+      "description": "Split and reconverge the row denominator to introduce a diamond-shaped SSA subgraph.",
+      "constants": {"BLOCK_N": 32},
+      "source_edits": [
+        {
+          "old": "        l_ij = tl.sum(p, 1)  # Softmax denominator (sum of each row)\n",
+          "new": "        l_ij_base = tl.sum(p, 1)\n        l_ij_left = l_ij_base * 0.5\n        l_ij_right = l_ij_base - l_ij_left\n        l_ij = l_ij_left + l_ij_right  # Diamond reconvergence\n"
+        }
+      ]
+    },
+    {
+      "case_id": "variant_parallel_reductions",
+      "class": "source_dependency_dag",
+      "source_variant": "parallel_reductions",
+      "description": "Feed the denominator from independent sum and max reductions of p.",
+      "constants": {"BLOCK_N": 32},
+      "source_edits": [
+        {
+          "old": "        l_ij = tl.sum(p, 1)  # Softmax denominator (sum of each row)\n",
+          "new": "        l_ij_sum = tl.sum(p, 1)\n        l_ij_peak = tl.max(p, 1)\n        l_ij = l_ij_sum + l_ij_peak * 0.125  # Parallel reductions\n"
+        }
+      ]
+    },
+    {
+      "case_id": "variant_alpha_parallel_consumer",
+      "class": "source_dependency_dag",
+      "source_variant": "alpha_parallel_consumer",
+      "description": "Add a second nonlinear alpha consumer before denominator convergence.",
+      "constants": {"BLOCK_N": 32},
+      "source_edits": [
+        {
+          "old": "        l_i = l_i * alpha + l_ij  # Update softmax denominator\n",
+          "new": "        alpha_aux = alpha * alpha\n        l_i = l_i * alpha + l_ij + alpha_aux * 0.125  # Parallel alpha consumer\n"
+        }
+      ]
+    },
+    {
+      "case_id": "variant_cross_branch_accumulator",
+      "class": "source_dependency_dag",
+      "source_variant": "cross_branch_accumulator",
+      "description": "Make the row denominator feed both l_i and the matrix accumulator branch.",
+      "constants": {"BLOCK_N": 32},
+      "source_edits": [
+        {
+          "old": "            acc_ptr = acc_ptr * alpha[:, None]\n",
+          "new": "            acc_ptr = acc_ptr * alpha[:, None] + l_ij[:, None] * 0.001\n"
+        }
+      ]
+    },
+    {
+      "case_id": "variant_probability_branch",
+      "class": "source_dependency_dag",
+      "source_variant": "probability_branch",
+      "description": "Use a nonlinear branch of p for the dot while retaining the original p reduction path.",
+      "constants": {"BLOCK_N": 32},
+      "source_edits": [
+        {
+          "old": "        # Convert softmax weight type depending on FP8 usage\n        if fp8_v:\n            p_cast = p.to(tl.float8e5)  # Convert to FP8 format (save memory)\n        else:\n            p_cast = p.to(k.dtype)\n",
+          "new": "        # Synthetic branch: the dot and denominator consume different descendants of p.\n        p_for_dot = tl.where(p > 0.25, p, p * 0.5)\n        if fp8_v:\n            p_cast = p_for_dot.to(tl.float8e5)\n        else:\n            p_cast = p_for_dot.to(k.dtype)\n"
+        }
+      ]
+    },
+    {
+      "case_id": "variant_detached_denominator",
+      "class": "source_dependency_removal",
+      "source_variant": "detached_denominator",
+      "description": "Remove the p-to-denominator edge to test whether family discovery changes rather than matching by name.",
+      "constants": {"BLOCK_N": 32},
+      "source_edits": [
+        {
+          "old": "        l_ij = tl.sum(p, 1)  # Softmax denominator (sum of each row)\n",
+          "new": "        l_ij = tl.maximum(m_i, 0.0)  # Deliberately detached from p\n"
+        }
+      ]
+    }
+  ]
+}

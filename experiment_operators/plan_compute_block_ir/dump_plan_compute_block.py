@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from typing import Any, Mapping, Optional
 
 KERNEL_FUNCTIONS = {
     "fused_attention": ("_attn_fwd_inner", "_attn_fwd"),
@@ -18,9 +19,58 @@ KERNEL_FUNCTIONS = {
 }
 
 
-def kernel_config(name: str):
+def _apply_constant_overrides(
+    name: str,
+    constants: dict[str, Any],
+    overrides: Mapping[str, Any],
+) -> dict[str, Any]:
+    unknown = sorted(set(overrides) - set(constants))
+    if unknown:
+        raise ValueError(
+            f"unknown compile-time constants for {name}: {', '.join(unknown)}")
+    result = {**constants, **overrides}
+    for key, value in result.items():
+        if key not in overrides:
+            continue
+        if isinstance(constants[key], bool):
+            if not isinstance(value, bool):
+                raise ValueError(f"compile-time constant {key} must be a boolean")
+        elif isinstance(constants[key], int):
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ValueError(f"compile-time constant {key} must be an integer")
+    return result
+
+
+def kernel_config(name: str, overrides: Optional[Mapping[str, Any]] = None):
+    overrides = overrides or {}
     if name == "fused_attention":
-        stride = (2097152, 65536, 64, 1)
+        shape_constants = _apply_constant_overrides(
+            name,
+            {
+                "Z": 4,
+                "H": 32,
+                "N_CTX": 1024,
+                "HEAD_DIM": 64,
+                "BLOCK_M": 64,
+                "BLOCK_N": 128,
+                "STAGE": 1,
+            },
+            overrides,
+        )
+        for key in ("Z", "H", "N_CTX", "HEAD_DIM", "BLOCK_M", "BLOCK_N"):
+            if shape_constants[key] <= 0:
+                raise ValueError(f"compile-time constant {key} must be positive")
+        if shape_constants["HEAD_DIM"] not in {16, 32, 64, 128, 256}:
+            raise ValueError("fused_attention HEAD_DIM must be one of 16,32,64,128,256")
+        if shape_constants["STAGE"] not in {1, 3}:
+            raise ValueError("fused_attention STAGE must be 1 or 3")
+        if shape_constants["N_CTX"] % shape_constants["BLOCK_M"] != 0:
+            raise ValueError("fused_attention requires N_CTX to be divisible by BLOCK_M")
+        if shape_constants["N_CTX"] % shape_constants["BLOCK_N"] != 0:
+            raise ValueError("fused_attention requires N_CTX to be divisible by BLOCK_N")
+        head_stride = shape_constants["N_CTX"] * shape_constants["HEAD_DIM"]
+        batch_stride = shape_constants["H"] * head_stride
+        stride = (batch_stride, head_stride, shape_constants["HEAD_DIM"], 1)
         signature = {
             "Q": "*bf16",
             "K": "*bf16",
@@ -47,13 +97,7 @@ def kernel_config(name: str):
             "stride_oh": stride[1],
             "stride_om": stride[2],
             "stride_on": stride[3],
-            "Z": 4,
-            "H": 32,
-            "N_CTX": 1024,
-            "HEAD_DIM": 64,
-            "BLOCK_M": 64,
-            "BLOCK_N": 128,
-            "STAGE": 1,
+            **shape_constants,
         }
         return "_attn_fwd", signature, constants
 
@@ -86,7 +130,7 @@ def kernel_config(name: str):
             "MAX_K_LEN": 1024,
             "BATCH_SIZE": 2,
         }
-        return "fwd_kernel", signature, constants
+        return "fwd_kernel", signature, _apply_constant_overrides(name, constants, overrides)
 
     if name == "hstu_attention":
         signature = {
@@ -119,7 +163,7 @@ def kernel_config(name: str):
             "BLOCK_N": 64,
             "bias": None,
         }
-        return "_hstu_attn_fwd", signature, constants
+        return "_hstu_attn_fwd", signature, _apply_constant_overrides(name, constants, overrides)
 
     if name == "unified_attention":
         signature = {
@@ -160,7 +204,8 @@ def kernel_config(name: str):
             "stride_v_cache_3": 1,
             "BLOCK_M": 16,
         }
-        return "kernel_unified_attention_2d", signature, constants
+        return ("kernel_unified_attention_2d", signature,
+                _apply_constant_overrides(name, constants, overrides))
 
     raise ValueError(name)
 
@@ -191,9 +236,10 @@ def load_jit_functions(source_path: Path, function_names: tuple[str, ...]):
 
 def extract_plan_ir(log_text: str) -> str:
     lines = log_text.splitlines(keepends=True)
-    # This build prints IR before every pass. OpClassifier immediately follows
-    # PlanComputeBlock, so its input is PlanComputeBlock's output.
-    marker = "IR Dump Before OpClassifierPass (op-classifier)"
+    # PlanComputeBlock owns a nested pipeline ending in ReorderOpsByBlockId.
+    # The next outer pass is ComputeBlockOpt, so its input is the completed
+    # PlanComputeBlock output.
+    marker = "IR Dump Before mlir::triton::ComputeBlockOptPass (compute-block-opt)"
     starts = [i for i, line in enumerate(lines) if marker in line]
     if not starts:
         raise RuntimeError("the pass boundary after PlanComputeBlock was not present in the MLIR dump")
@@ -213,20 +259,55 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--worktree", type=Path, required=True)
     parser.add_argument("--operator", choices=sorted(KERNEL_FUNCTIONS), required=True)
+    parser.add_argument(
+        "--source-path",
+        type=Path,
+        help="Optional Python source variant; defaults to candidates/<operator>.py.",
+    )
+    parser.add_argument(
+        "--dynamic-cv",
+        choices=("off", "1", "2", "3", "4"),
+        default="4",
+        help="Disable DynamicCV or select its Vector-core buffer count.",
+    )
+    parser.add_argument(
+        "--constants-json",
+        type=Path,
+        help="JSON object containing compile-time constant overrides.",
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
 
     from triton._C.libtriton import ir
     from triton._C.libtriton.ascend import ir as ascend_ir
     from triton.backends.ascend import _apply_ascend_patch
-    from triton.backends.ascend.compiler import NPUOptions, make_ttir, min_dot_size, ttir_to_linalg
+    from triton.backends.ascend.compiler import (
+        NPUOptions,
+        bc_to_linalg_by_bishengir_opt,
+        linalg_to_bc_by_triton_mlir_opt,
+        make_ttir,
+        min_dot_size,
+        ttir_to_linalg,
+    )
     from triton.compiler.code_generator import ast_to_ttir
     from triton.compiler.compiler import ASTSource
 
     _apply_ascend_patch()
-    source_path = args.worktree / "experiment_operators" / "candidates" / f"{args.operator}.py"
+    source_path = (
+        args.source_path.resolve()
+        if args.source_path is not None
+        else args.worktree / "experiment_operators" / "candidates" / f"{args.operator}.py"
+    )
+    if not source_path.is_file():
+        raise FileNotFoundError(f"kernel source does not exist: {source_path}")
     namespace = load_jit_functions(source_path, KERNEL_FUNCTIONS[args.operator])
-    entry_name, signature, constants = kernel_config(args.operator)
+    constant_overrides: dict[str, Any] = {}
+    if args.constants_json is not None:
+        loaded = json.loads(args.constants_json.read_text(encoding="utf-8"))
+        if not isinstance(loaded, dict) or not all(isinstance(key, str) for key in loaded):
+            raise ValueError("--constants-json must contain one JSON object with string keys")
+        constant_overrides = loaded
+    entry_name, signature, constants = kernel_config(args.operator, constant_overrides)
     kernel = namespace[entry_name]
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -237,15 +318,21 @@ def main() -> None:
     ir.load_dialects(context)
     ascend_ir.load_dialects(context)
     option_fields = NPUOptions.__dataclass_fields__
-    dynamic_counts = ({"intra_cache_num": 4, "inter_cache_num": 1, "load_cache_num": 1}
-                      if "intra_cache_num" in option_fields else
-                      {"buf_slot_num_of_veccore": 4, "buf_slot_num_of_crosscore": 1, "buf_slot_num_of_gm": 1})
+    dynamic_enabled = args.dynamic_cv != "off"
+    dynamic_value = int(args.dynamic_cv) if dynamic_enabled else None
+    dynamic_counts = {}
+    if dynamic_enabled:
+        dynamic_counts = ({"intra_cache_num": dynamic_value, "inter_cache_num": 1, "load_cache_num": 1}
+                          if "intra_cache_num" in option_fields else
+                          {"buf_slot_num_of_veccore": dynamic_value,
+                           "buf_slot_num_of_crosscore": 1,
+                           "buf_slot_num_of_gm": 1})
     option_values = {
         "arch": "Ascend950PR_9579",
-        "enable_dynamic_cv_pipeline": True,
+        "enable_dynamic_cv_pipeline": dynamic_enabled,
+        "cv_pipeline_mode": "off",
         "set_workspace_multibuffer": 0,
-        "multibuffer": True,
-        "multibuffer_num": 2,
+        "multibuffer": False,
         "vf_merge_level": 0,
         **dynamic_counts,
     }
@@ -271,29 +358,44 @@ def main() -> None:
         os.close(saved_stderr)
 
     log_text = raw_log_path.read_text()
-    plan_ir = extract_plan_ir(log_text)
-    (args.output_dir / "after-plan-compute-block.mlir").write_text(plan_ir)
-    (args.output_dir / "final.ttadapter.mlir").write_text(str(final_ir))
+    plan_ir = extract_plan_ir(log_text) if dynamic_enabled else None
+    if plan_ir is not None:
+        (args.output_dir / "after-plan-compute-block.mlir").write_text(plan_ir)
+    # Match the production backend boundary: MLIR 22 writes bytecode and the
+    # pinned AscendNPU-IR MLIR 19 reader prints compiler-compatible text.
+    metadata.setdefault("hash", hashlib.sha256(str(final_ir).encode()).hexdigest())
+    bridged_ir = bc_to_linalg_by_bishengir_opt(
+        linalg_to_bc_by_triton_mlir_opt(str(final_ir), metadata, options),
+        metadata,
+        options,
+    )
+    (args.output_dir / "final.ttadapter.mlir").write_text(bridged_ir)
     summary = {
         "operator": args.operator,
         "source": str(source_path),
         "source_sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(),
         "entry": entry_name,
         "signature": signature,
+        "constant_overrides": constant_overrides,
         "constants": constants,
         "compiler_options": {
             "arch": getattr(options, "target_arch", getattr(options, "arch", "Ascend950PR_9579")),
             "enable_dynamic_cv_pipeline": options.enable_dynamic_cv_pipeline,
-            "intra_cache_num": dynamic_counts.get("intra_cache_num", dynamic_counts.get("buf_slot_num_of_veccore")),
+            "intra_cache_num": dynamic_value,
             "inter_cache_num": dynamic_counts.get("inter_cache_num", dynamic_counts.get("buf_slot_num_of_crosscore")),
             "load_cache_num": dynamic_counts.get("load_cache_num", dynamic_counts.get("buf_slot_num_of_gm")),
             "multibuffer_num": options.multibuffer_num,
             "vf_merge_level": options.vf_merge_level,
         },
-        "plan_ir_sha256": hashlib.sha256(plan_ir.encode()).hexdigest(),
-        "plan_ir_boundary": "input to OpClassifierPass immediately after PlanComputeBlockPass",
+        "plan_ir_sha256": hashlib.sha256(plan_ir.encode()).hexdigest() if plan_ir is not None else None,
+        "plan_ir_boundary": ("input to ComputeBlockOptPass immediately after the complete "
+                             "PlanComputeBlockPass nested pipeline"
+                             if plan_ir is not None else
+                             "not applicable: DynamicCV and PlanComputeBlock are disabled"),
         "dynamic_cv_result": metadata.get("dynamic_cv_result"),
         "dynamic_cv_errcode": metadata.get("dynamic_cv_errcode"),
+        "ttadapter_bridge": "mlir22-bytecode-to-mlir19-text-v1",
+        "plan_capture_version": "after-complete-plan-compute-block-pass-v2",
     }
     (args.output_dir / "metadata.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     print(json.dumps(summary, sort_keys=True))

@@ -1,0 +1,15 @@
+{
+  "ub_peak_bytes": 63104,
+  "no_reuse_required_bytes": 63104,
+  "used_reuse": false,
+  "profile_id": "a5-pcb-dynamiccv-multibuffer-v1",
+  "profile_fingerprint": "821c00584c2a505c484c6059241b00b82f6072e8bd467e7ed584056db28ea3e8",
+  "model_fingerprint": "300c4ad3170a9c13fd1567f3b235276ecd33b79ac212e452ef34a818e7f409bc",
+  "ir_sha256": "82cf5609f5cc14bae50df3bbf1a1c06acb886509bcfdb05ea29b006ea481ea65",
+  "normalized_ir_sha256": "141e76c6876ca9059dee445b843640d2501ba540129172531df972ded9c83cd5",
+  "intra_cache_num": 1,
+  "multibuffer_num": 1,
+  "vf_merge_level": 0,
+  "entry_graph_complete": false,
+  "entries": []
+}

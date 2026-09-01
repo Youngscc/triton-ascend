@@ -1,0 +1,2447 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Attention IRGraph Static Model</title>
+<style>:root {
+  color-scheme: light dark;
+  background-color: var(
+    --background,
+    var(--color-background-primary, light-dark(rgb(255 255 255), rgb(24 24 24)))
+  ) !important;
+
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: var(
+    --color-background-primary,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --card: color-mix(in oklab, var(--foreground) 5%, var(--background));
+  --card-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --popover: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255), rgb(45 45 45))
+  );
+  --popover-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --primary: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --primary-foreground: var(
+    --color-text-inverse,
+    light-dark(rgb(255 255 255), rgb(13 13 13))
+  );
+  --secondary: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%))
+  );
+  --secondary-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: var(
+    --color-text-secondary,
+    light-dark(rgb(26 28 31 / 49.4%), rgb(255 255 255 / 49.8%))
+  );
+  --accent: var(
+    --color-background-info,
+    light-dark(rgb(229 242 255), rgb(13 39 63))
+  );
+  --accent-foreground: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --destructive: var(
+    --color-text-warning,
+    light-dark(rgb(226 85 7), rgb(255 133 73))
+  );
+  --border: var(
+    --color-border-secondary,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+  --input: var(
+    --color-border-primary,
+    light-dark(
+      rgb(26 28 31 / 11.8%),
+      color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+    )
+  );
+  --ring: var(
+    --color-ring-primary,
+    light-dark(rgb(51 156 255), rgb(131 195 255 / 76%))
+  );
+  --font-size-base: var(--font-text-md-size, 14px);
+  --blue: light-dark(rgb(51 156 255), rgb(51 156 255));
+  --orange: light-dark(rgb(226 85 7), rgb(251 106 34));
+  --green: light-dark(rgb(0 162 64), rgb(64 201 119));
+  --red: light-dark(rgb(224 46 42), rgb(255 103 100));
+  --purple: light-dark(rgb(146 79 247), rgb(173 123 249));
+  --yellow: light-dark(rgb(255 195 0), rgb(255 210 64));
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(rgb(243 136 59), rgb(245 154 86));
+  --viz-series-3: light-dark(rgb(93 201 119), rgb(116 213 139));
+  --viz-series-4: light-dark(rgb(235 119 177), rgb(240 143 192));
+  --viz-series-5: light-dark(rgb(155 121 236), rgb(170 145 239));
+  --viz-series-6: light-dark(rgb(58 185 177), rgb(90 203 194));
+
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans: -apple-system, system-ui, "Segoe UI", sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 430;
+  --font-weight-medium: 500;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --radius: var(--border-radius-lg, 12.5px);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 17'%3E%3Cpath d='M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z'/%3E%3C/svg%3E");
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html > body {
+  /* Preserve MCP aliases for older inline renderers without creating :root cycles. */
+  --color-background-primary: var(
+    --background,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --color-text-primary: var(
+    --foreground,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --color-border-secondary: var(
+    --border,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+
+  margin: 0;
+  padding: 5px;
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans) !important;
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: pointer;
+  font-weight: var(--font-weight-medium, 500);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+}
+
+.table :is(th, td) {
+  padding-block: 10px;
+  padding-inline: 0 24px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.table-responsive > .table :is(th, td) {
+  overflow-wrap: break-word;
+}
+
+.table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.table :is(caption, thead th) {
+  font-weight: 600;
+}
+
+.table thead th {
+  padding-block: 8px;
+  border-bottom-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.table.table-sm :is(th, td) {
+  padding-block: 6px;
+}
+
+.table.table-sm :is(th, td):not(:last-child) {
+  padding-inline-end: 16px;
+}
+
+.table :is(.text-end, [align="right"]) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.table :is(.text-center, [align="center"]) {
+  text-align: center;
+}
+
+.table .text-nowrap {
+  white-space: nowrap;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  corner-shape: superellipse(1.5);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+#widget > :not(.card, .progress) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--popover-foreground);
+  background: var(--popover);
+  box-shadow: none;
+  font-size: var(--font-size-tooltip);
+  line-height: var(--line-height-tooltip);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
+
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.progress {
+  display: flex;
+  height: 6px;
+  margin-block: calc((var(--line-height-normal, 1.5em) - 6px) / 2);
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+}
+
+.progress-bar {
+  height: 100%;
+  flex-shrink: 0;
+  border: 0;
+  background: var(--viz-series-1);
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls > .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls > .form-label > :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+.btn {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn:is(.btn-block, .viz-tile) {
+  inline-size: 100%;
+}
+
+.btn.viz-tile {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.btn {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--primary-foreground);
+  background: var(--foreground);
+  background-clip: padding-box;
+}
+
+.btn-primary .text-muted {
+  color: color-mix(in srgb, var(--primary-foreground) 50%, transparent);
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-control[type="file"] {
+  padding: 0;
+  overflow: hidden;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control[type="file"]::file-selector-button {
+  min-height: 26px;
+  margin-right: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--input);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: inherit;
+  font: inherit;
+}
+
+.form-control[type="file"]:not(:disabled):hover::file-selector-button {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-control-color[type="color"] {
+  width: 40px;
+  height: 28px;
+  padding: 3px;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control-color[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.form-control-color[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 4px);
+  corner-shape: superellipse(1.5);
+}
+
+textarea.form-control {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 32px 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-select:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-check {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type="checkbox"] {
+  border-color: var(--input);
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background-color: var(--secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch) .form-check-input[type="checkbox"]:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type="checkbox"]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: "";
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+}
+
+.form-check-input[type="radio"] {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+}
+
+.form-check-input[type="radio"]:checked {
+  border: 2px solid var(--primary);
+  background:
+    radial-gradient(circle, var(--primary-foreground) 0 2.5px, transparent 3px),
+    var(--primary);
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+  box-shadow: var(--shadow-sm);
+  content: "";
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--primary);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  border: 0;
+  accent-color: var(--primary);
+  background: linear-gradient(
+      color-mix(in srgb, var(--foreground) 7%, transparent),
+      color-mix(in srgb, var(--foreground) 7%, transparent)
+    )
+    center / 100% 2px no-repeat;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-webkit-slider-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range::-moz-range-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+  [aria-pressed="true"],
+  [aria-selected="true"],
+  .is-selected
+) {
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.btn.viz-tile:is([aria-pressed="true"], [aria-selected="true"], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .btn,
+  .form-control,
+  .form-select {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .form-control,
+  .form-select {
+    font-size: max(16px, var(--font-size-normal));
+  }
+
+  .form-control[type="file"]::file-selector-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .form-control-color[type="color"] {
+    width: 44px;
+    height: 44px;
+  }
+
+  .form-control:is(
+    [type="date"],
+    [type="datetime-local"],
+    [type="month"],
+    [type="time"],
+    [type="week"]
+  ) {
+    min-width: 0;
+    max-width: 100%;
+    padding-block: 8px;
+  }
+
+  .form-check {
+    min-height: 44px;
+    padding-inline: 15px;
+  }
+
+  .form-check-input {
+    position: relative;
+  }
+
+  .form-check-input::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    content: "";
+    transform: translate(-50%, -50%);
+  }
+
+  .form-check-label {
+    display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .form-range {
+    height: 44px;
+    touch-action: pan-y;
+  }
+
+  .form-range::-webkit-slider-runnable-track {
+    height: 44px;
+  }
+
+  .form-range::-moz-range-track {
+    height: 44px;
+  }
+
+  .form-range::-webkit-slider-thumb {
+    margin-top: 12px;
+  }
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget > svg {
+  width: 100%;
+}
+
+/* Model-authored chart rules can otherwise stretch icons after these styles load. */
+svg.lucide {
+  display: block;
+  width: 16px !important;
+  height: 16px !important;
+  flex: none;
+  margin: 0 !important;
+  stroke-width: 1.6;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+
+html>body{padding:0}</style>
+</head>
+<body>
+<div id="fa-plan-ir-graph" class="fa-viz">
+  <div class="fa-head">
+    <div class="fa-heading">
+      <div class="fa-operator-tabs" aria-label="选择算子">
+        <button type="button" data-operator="fused" aria-pressed="true">Fused Attention</button>
+        <button type="button" data-operator="flash" aria-pressed="false">Flash Attention</button>
+      </div>
+      <h2 data-role="title">Fused Attention: IRGraph 紧凑 value 图</h2>
+      <p data-role="subtitle">从完整 IRGraph 中抽取的关键 value 子图；完整模型规模、循环索引和 GM 路径见下方概览</p>
+    </div>
+    <div class="fa-actions">
+      <div class="fa-view-tabs" role="tablist" aria-label="选择图类型">
+        <button type="button" role="tab" data-view="ir" aria-selected="true"><i data-lucide="git-branch"></i>IR 数据流</button>
+        <button type="button" role="tab" data-view="blocks" aria-selected="false"><i data-lucide="blocks"></i>计算块依赖</button>
+      </div>
+      <div class="fa-tools" aria-label="图形缩放">
+        <button type="button" data-action="zoom-out" data-tooltip="缩小" aria-label="缩小"><i data-lucide="zoom-out"></i></button>
+        <button type="button" data-action="reset" data-tooltip="恢复视图" aria-label="恢复视图"><i data-lucide="maximize-2"></i></button>
+        <button type="button" data-action="zoom-in" data-tooltip="放大" aria-label="放大"><i data-lucide="zoom-in"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <section class="fa-model-overview" aria-label="完整静态模型概览">
+    <div class="fa-model-summary">
+      <div class="fa-model-identity">
+        <span class="fa-model-kicker">完整静态模型</span>
+        <strong data-role="model-function">@_attn_fwd</strong>
+        <code data-role="model-target">Ascend950PR_9579</code>
+      </div>
+      <p data-role="model-coverage">当前画布是完整 IRGraph 的紧凑展示。</p>
+    </div>
+    <dl class="fa-model-stats" data-role="model-stats"></dl>
+    <details class="fa-model-details" open>
+      <summary>查看静态模型中的模块信息、循环索引与 GM 路径</summary>
+      <div class="fa-model-detail-grid">
+        <section>
+          <h3>模块与参数</h3>
+          <div data-role="model-module"></div>
+        </section>
+        <section>
+          <h3>循环索引</h3>
+          <div data-role="model-loops"></div>
+        </section>
+        <section>
+          <h3>GM 路径</h3>
+          <div data-role="model-gm"></div>
+        </section>
+      </div>
+    </details>
+  </section>
+
+  <div class="fa-context-row">
+  <div class="fa-legend" data-legend="ir" aria-label="IR 数据流图例">
+    <span><i class="gm"></i>GM / 参数</span>
+    <span><i class="cube"></i>Cube</span>
+    <span><i class="vector"></i>Vector</span>
+    <span><i class="memory"></i>本地存储 / 搬运</span>
+    <span><b class="edge data"></b>数据依赖</span>
+    <span><b class="edge alias"></b>view / 地址</span>
+    <span><b class="edge copy"></b>copy / materialize</span>
+    <span><b class="edge loop"></b>循环携带</span>
+    <span><em class="parameter d">d</em>受 DynamicCV 参数影响</span>
+    <span><em class="parameter m">m</em>受 ordinary MultiBuffer 参数影响</span>
+  </div>
+  <div class="fa-legend" data-legend="blocks" aria-label="计算块依赖图例" hidden>
+    <span><i class="cube"></i>Cube block</span>
+    <span><i class="vector"></i>Vector block</span>
+    <span><b class="edge intra"></b>同核跨块 value</span>
+    <span><b class="edge inter"></b>跨核 value</span>
+    <span><b class="edge boundary"></b>调整前起点 value</span>
+    <span><b class="edge adjusted"></b>调整后新边界</span>
+    <span><i class="quiet"></i>无 shaped 跨块边</span>
+  </div>
+  <span class="fa-graph-meta" data-role="graph-meta">55 个展示元素 · 65 条边</span>
+  </div>
+
+  <div class="fa-graph-stage">
+    <div class="fa-canvas-wrap">
+      <svg role="img" aria-label="Fused Attention IRGraph 紧凑 value 图" viewBox="0 0 1900 1120">
+        <defs>
+          <marker id="fa-arrow-data" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker>
+          <marker id="fa-arrow-alias" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker>
+          <marker id="fa-arrow-copy" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker>
+          <marker id="fa-arrow-loop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker>
+          <marker id="fa-arrow-before" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker>
+          <marker id="fa-arrow-key" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker>
+        </defs>
+        <g class="viewport">
+          <g class="groups"></g>
+          <g class="edges"></g>
+          <g class="nodes"></g>
+        </g>
+      </svg>
+    </div>
+    <aside class="fa-layer-guide" data-role="layer-guide" aria-label="文档层级高亮" hidden>
+      <div class="fa-layer-guide-heading">
+        <strong>文档层级</strong>
+        <span>红线表示关键关系；3.4 的紫色虚线表示调整前</span>
+      </div>
+      <div class="fa-layer-guide-groups" data-role="layer-guide-groups"></div>
+    </aside>
+  </div>
+
+  <div class="fa-detail" aria-live="polite">
+    <div class="fa-detail-heading">
+      <span class="fa-detail-kind">当前视图</span>
+      <strong>IRGraph 紧凑 value 图</strong>
+      <p>点击节点或边，可查看它在完整静态模型中的定义、使用关系和参数作用。</p>
+    </div>
+    <dl class="fa-detail-fields"></dl>
+  </div>
+</div>
+
+<style>
+  #fa-plan-ir-graph { color: var(--foreground); background: var(--background); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; width: 100%; min-height: 100vh; }
+  #fa-plan-ir-graph * { box-sizing: border-box; }
+  #fa-plan-ir-graph .fa-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 14px 18px 12px; border-bottom: 1px solid var(--border); }
+  #fa-plan-ir-graph .fa-heading { min-width: 0; flex: 1; }
+  #fa-plan-ir-graph .fa-operator-tabs { display: flex; gap: 16px; width: fit-content; margin: 0 0 10px; }
+  #fa-plan-ir-graph .fa-operator-tabs button { appearance: none; border: 0; border-bottom: 2px solid transparent; background: transparent; color: color-mix(in srgb, var(--foreground) 62%, transparent); padding: 3px 1px 5px; font: inherit; font-size: 12px; cursor: pointer; }
+  #fa-plan-ir-graph .fa-operator-tabs button[aria-pressed="true"] { color: var(--foreground); border-bottom-color: var(--viz-series-1); font-weight: 700; }
+  #fa-plan-ir-graph .fa-operator-tabs button:focus-visible { outline: 2px solid var(--viz-series-1); outline-offset: 2px; }
+  #fa-plan-ir-graph h2 { font-size: 18px; line-height: 1.3; margin: 0 0 4px; letter-spacing: 0; }
+  #fa-plan-ir-graph p { margin: 0; max-width: 820px; font-size: 12px; color: color-mix(in srgb, var(--foreground) 66%, transparent); }
+  #fa-plan-ir-graph .fa-actions { display: flex; align-items: center; gap: 10px; flex: none; padding-top: 2px; }
+  #fa-plan-ir-graph .fa-view-tabs { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 7px; background: color-mix(in srgb, var(--foreground) 4%, transparent); }
+  #fa-plan-ir-graph .fa-view-tabs button { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; color: color-mix(in srgb, var(--foreground) 64%, transparent); font: inherit; font-size: 12px; cursor: pointer; }
+  #fa-plan-ir-graph .fa-view-tabs button[aria-selected="true"] { color: var(--foreground); background: var(--background); box-shadow: 0 1px 2px rgb(0 0 0 / 9%); }
+  #fa-plan-ir-graph .fa-view-tabs button:hover:not([aria-selected="true"]) { color: var(--foreground); background: color-mix(in srgb, var(--foreground) 5%, transparent); }
+  #fa-plan-ir-graph .fa-view-tabs button:focus-visible { outline: 2px solid var(--viz-series-1); outline-offset: 1px; }
+  #fa-plan-ir-graph .fa-view-tabs svg { width: 14px !important; height: 14px !important; }
+  #fa-plan-ir-graph .fa-tools { display: flex; gap: 4px; }
+  #fa-plan-ir-graph .fa-tools button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid var(--border); background: var(--background); color: var(--foreground); border-radius: 6px; line-height: 1; cursor: pointer; }
+  #fa-plan-ir-graph .fa-tools button:hover { background: color-mix(in srgb, var(--foreground) 7%, transparent); }
+  #fa-plan-ir-graph .fa-tools button:focus-visible { outline: 2px solid var(--viz-series-1); outline-offset: 1px; }
+  #fa-plan-ir-graph .fa-model-overview { border-bottom: 1px solid var(--border); padding: 11px 18px 0; background: color-mix(in srgb, var(--foreground) 1.4%, var(--background)); }
+  #fa-plan-ir-graph .fa-model-summary { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; }
+  #fa-plan-ir-graph .fa-model-identity { display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px 11px; min-width: 0; }
+  #fa-plan-ir-graph .fa-model-kicker { color: color-mix(in srgb, var(--foreground) 55%, transparent); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+  #fa-plan-ir-graph .fa-model-identity strong { font-size: 13px; }
+  #fa-plan-ir-graph .fa-model-identity code { color: color-mix(in srgb, var(--foreground) 68%, transparent); font-size: 11px; }
+  #fa-plan-ir-graph .fa-model-summary p { max-width: 680px; text-align: right; font-size: 11px; }
+  #fa-plan-ir-graph .fa-model-stats { display: grid; grid-template-columns: repeat(6, minmax(90px, 1fr)); margin: 10px 0 0; border-top: 1px solid var(--border); }
+  #fa-plan-ir-graph .fa-model-stats > div { min-width: 0; padding: 8px 10px 7px; border-right: 1px solid var(--border); }
+  #fa-plan-ir-graph .fa-model-stats > div:first-child { padding-left: 0; }
+  #fa-plan-ir-graph .fa-model-stats > div:last-child { border-right: 0; }
+  #fa-plan-ir-graph .fa-model-stats dt { margin: 0 0 2px; color: color-mix(in srgb, var(--foreground) 55%, transparent); font-size: 10px; }
+  #fa-plan-ir-graph .fa-model-stats dd { margin: 0; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #fa-plan-ir-graph .fa-model-details { border-top: 1px solid var(--border); }
+  #fa-plan-ir-graph .fa-model-details summary { width: fit-content; padding: 8px 0; color: color-mix(in srgb, var(--foreground) 70%, transparent); font-size: 11px; font-weight: 650; cursor: pointer; }
+  #fa-plan-ir-graph .fa-model-detail-grid { display: grid; grid-template-columns: 1fr 1.25fr 1.3fr; gap: 0; border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
+  #fa-plan-ir-graph .fa-model-detail-grid section { min-width: 0; padding: 9px 14px 11px 0; }
+  #fa-plan-ir-graph .fa-model-detail-grid section + section { padding-left: 14px; border-left: 1px solid var(--border); }
+  #fa-plan-ir-graph .fa-model-detail-grid h3 { margin: 0 0 6px; font-size: 11px; }
+  #fa-plan-ir-graph .fa-model-detail-grid p { max-width: none; margin: 3px 0; font-size: 10.5px; line-height: 1.45; }
+  #fa-plan-ir-graph .fa-model-detail-grid code { overflow-wrap: anywhere; color: var(--foreground); font-size: 10px; }
+  #fa-plan-ir-graph .fa-context-row { min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 7px 18px; }
+  #fa-plan-ir-graph .fa-legend { display: flex; flex-wrap: wrap; gap: 7px 15px; font-size: 11px; align-items: center; }
+  #fa-plan-ir-graph .fa-legend[hidden] { display: none; }
+  #fa-plan-ir-graph .fa-legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  #fa-plan-ir-graph .fa-legend i { width: 10px; height: 10px; border: 1px solid var(--border); border-radius: 2px; display: inline-block; }
+  #fa-plan-ir-graph .fa-legend i.gm { background: color-mix(in srgb, var(--viz-series-3) 30%, transparent); }
+  #fa-plan-ir-graph .fa-legend i.cube { background: color-mix(in srgb, var(--viz-series-2) 30%, transparent); }
+  #fa-plan-ir-graph .fa-legend i.vector { background: color-mix(in srgb, var(--viz-series-1) 30%, transparent); }
+  #fa-plan-ir-graph .fa-legend i.memory { background: color-mix(in srgb, var(--viz-series-4) 30%, transparent); }
+  #fa-plan-ir-graph .fa-legend i.quiet { border-style: dashed; background: transparent; }
+  #fa-plan-ir-graph .fa-legend em.parameter { display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; color: white; font-size: 10px; font-style: normal; font-weight: 800; }
+  #fa-plan-ir-graph .fa-legend em.parameter.d { background: var(--viz-series-6); }
+  #fa-plan-ir-graph .fa-legend em.parameter.m { background: var(--viz-series-5); }
+  #fa-plan-ir-graph .fa-legend b.edge { width: 20px; height: 0; display: inline-block; border-top: 2px solid var(--foreground); }
+  #fa-plan-ir-graph .fa-legend b.alias { border-top-color: var(--viz-series-3); border-top-style: dashed; }
+  #fa-plan-ir-graph .fa-legend b.copy { border-top-color: var(--viz-series-4); }
+  #fa-plan-ir-graph .fa-legend b.loop { border-top-color: var(--viz-series-5); border-top-style: dashed; }
+  #fa-plan-ir-graph .fa-legend b.intra { border-top-color: color-mix(in srgb, var(--foreground) 58%, transparent); }
+  #fa-plan-ir-graph .fa-legend b.inter { border-top-color: var(--viz-series-2); }
+  #fa-plan-ir-graph .fa-legend b.boundary { border-top-color: var(--viz-series-5); border-top-style: dashed; }
+  #fa-plan-ir-graph .fa-legend b.adjusted { border-top-color: var(--viz-series-6); border-top-style: dashed; }
+  #fa-plan-ir-graph .fa-graph-meta { flex: none; color: color-mix(in srgb, var(--foreground) 58%, transparent); font-size: 11px; font-variant-numeric: tabular-nums; }
+  #fa-plan-ir-graph .fa-graph-stage { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin: 0 18px; }
+  #fa-plan-ir-graph .fa-graph-stage.has-layer-guide { grid-template-columns: minmax(0, 1fr) 208px; }
+  #fa-plan-ir-graph .fa-canvas-wrap { height: min(735px, 72vh); min-height: 520px; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; background: color-mix(in srgb, var(--foreground) 1.7%, var(--background)); cursor: grab; }
+  #fa-plan-ir-graph .fa-canvas-wrap.dragging { cursor: grabbing; }
+  #fa-plan-ir-graph .fa-layer-guide { height: min(735px, 72vh); min-height: 520px; padding: 12px 10px; overflow: auto; border: 1px solid var(--border); border-radius: 7px; background: color-mix(in srgb, var(--foreground) 1.7%, var(--background)); }
+  #fa-plan-ir-graph .fa-layer-guide[hidden] { display: none; }
+  #fa-plan-ir-graph .fa-layer-guide-heading { padding: 0 3px 10px; border-bottom: 1px solid var(--border); }
+  #fa-plan-ir-graph .fa-layer-guide-heading strong { display: block; font-size: 12px; }
+  #fa-plan-ir-graph .fa-layer-guide-heading span { display: block; margin-top: 3px; color: color-mix(in srgb, var(--foreground) 56%, transparent); font-size: 10px; line-height: 1.35; }
+  #fa-plan-ir-graph .fa-layer-group { padding-top: 11px; }
+  #fa-plan-ir-graph .fa-layer-group + .fa-layer-group { margin-top: 10px; border-top: 1px solid var(--border); }
+  #fa-plan-ir-graph .fa-layer-group-title { display: flex; align-items: center; gap: 6px; margin: 0 3px 7px; color: color-mix(in srgb, var(--foreground) 66%, transparent); font-size: 10px; font-weight: 750; }
+  #fa-plan-ir-graph .fa-layer-group-title::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--viz-series-6); }
+  #fa-plan-ir-graph .fa-layer-group.ordinary .fa-layer-group-title::before { background: var(--viz-series-5); }
+  #fa-plan-ir-graph .fa-layer-buttons { display: grid; gap: 5px; }
+  #fa-plan-ir-graph .fa-layer-button { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; gap: 5px; width: 100%; min-height: 34px; padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); color: color-mix(in srgb, var(--foreground) 78%, transparent); text-align: left; font: inherit; cursor: pointer; }
+  #fa-plan-ir-graph .fa-layer-button:hover { background: color-mix(in srgb, var(--foreground) 5%, var(--background)); }
+  #fa-plan-ir-graph .fa-layer-button:focus-visible { outline: 2px solid var(--viz-series-1); outline-offset: 1px; }
+  #fa-plan-ir-graph .fa-layer-button[aria-pressed="true"] { border-color: var(--viz-series-6); background: color-mix(in srgb, var(--viz-series-6) 11%, var(--background)); color: var(--foreground); box-shadow: inset 3px 0 0 var(--viz-series-6); }
+  #fa-plan-ir-graph .fa-layer-group.ordinary .fa-layer-button[aria-pressed="true"] { border-color: var(--viz-series-5); background: color-mix(in srgb, var(--viz-series-5) 11%, var(--background)); box-shadow: inset 3px 0 0 var(--viz-series-5); }
+  #fa-plan-ir-graph .fa-layer-number { color: color-mix(in srgb, var(--foreground) 56%, transparent); font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  #fa-plan-ir-graph .fa-layer-label { min-width: 0; font-size: 10.5px; font-weight: 650; line-height: 1.25; }
+  #fa-plan-ir-graph svg { display: block; width: 100%; height: 100%; touch-action: none; }
+  #fa-plan-ir-graph .group rect { fill: color-mix(in srgb, var(--foreground) 2.5%, transparent); stroke: color-mix(in srgb, var(--border) 72%, transparent); stroke-width: 1; stroke-dasharray: 6 5; rx: 5; }
+  #fa-plan-ir-graph .group text { fill: color-mix(in srgb, var(--foreground) 62%, transparent); font-size: 12px; font-weight: 600; letter-spacing: 0; }
+  #fa-plan-ir-graph .node { cursor: pointer; transition: opacity 140ms ease; }
+  #fa-plan-ir-graph .node rect { stroke-width: 1.2; rx: 5; }
+  #fa-plan-ir-graph .node.gm rect { fill: color-mix(in srgb, var(--viz-series-3) 15%, var(--background)); stroke: var(--viz-series-3); }
+  #fa-plan-ir-graph .node.cube rect { fill: color-mix(in srgb, var(--viz-series-2) 14%, var(--background)); stroke: var(--viz-series-2); }
+  #fa-plan-ir-graph .node.vector rect { fill: color-mix(in srgb, var(--viz-series-1) 14%, var(--background)); stroke: var(--viz-series-1); }
+  #fa-plan-ir-graph .node.memory rect { fill: color-mix(in srgb, var(--viz-series-4) 14%, var(--background)); stroke: var(--viz-series-4); }
+  #fa-plan-ir-graph .node.loop-state rect { fill: color-mix(in srgb, var(--viz-series-5) 13%, var(--background)); stroke: var(--viz-series-5); }
+  #fa-plan-ir-graph .node.block rect { stroke-width: 1.5; }
+  #fa-plan-ir-graph .node.quiet { opacity: 0.58; }
+  #fa-plan-ir-graph .node.quiet rect { fill: var(--background); stroke-dasharray: 5 4; }
+  #fa-plan-ir-graph .node text { pointer-events: none; fill: var(--foreground); text-anchor: middle; font-size: 11px; letter-spacing: 0; }
+  #fa-plan-ir-graph .node text.sub { font-size: 9.5px; fill: color-mix(in srgb, var(--foreground) 68%, transparent); }
+  #fa-plan-ir-graph .node.parameter-d rect { stroke: var(--viz-series-6); stroke-width: 2.6; }
+  #fa-plan-ir-graph .node.parameter-m rect { stroke: var(--viz-series-5); stroke-width: 2.6; }
+  #fa-plan-ir-graph .parameter-badge circle { stroke: var(--background); stroke-width: 2; }
+  #fa-plan-ir-graph .parameter-badge.d circle { fill: var(--viz-series-6); }
+  #fa-plan-ir-graph .parameter-badge.m circle { fill: var(--viz-series-5); }
+  #fa-plan-ir-graph .parameter-badge text { fill: white; font-size: 10px; font-weight: 800; dominant-baseline: middle; text-anchor: middle; }
+  #fa-plan-ir-graph .node.selected rect { stroke-width: 3; }
+  #fa-plan-ir-graph .node.dimmed, #fa-plan-ir-graph .edge.dimmed { opacity: 0.12; }
+  #fa-plan-ir-graph .edge { fill: none; stroke-width: 1.5; opacity: 0.78; cursor: pointer; pointer-events: stroke; transition: opacity 140ms ease, stroke-width 140ms ease; }
+  #fa-plan-ir-graph .edge.data { stroke: color-mix(in srgb, var(--foreground) 56%, transparent); marker-end: url(#fa-arrow-data); }
+  #fa-plan-ir-graph .edge.alias { stroke: var(--viz-series-3); stroke-dasharray: 5 4; marker-end: url(#fa-arrow-alias); }
+  #fa-plan-ir-graph .edge.copy { stroke: var(--viz-series-4); stroke-width: 2; marker-end: url(#fa-arrow-copy); }
+  #fa-plan-ir-graph .edge.loop { stroke: var(--viz-series-5); stroke-width: 2; stroke-dasharray: 7 5; marker-end: url(#fa-arrow-loop); }
+  #fa-plan-ir-graph .edge.intra { stroke: color-mix(in srgb, var(--foreground) 58%, transparent); marker-end: url(#fa-arrow-data); }
+  #fa-plan-ir-graph .edge.inter { stroke: var(--viz-series-2); stroke-width: 2; marker-end: url(#fa-arrow-copy); }
+  #fa-plan-ir-graph .edge.boundary { stroke: var(--viz-series-5); stroke-width: 2.2; stroke-dasharray: 7 4; marker-end: url(#fa-arrow-loop); }
+  #fa-plan-ir-graph .edge.adjusted { stroke: var(--viz-series-6); stroke-width: 2.4; stroke-dasharray: 3 4; marker-end: url(#fa-arrow-alias); }
+  #fa-plan-ir-graph .edge.active { opacity: 1; stroke-width: 3; }
+  #fa-plan-ir-graph .edge.before-key { stroke: var(--viz-series-5); stroke-width: 3.5; stroke-dasharray: 8 5; opacity: 1; marker-end: url(#fa-arrow-before); }
+  #fa-plan-ir-graph #fa-arrow-before path { fill: var(--viz-series-5); }
+  #fa-plan-ir-graph .edge.key { stroke: var(--red); stroke-width: 4; opacity: 1; marker-end: url(#fa-arrow-key); }
+  #fa-plan-ir-graph #fa-arrow-key path { fill: var(--red); }
+  #fa-plan-ir-graph .edge-label { fill: color-mix(in srgb, var(--foreground) 64%, transparent); font-size: 9px; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: var(--background); stroke-width: 4px; transition: opacity 140ms ease; }
+  #fa-plan-ir-graph .edge-label.before-key { fill: var(--viz-series-5); font-weight: 800; opacity: 1; }
+  #fa-plan-ir-graph .edge-label.key { fill: var(--red); font-weight: 800; opacity: 1; }
+  #fa-plan-ir-graph .edge-label.dimmed { opacity: 0.12; }
+  #fa-plan-ir-graph .fa-detail { min-height: 92px; display: grid; grid-template-columns: minmax(230px, 0.85fr) minmax(520px, 2.4fr); gap: 20px; align-items: start; margin: 0 18px; padding: 12px 2px 16px; border-top: 1px solid var(--border); font-size: 12px; }
+  #fa-plan-ir-graph .fa-detail-heading { min-width: 0; }
+  #fa-plan-ir-graph .fa-detail-kind { display: block; margin-bottom: 4px; color: color-mix(in srgb, var(--foreground) 53%, transparent); font-size: 10px; font-weight: 700; }
+  #fa-plan-ir-graph .fa-detail-heading strong { display: block; font-size: 13px; overflow-wrap: anywhere; }
+  #fa-plan-ir-graph .fa-detail-heading p { max-width: none; margin-top: 4px; font-size: 11px; line-height: 1.45; }
+  #fa-plan-ir-graph .fa-detail-fields { display: grid; grid-template-columns: repeat(3, minmax(145px, 1fr)); gap: 9px 16px; margin: 0; }
+  #fa-plan-ir-graph .fa-detail-fields > div { min-width: 0; }
+  #fa-plan-ir-graph .fa-detail-fields dt { margin: 0 0 2px; color: color-mix(in srgb, var(--foreground) 52%, transparent); font-size: 10px; }
+  #fa-plan-ir-graph .fa-detail-fields dd { margin: 0; color: color-mix(in srgb, var(--foreground) 80%, transparent); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+  #fa-plan-ir-graph .fa-detail-fields code { font-size: 10.5px; }
+  @media (max-width: 900px) {
+    #fa-plan-ir-graph .fa-head { flex-wrap: wrap; }
+    #fa-plan-ir-graph .fa-actions { margin-left: auto; }
+    #fa-plan-ir-graph .fa-model-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    #fa-plan-ir-graph .fa-model-stats > div { border-bottom: 1px solid var(--border); }
+    #fa-plan-ir-graph .fa-model-stats > div:nth-child(3n) { border-right: 0; }
+    #fa-plan-ir-graph .fa-detail { grid-template-columns: 1fr; gap: 10px; }
+    #fa-plan-ir-graph .fa-graph-stage.has-layer-guide { grid-template-columns: 1fr; }
+    #fa-plan-ir-graph .fa-layer-guide { order: -1; height: auto; min-height: 0; overflow: visible; }
+    #fa-plan-ir-graph .fa-layer-guide-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    #fa-plan-ir-graph .fa-layer-group + .fa-layer-group { margin-top: 0; padding-left: 10px; border-top: 0; border-left: 1px solid var(--border); }
+    #fa-plan-ir-graph .fa-layer-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 560px) {
+    #fa-plan-ir-graph .fa-head { flex-direction: column; gap: 12px; padding-inline: 12px; }
+    #fa-plan-ir-graph .fa-actions { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+    #fa-plan-ir-graph .fa-view-tabs button { padding-inline: 8px; }
+    #fa-plan-ir-graph .fa-model-overview { padding-inline: 12px; }
+    #fa-plan-ir-graph .fa-model-summary { align-items: flex-start; flex-direction: column; gap: 4px; }
+    #fa-plan-ir-graph .fa-model-summary p { text-align: left; }
+    #fa-plan-ir-graph .fa-model-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #fa-plan-ir-graph .fa-model-stats > div { border-bottom: 1px solid var(--border); }
+    #fa-plan-ir-graph .fa-model-stats > div:nth-child(3n) { border-right: 1px solid var(--border); }
+    #fa-plan-ir-graph .fa-model-stats > div:nth-child(2n) { border-right: 0; }
+    #fa-plan-ir-graph .fa-model-stats > div:first-child { padding-left: 10px; }
+    #fa-plan-ir-graph .fa-model-detail-grid { grid-template-columns: 1fr; }
+    #fa-plan-ir-graph .fa-model-detail-grid section { padding: 9px 0; }
+    #fa-plan-ir-graph .fa-model-detail-grid section + section { padding-left: 0; border-left: 0; border-top: 1px solid var(--border); }
+    #fa-plan-ir-graph .fa-context-row { align-items: flex-start; padding-inline: 12px; }
+    #fa-plan-ir-graph .fa-graph-meta { display: none; }
+    #fa-plan-ir-graph .fa-graph-stage { margin-inline: 12px; }
+    #fa-plan-ir-graph .fa-canvas-wrap { min-height: 520px; height: 68vh; }
+    #fa-plan-ir-graph .fa-layer-guide-groups { grid-template-columns: 1fr; }
+    #fa-plan-ir-graph .fa-layer-group + .fa-layer-group { padding-left: 0; border-left: 0; border-top: 1px solid var(--border); }
+    #fa-plan-ir-graph .fa-layer-buttons { grid-template-columns: 1fr; }
+    #fa-plan-ir-graph .fa-detail { grid-template-columns: 1fr; gap: 10px; margin-inline: 12px; }
+    #fa-plan-ir-graph .fa-detail-fields { grid-template-columns: 1fr; }
+  }
+</style>
+
+<script>
+(() => {
+  const root = document.getElementById('fa-plan-ir-graph');
+  if (!root) return;
+  const svg = root.querySelector('svg');
+  const viewport = root.querySelector('.viewport');
+  const groupLayer = root.querySelector('.groups');
+  const edgeLayer = root.querySelector('.edges');
+  const nodeLayer = root.querySelector('.nodes');
+  const detail = root.querySelector('.fa-detail');
+  const graphStage = root.querySelector('.fa-graph-stage');
+  const layerGuide = root.querySelector('[data-role="layer-guide"]');
+  const layerGuideGroups = root.querySelector('[data-role="layer-guide-groups"]');
+  const NS = 'http://www.w3.org/2000/svg';
+
+  const fusedNodes = [
+    {id:'Q',label:'%Q',sub:'GM input · bf16',kind:'gm',x:55,y:105,w:116,line:27,block:'argument',desc:'输入 GM 根；tt.tensor_kind=0。'},
+    {id:'K',label:'%K',sub:'GM input · bf16',kind:'gm',x:55,y:285,w:116,line:27,block:'argument',desc:'输入 GM 根；tt.tensor_kind=0。'},
+    {id:'V',label:'%V',sub:'GM input · bf16',kind:'gm',x:55,y:655,w:116,line:27,block:'argument',desc:'输入 GM 根；tt.tensor_kind=0。'},
+    {id:'M',label:'%M',sub:'GM output · f32',kind:'gm',x:1725,y:320,w:126,line:27,block:'argument',desc:'输出 GM 根；tt.tensor_kind=1。'},
+    {id:'Out',label:'%Out',sub:'GM output · bf16',kind:'gm',x:1725,y:760,w:126,line:27,block:'argument',desc:'输出 GM 根；tt.tensor_kind=1。'},
+    {id:'scale',label:'%sm_scale',sub:'scalar input',kind:'gm',x:55,y:455,w:116,line:27,block:'argument',desc:'softmax 缩放系数，广播到 score tile。'},
+
+    {id:'qview',label:'%Q_block_ptr_51',sub:'GM view [64,64]',kind:'memory',x:220,y:105,w:145,line:97,block:'CUBE 2',desc:'%Q 的当前 tile view；与 %Q 共享 GM storage。'},
+    {id:'qalloc',label:'%q',sub:'local alloc [64,64]',kind:'memory',x:405,y:105,w:142,line:98,block:'CUBE 2',desc:'Q tile 的本地存储根；copy destination。'},
+    {id:'qtensor',label:'%q_52',sub:'tensor view',kind:'cube',x:585,y:105,w:126,line:100,block:'CUBE 2',desc:'%q 的 tensor 表示，送入 Q×K。'},
+
+    {id:'kview',label:'%V_block_ptr_62',sub:'%K GM view [128,64]',kind:'memory',x:220,y:285,w:155,line:108,block:'CUBE 4',desc:'名字含 V，但 operand 是 %K；这是 K 的 GM tile view。'},
+    {id:'kalloc',label:'%k',sub:'local alloc [128,64]',kind:'memory',x:405,y:285,w:142,line:109,block:'CUBE 4',desc:'K tile 的本地存储根。'},
+    {id:'ktensor',label:'%k_63',sub:'tensor view',kind:'cube',x:585,y:285,w:126,line:111,block:'CUBE 4',desc:'%k 的 tensor 表示。'},
+    {id:'transk',label:'%trans_k_64',sub:'transpose [64,128]',kind:'cube',x:750,y:285,w:145,line:113,block:'CUBE 4',desc:'K tile 转置，作为 Q×K 的右操作数。'},
+    {id:'qkinit',label:'%qk_18',sub:'QK accumulator init',kind:'cube',x:750,y:175,w:145,line:59,block:'CUBE 1',desc:'Q×K matmul 的初始 accumulator。'},
+    {id:'qkmatmul',label:'%qk_65',sub:'linalg.matmul · Q×K',kind:'cube',x:930,y:205,w:160,line:114,block:'CUBE 4',desc:'Q 与转置 K 的矩阵乘，产生 64×128 f32 score。'},
+
+    {id:'scaleTile',label:'%qk_7',sub:'broadcast sm_scale',kind:'vector',x:750,y:405,w:145,line:48,block:'VECTOR 7',desc:'把标量 sm_scale 广播到 score shape。'},
+    {id:'scaledQk',label:'%qk_67',sub:'scaled score',kind:'vector',x:930,y:405,w:145,line:116,block:'VECTOR 11',desc:'QK score 乘以 softmax scale。'},
+    {id:'mInit',label:'%m_ij_5',sub:'row max init −∞',kind:'vector',x:750,y:500,w:145,line:46,block:'VECTOR 7',desc:'softmax 行最大值初始状态。'},
+    {id:'mPrev',label:'inner %arg19',sub:'previous row max',kind:'loop-state',x:930,y:515,w:145,line:101,block:'inner loop',desc:'内层循环携带的上一轮行最大值。'},
+    {id:'rowMax',label:'%m_ij_68',sub:'reduce max(score)',kind:'vector',x:1100,y:390,w:155,line:117,block:'VECTOR 11',desc:'当前 score tile 的逐行最大值。'},
+    {id:'runningMax',label:'%m_ij_69',sub:'running row max',kind:'vector',x:1265,y:430,w:155,line:122,block:'VECTOR 11',desc:'上一轮最大值与当前 tile 最大值合并。'},
+    {id:'maxBroadcast',label:'%qk_70',sub:'broadcast row max',kind:'vector',x:1265,y:300,w:155,line:123,block:'VECTOR 11',desc:'将行最大值广播回 score shape。'},
+    {id:'shifted',label:'%qk_71',sub:'score − row max',kind:'vector',x:1435,y:300,w:150,line:124,block:'VECTOR 11',desc:'数值稳定 softmax 的中心化 score。'},
+    {id:'p',label:'%p',sub:'exp(score)',kind:'vector',x:1435,y:410,w:132,line:125,block:'VECTOR 11',desc:'未归一化 softmax probability。'},
+    {id:'pcast',label:'%p_cast',sub:'bf16 probability',kind:'vector',x:1435,y:520,w:140,line:126,block:'VECTOR 11',desc:'P 从 f32 截断到 bf16，跨到 Cube 侧。'},
+
+    {id:'vview',label:'%V_block_ptr_76',sub:'GM view [128,64]',kind:'memory',x:220,y:655,w:155,line:131,block:'CUBE 6',desc:'%V 的当前 tile view；与 %V 共享 GM storage。'},
+    {id:'valloc',label:'%v',sub:'local alloc [128,64]',kind:'memory',x:405,y:655,w:142,line:132,block:'CUBE 6',desc:'V tile 的本地存储根。'},
+    {id:'vtensor',label:'%v_77',sub:'tensor view',kind:'cube',x:585,y:655,w:126,line:134,block:'CUBE 6',desc:'%v 的 tensor 表示。'},
+    {id:'pvinit',label:'%acc_ptr_79',sub:'PV accumulator init',kind:'cube',x:750,y:625,w:150,line:136,block:'CUBE 6',desc:'P×V matmul 的初始 accumulator。'},
+    {id:'pvmatmul',label:'%acc_ptr_80',sub:'linalg.matmul · P×V',kind:'cube',x:930,y:650,w:170,line:137,block:'CUBE 6',desc:'当前 K/V tile 对输出的贡献。'},
+
+    {id:'lZero',label:'%l_ij',sub:'row sum init 0',kind:'vector',x:930,y:780,w:140,line:102,block:'VECTOR 10',desc:'当前 tile 的 softmax 行和初值。'},
+    {id:'rowSum',label:'%l_ij_81',sub:'reduce sum(P)',kind:'vector',x:1100,y:780,w:145,line:138,block:'VECTOR 12',desc:'当前 P tile 的逐行和。'},
+    {id:'lInit',label:'%V_block_ptr_6',sub:'running sum init 1',kind:'vector',x:750,y:895,w:150,line:47,block:'VECTOR 7',desc:'softmax 归一化分母的初始状态。'},
+    {id:'lPrev',label:'inner %arg18',sub:'previous row sum',kind:'loop-state',x:930,y:895,w:145,line:101,block:'inner loop',desc:'内层循环携带的上一轮归一化分母。'},
+    {id:'accInit',label:'%V_block_ptr_3',sub:'output acc init 0',kind:'vector',x:750,y:1005,w:150,line:43,block:'VECTOR 7',desc:'输出 accumulator 的初始状态。'},
+    {id:'accPrev',label:'inner %arg17',sub:'previous output acc',kind:'loop-state',x:930,y:1005,w:150,line:101,block:'inner loop',desc:'内层循环携带的上一轮输出 accumulator。'},
+    {id:'alpha',label:'%alpha',sub:'old max − new max',kind:'vector',x:1100,y:895,w:150,line:143,block:'VECTOR 12',desc:'在线 softmax 的历史校正指数。'},
+    {id:'alphaExp',label:'%alpha_82',sub:'exp(alpha)',kind:'vector',x:1265,y:895,w:145,line:144,block:'VECTOR 12',desc:'历史统计量的缩放系数。'},
+    {id:'scaledL',label:'%l_i',sub:'old L × alpha',kind:'vector',x:1435,y:850,w:140,line:145,block:'VECTOR 12',desc:'校正上一轮归一化分母。'},
+    {id:'newL',label:'%l_i_83',sub:'new running L',kind:'vector',x:1600,y:805,w:140,line:146,block:'VECTOR 12',desc:'新的 softmax 行归一化分母。'},
+    {id:'alphaBroadcast',label:'%acc_ptr_84',sub:'broadcast alpha',kind:'vector',x:1265,y:1005,w:155,line:147,block:'VECTOR 12',desc:'将 alpha 广播到输出 tile。'},
+    {id:'scaledAcc',label:'%acc_ptr_85',sub:'old acc × alpha',kind:'vector',x:1435,y:1005,w:155,line:148,block:'VECTOR 13',desc:'校正上一轮输出 accumulator。'},
+    {id:'newAcc',label:'%acc_ptr_86',sub:'new output acc',kind:'vector',x:1600,y:960,w:150,line:149,block:'VECTOR 13',desc:'当前 P×V 贡献与历史 accumulator 合并。'},
+
+    {id:'loopM',label:'loop result #2',sub:'final running max',kind:'loop-state',x:1600,y:520,w:145,line:151,block:'inner loop result',desc:'内层 scf.for 的第三个 tensor 结果。'},
+    {id:'loopL',label:'loop result #1',sub:'final running L',kind:'loop-state',x:1600,y:690,w:145,line:151,block:'inner loop result',desc:'内层 scf.for 的第二个 tensor 结果。'},
+    {id:'loopAcc',label:'loop result #0',sub:'final output acc',kind:'loop-state',x:1600,y:1060,w:145,line:151,block:'inner loop result',desc:'内层 scf.for 的第一个 tensor 结果。'},
+
+    {id:'logL',label:'%m_i',sub:'log(L)',kind:'vector',x:1435,y:610,w:125,line:152,block:'VECTOR 9',desc:'最终 softmax 行和取对数。'},
+    {id:'finalM',label:'%m_i_54',sub:'max + log(L)',kind:'vector',x:1600,y:610,w:145,line:153,block:'VECTOR 9',desc:'写向 M 的最终 softmax 行统计量。'},
+    {id:'denom',label:'%accumulator',sub:'broadcast L',kind:'vector',x:1435,y:715,w:145,line:154,block:'VECTOR 9',desc:'将最终 L 广播到输出 tile。'},
+    {id:'normalized',label:'%accumulator_55',sub:'acc ÷ L',kind:'vector',x:1600,y:1060,w:155,line:155,block:'VECTOR 9',desc:'最终归一化的 f32 输出。'},
+    {id:'outbf16',label:'%0',sub:'truncf → bf16',kind:'vector',x:1600,y:900,w:126,line:156,block:'VECTOR 9',desc:'Out Store 的直接 source。'},
+
+    {id:'mview',label:'%m_ptrs_35',sub:'GM view [64]',kind:'memory',x:1600,y:260,w:145,line:81,block:'VECTOR 8',desc:'%M 当前 outer-loop tile 的 GM view。'},
+    {id:'storeM',label:'materialize M',sub:'Store staging · 128 B',kind:'memory',x:1725,y:470,w:150,line:157,block:'VECTOR 9',desc:'最终 lowering 形成 ordinary UB Store staging；物理 shape [32] f32。'},
+    {id:'outview',label:'%O_block_ptr',sub:'GM view [64,64]',kind:'memory',x:1725,y:650,w:150,line:76,block:'VECTOR 8',desc:'%Out 当前 outer-loop tile 的 GM view。'},
+    {id:'storeOut',label:'materialize Out',sub:'Store staging · 4096 B',kind:'memory',x:1725,y:900,w:160,line:158,block:'VECTOR 9',desc:'最终 lowering 形成 ordinary UB Store staging；物理 shape [32,64] bf16。'}
+  ];
+
+  const fusedEdges = [
+    ['Q','qview','alias','view'],['qview','qalloc','copy','copy'],['qalloc','qtensor','alias','to_tensor'],['qtensor','qkmatmul','data','Q'],
+    ['K','kview','alias','view'],['kview','kalloc','copy','copy'],['kalloc','ktensor','alias','to_tensor'],['ktensor','transk','data','transpose'],['transk','qkmatmul','data','Kᵀ'],['qkinit','qkmatmul','data','outs'],
+    ['scale','scaleTile','data','broadcast'],['scaleTile','scaledQk','data','scale'],['qkmatmul','scaledQk','data','score'],
+    ['scaledQk','rowMax','data','reduce'],['mInit','mPrev','data','init'],['mPrev','runningMax','data','old max'],['rowMax','runningMax','data','tile max'],
+    ['runningMax','maxBroadcast','data','broadcast'],['scaledQk','shifted','data','score'],['maxBroadcast','shifted','data','max'],['shifted','p','data','exp'],['p','pcast','data','truncf'],
+    ['V','vview','alias','view'],['vview','valloc','copy','copy'],['valloc','vtensor','alias','to_tensor'],['pcast','pvmatmul','data','P'],['vtensor','pvmatmul','data','V'],['pvinit','pvmatmul','data','outs'],
+    ['p','rowSum','data','reduce'],['lZero','rowSum','data','outs'],['mPrev','alpha','data','old max'],['runningMax','alpha','data','new max'],['alpha','alphaExp','data','exp'],
+    ['lInit','lPrev','data','init'],['lPrev','scaledL','data','old L'],['alphaExp','scaledL','data','scale'],['scaledL','newL','data',''],['rowSum','newL','data',''],
+    ['accInit','accPrev','data','init'],['alphaExp','alphaBroadcast','data','broadcast'],['accPrev','scaledAcc','data','old acc'],['alphaBroadcast','scaledAcc','data','scale'],['scaledAcc','newAcc','data',''],['pvmatmul','newAcc','data',''],
+    ['runningMax','loopM','data','yield'],['newL','loopL','data','yield'],['newAcc','loopAcc','data','yield'],
+    ['newAcc','accPrev','loop','next iter'],['newL','lPrev','loop','next iter'],['runningMax','mPrev','loop','next iter'],
+    ['loopL','logL','data',''],['loopM','finalM','data','max'],['logL','finalM','data','log L'],['loopL','denom','data','broadcast'],['loopAcc','normalized','data','acc'],['denom','normalized','data','L'],['normalized','outbf16','data','truncf'],
+    ['M','mview','alias','view'],['finalM','storeM','copy','source'],['mview','storeM','alias','destination'],['storeM','M','copy','write'],
+    ['Out','outview','alias','view'],['outbf16','storeOut','copy','source'],['outview','storeOut','alias','destination'],['storeOut','Out','copy','write']
+  ].map((e,i)=>({id:'e'+i,source:e[0],target:e[1],kind:e[2],label:e[3]}));
+
+  const fusedGroups = [
+    {label:'CUBE 2 · Q load',x:190,y:55,w:470,h:105},
+    {label:'CUBE 4 · K load + Q×K',x:190,y:155,w:840,h:190},
+    {label:'VECTOR 11 · scale + online softmax',x:705,y:355,w:825,h:220},
+    {label:'CUBE 6 · V load + P×V',x:190,y:585,w:845,h:125},
+    {label:'VECTOR 12/13 · online state update',x:875,y:740,w:820,h:320},
+    {label:'VECTOR 9 · final normalization + stores',x:1380,y:575,w:510,h:500}
+  ];
+
+  const flashNodes = [
+    {id:'Q',label:'%q_ptr',sub:'GM input · bf16',kind:'gm',x:55,y:90,w:126,line:28,block:'argument',desc:'Q 输入 GM 根；tt.tensor_kind=0。'},
+    {id:'K',label:'%k_ptr',sub:'GM input · bf16',kind:'gm',x:55,y:240,w:126,line:28,block:'argument',desc:'K 输入 GM 根；tt.tensor_kind=0。'},
+    {id:'Mask',label:'%mask_tensor_ptr',sub:'GM input · i8',kind:'gm',x:55,y:405,w:150,line:28,block:'argument',desc:'Attention mask 的 GM 根。'},
+    {id:'Scale',label:'%scale',sub:'scalar input · f32',kind:'gm',x:55,y:545,w:126,line:28,block:'argument',desc:'softmax 缩放系数。'},
+    {id:'V',label:'%v_ptr',sub:'GM input · bf16',kind:'gm',x:55,y:690,w:126,line:28,block:'argument',desc:'V 输入 GM 根；tt.tensor_kind=0。'},
+    {id:'L',label:'%l_ptr',sub:'GM output · f32',kind:'gm',x:2120,y:445,w:130,line:28,block:'argument',desc:'行统计量 L 的 GM 输出根；tt.tensor_kind=1。'},
+    {id:'O',label:'%o_ptr',sub:'GM output · bf16',kind:'gm',x:2120,y:925,w:130,line:28,block:'argument',desc:'Attention 输出 O 的 GM 根；tt.tensor_kind=1。'},
+
+    {id:'qview',label:'%q_block_ptr_90',sub:'GM view [64,64]',kind:'memory',x:220,y:90,w:160,line:166,block:'CUBE 4',desc:'Q 当前 query tile 的 GM view。'},
+    {id:'qalloc',label:'%q_99',sub:'local alloc [64,64]',kind:'memory',x:410,y:90,w:150,line:175,block:'CUBE 4',desc:'Q tile 的本地存储根；memref.copy destination。'},
+    {id:'qtensor',label:'%q_112',sub:'tensor view',kind:'cube',x:590,y:90,w:135,line:192,block:'CUBE 4',desc:'Q local alloc 的 tensor 表示，跨循环送入 Q×K。'},
+
+    {id:'kview',label:'%k_155',sub:'GM view [64,64]',kind:'memory',x:220,y:240,w:150,line:238,block:'CUBE 6',desc:'K 当前 key tile 的 GM view。'},
+    {id:'kalloc',label:'%k_156',sub:'local alloc [64,64]',kind:'memory',x:410,y:240,w:150,line:239,block:'CUBE 6',desc:'K tile 的本地存储根。'},
+    {id:'ktensor',label:'%k_169',sub:'tensor view',kind:'cube',x:590,y:240,w:135,line:256,block:'CUBE 6',desc:'K local alloc 的 tensor 表示。'},
+    {id:'transk',label:'%k_171',sub:'transpose [64,64]',kind:'cube',x:760,y:240,w:150,line:258,block:'CUBE 6',desc:'K tile 转置为 Q×K 的右操作数。'},
+    {id:'qkinit',label:'%s_19',sub:'QK accumulator init',kind:'cube',x:760,y:135,w:150,line:63,block:'CUBE 1',desc:'Q×K matmul 的初始 accumulator。'},
+    {id:'qkmatmul',label:'%s_172',sub:'linalg.matmul · Q×K',kind:'cube',x:955,y:170,w:175,line:259,block:'CUBE 6',desc:'Q 与转置 K 相乘，产生 64×64 f32 score。'},
+
+    {id:'maskview',label:'%l_123',sub:'GM view [64,64]',kind:'memory',x:220,y:405,w:150,line:200,block:'VECTOR 15',desc:'Mask 当前 tile 的 GM view。'},
+    {id:'maskalloc',label:'%mask_124',sub:'local alloc [64,64]',kind:'memory',x:410,y:405,w:155,line:201,block:'VECTOR 15',desc:'Mask 的本地 staging；编译器固定为 load-store buffer count。'},
+    {id:'masktensor',label:'%mask_146',sub:'tensor view',kind:'vector',x:590,y:405,w:145,line:227,block:'VECTOR 15',desc:'Mask local alloc 的 tensor 表示。'},
+    {id:'maskpred',label:'%s_147',sub:'mask != 0',kind:'vector',x:760,y:405,w:130,line:228,block:'VECTOR 15',desc:'将 i8 mask 转为 score 选择条件。'},
+    {id:'maskselect',label:'%s_148',sub:'selected mask score',kind:'vector',x:930,y:430,w:150,line:229,block:'VECTOR 15',desc:'在 0 与负无穷之间选择，形成加到 score 的 mask。'},
+    {id:'scaleTile',label:'%s_50',sub:'broadcast scale',kind:'vector',x:930,y:545,w:145,line:115,block:'VECTOR 12',desc:'将标量 scale 填充到 score shape。'},
+
+    {id:'scaledScore',label:'%s_174',sub:'scaled QK score',kind:'vector',x:1130,y:350,w:150,line:261,block:'VECTOR 16',desc:'QK score 乘以 scale。'},
+    {id:'maskedScore',label:'%s_175',sub:'score + mask',kind:'vector',x:1300,y:390,w:145,line:262,block:'VECTOR 16',desc:'缩放后的 score 加上 mask。'},
+    {id:'maxInit',label:'%m_new_149',sub:'row max init −∞',kind:'vector',x:1130,y:515,w:155,line:230,block:'VECTOR 15',desc:'当前 tile reduce-max 的输出初值。'},
+    {id:'maxPrev',label:'inner %arg27',sub:'previous row max',kind:'loop-state',x:1300,y:535,w:145,line:193,block:'inner loop',desc:'内层循环携带的上一轮行最大值。'},
+    {id:'rowMax',label:'%m_new_176',sub:'reduce max(score)',kind:'vector',x:1470,y:360,w:165,line:263,block:'VECTOR 16',desc:'当前 score tile 的逐行最大值。'},
+    {id:'runningMax',label:'%m_new_177',sub:'new running max',kind:'vector',x:1645,y:410,w:165,line:268,block:'VECTOR 16',desc:'上一轮最大值与当前 tile 最大值合并。'},
+    {id:'maxBroadcast',label:'%p',sub:'broadcast row max',kind:'vector',x:1645,y:285,w:145,line:269,block:'VECTOR 16',desc:'将新行最大值广播到 score shape。'},
+    {id:'shifted',label:'%p_178',sub:'score − row max',kind:'vector',x:1810,y:285,w:145,line:270,block:'VECTOR 16',desc:'数值稳定 softmax 的中心化 score。'},
+    {id:'prob',label:'%p_179',sub:'exp(score)',kind:'vector',x:1810,y:405,w:135,line:271,block:'VECTOR 16',desc:'未归一化 softmax probability。'},
+    {id:'pcast',label:'%pv',sub:'bf16 probability',kind:'vector',x:1810,y:525,w:135,line:272,block:'VECTOR 16',desc:'P 从 f32 截断到 bf16，跨到 Cube 侧。'},
+
+    {id:'vview',label:'%l_184',sub:'V GM view [64,64]',kind:'memory',x:220,y:690,w:155,line:277,block:'CUBE 8',desc:'名字来自循环变量，但 operand 是 %v_ptr；这是 V 的 GM tile view。'},
+    {id:'valloc',label:'%v_185',sub:'local alloc [64,64]',kind:'memory',x:410,y:690,w:150,line:278,block:'CUBE 8',desc:'V tile 的本地存储根。'},
+    {id:'vtensor',label:'%v_198',sub:'tensor view',kind:'cube',x:590,y:690,w:135,line:295,block:'CUBE 8',desc:'V local alloc 的 tensor 表示。'},
+    {id:'pvinit',label:'%pv_200',sub:'PV accumulator init',kind:'cube',x:760,y:665,w:150,line:297,block:'CUBE 8',desc:'P×V matmul 的初始 accumulator。'},
+    {id:'pvmatmul',label:'%pv_201',sub:'linalg.matmul · P×V',kind:'cube',x:990,y:690,w:175,line:298,block:'CUBE 8',desc:'当前 K/V tile 对输出的贡献。'},
+
+    {id:'sumInit',label:'%p_sum',sub:'row sum init 0',kind:'vector',x:1010,y:820,w:145,line:52,block:'VECTOR 9',desc:'当前 tile softmax 行和的初值。'},
+    {id:'rowSum',label:'%p_sum_202',sub:'reduce sum(P) · 128 B',kind:'vector',x:1220,y:820,w:165,line:300,block:'VECTOR 17',desc:'当前 P tile 的逐行和；模型识别出的 DynamicCV 候选缓冲。'},
+    {id:'lPrev',label:'inner %arg28',sub:'previous row sum',kind:'loop-state',x:1010,y:940,w:145,line:193,block:'inner loop',desc:'内层循环携带的上一轮归一化分母。'},
+    {id:'accPrev',label:'inner %arg26',sub:'previous output acc',kind:'loop-state',x:1010,y:1070,w:155,line:193,block:'inner loop',desc:'内层循环携带的上一轮输出 accumulator。'},
+    {id:'alpha',label:'%alpha',sub:'old max − new max · 128 B',kind:'vector',x:1220,y:940,w:170,line:305,block:'VECTOR 17',desc:'在线 softmax 历史校正指数；模型识别出的 DynamicCV 候选缓冲。'},
+    {id:'alphaExp',label:'%alpha_203',sub:'exp(alpha)',kind:'vector',x:1400,y:940,w:145,line:306,block:'VECTOR 17',desc:'历史统计量的缩放系数。'},
+    {id:'scaledL',label:'%l_205',sub:'old L × alpha',kind:'vector',x:1570,y:885,w:145,line:308,block:'VECTOR 17',desc:'校正上一轮归一化分母。'},
+    {id:'newL',label:'%l_206',sub:'new running L',kind:'vector',x:1740,y:835,w:145,line:309,block:'VECTOR 17',desc:'新的 softmax 行归一化分母。'},
+    {id:'alphaBroadcast',label:'%acc_204',sub:'broadcast alpha',kind:'vector',x:1400,y:1070,w:155,line:307,block:'VECTOR 17',desc:'将 alpha 广播到输出 tile。'},
+    {id:'scaledAcc',label:'%acc_207',sub:'old acc × alpha',kind:'vector',x:1570,y:1070,w:155,line:310,block:'VECTOR 18',desc:'校正上一轮输出 accumulator。'},
+    {id:'newAcc',label:'%pv_208',sub:'new output acc',kind:'vector',x:1740,y:1030,w:150,line:311,block:'VECTOR 18',desc:'当前 P×V 贡献与历史 accumulator 合并。'},
+
+    {id:'loopMax',label:'%l_113#4',sub:'final running max',kind:'loop-state',x:1810,y:650,w:145,line:313,block:'inner loop result',desc:'内层 scf.for 的行最大值结果。'},
+    {id:'loopL',label:'%l_113#5',sub:'final running L',kind:'loop-state',x:1810,y:760,w:145,line:313,block:'inner loop result',desc:'内层 scf.for 的归一化分母结果。'},
+    {id:'loopAcc',label:'%l_113#3',sub:'final output acc',kind:'loop-state',x:1810,y:1190,w:150,line:313,block:'inner loop result',desc:'内层 scf.for 的输出 accumulator 结果。'},
+    {id:'denom',label:'%acc',sub:'broadcast L',kind:'vector',x:1930,y:810,w:135,line:314,block:'VECTOR 14',desc:'将最终 L 广播到 output tile。'},
+    {id:'normalized',label:'%acc_114',sub:'acc ÷ L',kind:'vector',x:1990,y:1190,w:145,line:315,block:'VECTOR 14',desc:'最终归一化的 f32 输出。'},
+    {id:'logL',label:'%m',sub:'log(L)',kind:'vector',x:1930,y:700,w:125,line:316,block:'VECTOR 14',desc:'最终 softmax 行和取对数。'},
+    {id:'finalL',label:'%m_115',sub:'max + log(L)',kind:'vector',x:2020,y:630,w:145,line:317,block:'VECTOR 14',desc:'写向 l_ptr 的最终行统计量。'},
+    {id:'outbf16',label:'%12',sub:'truncf → bf16',kind:'vector',x:1990,y:1035,w:126,line:318,block:'VECTOR 14',desc:'O Store 的 bf16 source。'},
+    {id:'outSlice',label:'%extracted_slice',sub:'output tensor slice',kind:'vector',x:2020,y:1110,w:155,line:319,block:'VECTOR 14',desc:'裁剪到有效 query 行的 O tensor slice。'},
+    {id:'lSlice',label:'%extracted_slice_116',sub:'stat tensor slice',kind:'vector',x:2020,y:705,w:165,line:320,block:'VECTOR 14',desc:'裁剪到有效 query 行的 L tensor slice。'},
+
+    {id:'lview',label:'%l_block_ptr_67',sub:'GM view [64]',kind:'memory',x:1990,y:480,w:155,line:135,block:'VECTOR 13',desc:'l_ptr 当前 query tile 的 GM view。'},
+    {id:'storeL',label:'materialize L',sub:'Store staging · 128 B',kind:'memory',x:2100,y:585,w:155,line:322,block:'VECTOR 14',desc:'ordinary UB Store staging；AIV 后物理 shape [32] f32。'},
+    {id:'oview',label:'%o_block_ptr',sub:'GM view [64,64]',kind:'memory',x:1990,y:900,w:155,line:128,block:'VECTOR 13',desc:'o_ptr 当前 query tile 的 GM view。'},
+    {id:'storeO',label:'materialize O',sub:'Store staging · 4096 B',kind:'memory',x:2100,y:1010,w:160,line:321,block:'VECTOR 14',desc:'ordinary UB Store staging；AIV 后物理 shape [32,64] bf16。'}
+  ];
+
+  const flashEdges = [
+    ['Q','qview','alias','view'],['qview','qalloc','copy','copy'],['qalloc','qtensor','alias','to_tensor'],['qtensor','qkmatmul','data','Q'],
+    ['K','kview','alias','view'],['kview','kalloc','copy','copy'],['kalloc','ktensor','alias','to_tensor'],['ktensor','transk','data','transpose'],['transk','qkmatmul','data','Kᵀ'],['qkinit','qkmatmul','data','outs'],
+    ['Mask','maskview','alias','view'],['maskview','maskalloc','copy','copy'],['maskalloc','masktensor','alias','to_tensor'],['masktensor','maskpred','data','compare'],['maskpred','maskselect','data','select'],
+    ['Scale','scaleTile','data','fill'],['qkmatmul','scaledScore','data','score'],['scaleTile','scaledScore','data','scale'],['scaledScore','maskedScore','data','score'],['maskselect','maskedScore','data','mask'],
+    ['maskedScore','rowMax','data','reduce'],['maxInit','rowMax','data','outs'],['maxPrev','runningMax','data','old max'],['rowMax','runningMax','data','tile max'],
+    ['runningMax','maxBroadcast','data','broadcast'],['maskedScore','shifted','data','score'],['maxBroadcast','shifted','data','max'],['shifted','prob','data','exp'],['prob','pcast','data','truncf'],
+    ['V','vview','alias','view'],['vview','valloc','copy','copy'],['valloc','vtensor','alias','to_tensor'],['pcast','pvmatmul','data','P'],['vtensor','pvmatmul','data','V'],['pvinit','pvmatmul','data','outs'],
+    ['prob','rowSum','data','reduce'],['sumInit','rowSum','data','outs'],['maxPrev','alpha','data','old max'],['runningMax','alpha','data','new max'],['alpha','alphaExp','data','exp'],
+    ['lPrev','scaledL','data','old L'],['alphaExp','scaledL','data','scale'],['scaledL','newL','data',''],['rowSum','newL','data',''],
+    ['alphaExp','alphaBroadcast','data','broadcast'],['accPrev','scaledAcc','data','old acc'],['alphaBroadcast','scaledAcc','data','scale'],['scaledAcc','newAcc','data',''],['pvmatmul','newAcc','data',''],
+    ['runningMax','loopMax','data','yield'],['newL','loopL','data','yield'],['newAcc','loopAcc','data','yield'],
+    ['loopMax','maxPrev','loop','next iter'],['loopL','lPrev','loop','next iter'],['loopAcc','accPrev','loop','next iter'],
+    ['loopL','logL','data',''],['loopMax','finalL','data','max'],['logL','finalL','data','log L'],['loopL','denom','data','broadcast'],['loopAcc','normalized','data','acc'],['denom','normalized','data','L'],['normalized','outbf16','data','truncf'],['outbf16','outSlice','data','slice'],['finalL','lSlice','data','slice'],
+    ['L','lview','alias','view'],['lSlice','storeL','copy','source'],['lview','storeL','alias','destination'],['storeL','L','copy','write'],
+    ['O','oview','alias','view'],['outSlice','storeO','copy','source'],['oview','storeO','alias','destination'],['storeO','O','copy','write']
+  ].map((e,i)=>({id:'e'+i,source:e[0],target:e[1],kind:e[2],label:e[3]}));
+
+  const flashGroups = [
+    {label:'CUBE 4 · Q load',x:180,y:40,w:500,h:105},
+    {label:'CUBE 6 · K load + Q×K',x:180,y:140,w:870,h:155},
+    {label:'VECTOR 15 · mask load + select',x:180,y:350,w:850,h:125},
+    {label:'VECTOR 16 · scale + masked online softmax',x:1080,y:245,w:805,h:330},
+    {label:'CUBE 8 · V load + P×V',x:180,y:625,w:920,h:125},
+    {label:'VECTOR 17/18 · online state update',x:955,y:775,w:870,h:350},
+    {label:'VECTOR 14 · final normalization + stores',x:1760,y:430,w:370,h:820}
+  ];
+
+  const fusedBlockNodes = [
+    {id:'C1',label:'CUBE 1',sub:'QK 初始累加器 · 11 ops',kind:'cube block',x:150,y:130,w:190,h:66,line:49,lineEnd:59,block:'ssbuffer.block_id = 1',desc:'初始化 Q×K 的累加器。'},
+    {id:'C2',label:'CUBE 2',sub:'Q tile load · 18 ops',kind:'cube block',x:150,y:250,w:190,h:66,line:82,lineEnd:100,block:'ssbuffer.block_id = 2',desc:'建立 Q 的 GM view，并把当前 tile 搬入本地存储。'},
+    {id:'C4',label:'CUBE 4',sub:'K load + Q×K · 11 ops',kind:'cube block',x:550,y:190,w:210,h:66,line:104,lineEnd:115,block:'ssbuffer.block_id = 4',desc:'搬运 K、转置 K，并完成 Q×K。'},
+    {id:'C6',label:'CUBE 6',sub:'V load + P×V · 10 ops',kind:'cube block',x:1050,y:190,w:210,h:66,line:127,lineEnd:137,block:'ssbuffer.block_id = 6',desc:'搬运 V，并完成 P×V。'},
+    {id:'V7',label:'VECTOR 7',sub:'常量与初始状态 · 21 ops',kind:'vector block',x:150,y:460,w:205,h:66,line:28,lineEnd:48,block:'ssbuffer.block_id = 7',desc:'生成 softmax scale、行统计量和输出累加器的初值。'},
+    {id:'V8',label:'VECTOR 8',sub:'GM 地址计算 · 21 ops',kind:'vector block quiet',x:150,y:650,w:205,h:66,line:61,lineEnd:81,block:'ssbuffer.block_id = 8',desc:'计算输出 GM view；当前 shaped 跨块依赖图中没有输入或输出边。'},
+    {id:'V10',label:'VECTOR 10',sub:'行和初值 · 2 ops',kind:'vector block',x:520,y:745,w:190,h:66,line:102,lineEnd:103,block:'ssbuffer.block_id = 10',desc:'生成当前 tile 的 softmax 行和初值。'},
+    {id:'V11',label:'VECTOR 11',sub:'score + exp · 7 ops',kind:'vector block',x:720,y:500,w:195,h:66,line:116,lineEnd:126,block:'ssbuffer.block_id = 11',desc:'完成 score 缩放、行最大值、中心化和 exp。'},
+    {id:'V12',label:'VECTOR 12',sub:'在线状态更新 · 6 ops',kind:'vector block',x:1080,y:650,w:205,h:66,line:138,lineEnd:147,block:'ssbuffer.block_id = 12',desc:'计算行和、alpha，并更新在线 softmax 状态。'},
+    {id:'V13',label:'VECTOR 13',sub:'合并输出累加器 · 2 ops',kind:'vector block',x:1400,y:500,w:210,h:66,line:148,lineEnd:149,block:'ssbuffer.block_id = 13',desc:'合并历史输出累加器与当前 P×V。'},
+    {id:'V9',label:'VECTOR 9',sub:'最终归一化 · 5 ops',kind:'vector block quiet',x:1400,y:745,w:195,h:66,line:152,lineEnd:156,block:'ssbuffer.block_id = 9',desc:'完成最终归一化和输出转换；循环结果由 scf.for 边界传入，未记为直接跨 block value。'}
+  ];
+
+  const fusedBlockEdges = [
+    {id:'fb0',source:'C1',target:'C4',kind:'intra',label:'%qk_18 · 32 KiB',lane:-11},
+    {id:'fb1',source:'C2',target:'C4',kind:'intra',label:'%q_52 · 8 KiB',lane:11},
+    {id:'fb2',source:'C4',target:'V11',kind:'inter',label:'%qk_65 · 32 KiB',desc:'Cube 到 Vector 的跨核数据。'},
+    {id:'fb3',source:'C6',target:'V13',kind:'inter',label:'%acc_ptr_80 · 16 KiB',desc:'Cube 到 Vector 的跨核数据。'},
+    {id:'fb4',source:'V7',target:'V11',kind:'intra',label:'%m_ij_5 · 256 B',lane:-12},
+    {id:'fb5',source:'V7',target:'V11',kind:'intra',label:'%qk_7 · 32 KiB',lane:12},
+    {id:'fb6',source:'V10',target:'V12',kind:'intra',label:'%l_ij · 256 B'},
+    {id:'fb7',source:'V11',target:'C6',kind:'inter',label:'%p_cast · 16 KiB',desc:'Vector 到 Cube 的跨核数据。'},
+    {id:'fb8',source:'V11',target:'V12',kind:'boundary',label:'%m_ij_69 · 256 B',lane:-9,desc:'参数作用对象筛选以这个跨块 value 为起点，把 %alpha 的计算归属从 VECTOR 12 调整到 VECTOR 11。'},
+    {id:'fb9',source:'V11',target:'V12',kind:'boundary',label:'%p · 32 KiB',lane:9,desc:'参数作用对象筛选以这个跨块 value 为起点，把 %l_ij_81 的计算归属从 VECTOR 12 调整到 VECTOR 11。'},
+    {id:'fb10',source:'V12',target:'V13',kind:'intra',label:'%acc_ptr_84 · 16 KiB'},
+    {id:'fb11',source:'V11',target:'V12',kind:'adjusted',label:'调整后 %alpha · 256 B',lane:-27,desc:'将 %alpha 从 VECTOR 12 移到 VECTOR 11 后形成的新跨块边界；逻辑大小 256 B，AIV 二分后的实际候选缓冲为 128 B。'},
+    {id:'fb12',source:'V11',target:'V12',kind:'adjusted',label:'调整后 %l_ij_81 · 256 B',lane:27,desc:'将 %l_ij_81 从 VECTOR 12 移到 VECTOR 11 后形成的新跨块边界；逻辑大小 256 B，AIV 二分后的实际候选缓冲为 128 B。'}
+  ];
+
+  const fusedBlockGroups = [
+    {label:'Cube 计算块',x:35,y:35,w:1580,h:285},
+    {label:'Vector 计算块',x:35,y:365,w:1580,h:455}
+  ];
+
+  const flashBlockNodes = [
+    {id:'C1',label:'CUBE 1',sub:'QK 初始累加器 · 10 ops',kind:'cube block',x:130,y:105,w:195,h:66,line:54,lineEnd:63,block:'ssbuffer.block_id = 1',desc:'初始化 Q×K 的累加器。'},
+    {id:'C2',label:'CUBE 2',sub:'Q 索引输入 · 14 ops',kind:'cube block',x:130,y:215,w:195,h:66,line:78,lineEnd:91,block:'ssbuffer.block_id = 2',desc:'准备 Cube 侧 Q 起始位置。'},
+    {id:'C3',label:'CUBE 3',sub:'K 索引输入 · 5 ops',kind:'cube block',x:130,y:325,w:195,h:66,line:101,lineEnd:105,block:'ssbuffer.block_id = 3',desc:'准备 Cube 侧 K 起始位置。'},
+    {id:'C4',label:'CUBE 4',sub:'Q tile setup · 39 ops',kind:'cube block',x:520,y:255,w:200,h:66,line:150,lineEnd:192,block:'ssbuffer.block_id = 4',desc:'建立当前 query tile 的 Cube 侧访问状态。'},
+    {id:'C6',label:'CUBE 6',sub:'K load + Q×K · 25 ops',kind:'cube block',x:900,y:170,w:215,h:66,line:232,lineEnd:260,block:'ssbuffer.block_id = 6',desc:'搬运 K 并完成 Q×K。'},
+    {id:'C8',label:'CUBE 8',sub:'V load + P×V · 23 ops',kind:'cube block',x:1300,y:255,w:215,h:66,line:273,lineEnd:299,block:'ssbuffer.block_id = 8',desc:'搬运 V 并完成 P×V。'},
+    {id:'V9',label:'VECTOR 9',sub:'初始 tensor · 25 ops',kind:'vector block',x:130,y:500,w:200,h:66,line:29,lineEnd:53,block:'ssbuffer.block_id = 9',desc:'生成 mask、score 和在线统计量的初值。'},
+    {id:'V10',label:'VECTOR 10',sub:'查询索引 · 13 ops',kind:'vector block',x:130,y:650,w:200,h:66,line:65,lineEnd:77,block:'ssbuffer.block_id = 10',desc:'准备 Vector 侧 query 起始位置。'},
+    {id:'V11',label:'VECTOR 11',sub:'地址辅助 · 8 ops',kind:'vector block quiet',x:130,y:800,w:200,h:66,line:93,lineEnd:100,block:'ssbuffer.block_id = 11',desc:'地址辅助计算；当前 shaped 跨块依赖图中没有输入或输出边。'},
+    {id:'V12',label:'VECTOR 12',sub:'scale tile · 9 ops',kind:'vector block',x:520,y:980,w:200,h:66,line:107,lineEnd:115,block:'ssbuffer.block_id = 12',desc:'生成 score scale tile。'},
+    {id:'V13',label:'VECTOR 13',sub:'Vector 地址状态 · 34 ops',kind:'vector block',x:520,y:790,w:215,h:66,line:116,lineEnd:149,block:'ssbuffer.block_id = 13',desc:'建立 Vector 侧 query 和输出地址状态。'},
+    {id:'V15',label:'VECTOR 15',sub:'mask + 初始统计 · 34 ops',kind:'vector block',x:520,y:520,w:220,h:66,line:194,lineEnd:231,block:'ssbuffer.block_id = 15',desc:'搬运 mask，生成选择条件和行最大值初值。'},
+    {id:'V16',label:'VECTOR 16',sub:'score + exp · 8 ops',kind:'vector block',x:900,y:575,w:205,h:66,line:261,lineEnd:272,block:'ssbuffer.block_id = 16',desc:'完成 score 缩放、mask、行最大值和 exp。'},
+    {id:'V17',label:'VECTOR 17',sub:'在线状态更新 · 6 ops',kind:'vector block',x:1300,y:760,w:210,h:66,line:300,lineEnd:309,block:'ssbuffer.block_id = 17',desc:'计算行和、alpha，并更新在线 softmax 状态。'},
+    {id:'V18',label:'VECTOR 18',sub:'合并输出累加器 · 2 ops',kind:'vector block',x:1660,y:575,w:215,h:66,line:310,lineEnd:311,block:'ssbuffer.block_id = 18',desc:'合并历史输出累加器与当前 P×V。'},
+    {id:'V14',label:'VECTOR 14',sub:'最终归一化 · 7 ops',kind:'vector block quiet',x:1660,y:940,w:205,h:66,line:314,lineEnd:320,block:'ssbuffer.block_id = 14',desc:'完成最终归一化与输出裁剪；循环结果未记为直接跨 block value。'}
+  ];
+
+  const flashBlockEdges = [
+    {id:'flb0',source:'C1',target:'C6',kind:'intra',label:'%s_19 · 16 KiB'},
+    {id:'flb1',source:'C2',target:'C4',kind:'intra',label:'%q_start1_32 · memref',lane:-10,desc:'memref 在编译器图中使用不可跨越的高权重，不按 tensor 字节数比较。'},
+    {id:'flb2',source:'C3',target:'C4',kind:'intra',label:'%k_start1_40 · memref',lane:10,desc:'memref 在编译器图中使用不可跨越的高权重，不按 tensor 字节数比较。'},
+    {id:'flb3',source:'C4',target:'C6',kind:'intra',label:'%q_112 · 8 KiB'},
+    {id:'flb4',source:'C6',target:'V16',kind:'inter',label:'%s_172 · 16 KiB',desc:'Cube 到 Vector 的跨核数据。'},
+    {id:'flb5',source:'C8',target:'V18',kind:'inter',label:'%pv_201 · 16 KiB',desc:'Cube 到 Vector 的跨核数据。'},
+    {id:'flb6',source:'V9',target:'V15',kind:'intra',label:'%s_5 · 16 KiB',lane:-16},
+    {id:'flb7',source:'V9',target:'V15',kind:'intra',label:'%s_7 · 4 KiB',lane:0},
+    {id:'flb8',source:'V9',target:'V15',kind:'intra',label:'%s_8 · 16 KiB',lane:16},
+    {id:'flb9',source:'V9',target:'V17',kind:'intra',label:'%p_sum · 256 B'},
+    {id:'flb10',source:'V10',target:'V13',kind:'intra',label:'%q_start1_21 · memref',desc:'memref 在编译器图中使用不可跨越的高权重，不按 tensor 字节数比较。'},
+    {id:'flb11',source:'V12',target:'V16',kind:'intra',label:'%s_50 · 16 KiB'},
+    {id:'flb12',source:'V15',target:'V16',kind:'intra',label:'%m_new_149 · 256 B',lane:-11},
+    {id:'flb13',source:'V15',target:'V16',kind:'intra',label:'%s_148 · 16 KiB',lane:11},
+    {id:'flb14',source:'V16',target:'C8',kind:'inter',label:'%pv · 8 KiB',desc:'Vector 到 Cube 的跨核数据。'},
+    {id:'flb15',source:'V16',target:'V17',kind:'boundary',label:'%m_new_177 · 256 B',lane:-9,desc:'参数作用对象筛选以这个跨块 value 为起点，把 %alpha 的计算归属从 VECTOR 17 调整到 VECTOR 16。'},
+    {id:'flb16',source:'V16',target:'V17',kind:'boundary',label:'%p_179 · 16 KiB',lane:9,desc:'参数作用对象筛选以这个跨块 value 为起点，把 %p_sum_202 的计算归属从 VECTOR 17 调整到 VECTOR 16。'},
+    {id:'flb17',source:'V17',target:'V18',kind:'intra',label:'%acc_204 · 16 KiB'},
+    {id:'flb18',source:'V16',target:'V17',kind:'adjusted',label:'调整后 %alpha · 256 B',lane:-27,desc:'将 %alpha 从 VECTOR 17 移到 VECTOR 16 后形成的新跨块边界；逻辑大小 256 B，AIV 二分后的实际候选缓冲为 128 B。'},
+    {id:'flb19',source:'V16',target:'V17',kind:'adjusted',label:'调整后 %p_sum_202 · 256 B',lane:27,desc:'将 %p_sum_202 从 VECTOR 17 移到 VECTOR 16 后形成的新跨块边界；逻辑大小 256 B，AIV 二分后的实际候选缓冲为 128 B。'}
+  ];
+
+  const flashBlockGroups = [
+    {label:'Cube 计算块',x:35,y:30,w:1830,h:345},
+    {label:'Vector 计算块',x:35,y:420,w:1830,h:650}
+  ];
+
+  const staticModels = {
+    fused: {
+      functionName:'_attn_fwd', target:'Ascend950PR_9579', sourceLines:263,
+      valueNodes:136, operations:117, arguments:15, definitionKeys:238, useKeys:145,
+      blocks:{total:11,cube:4,vector:7}, paths:{copy:3,materialize:2},
+      inputs:['%K','%Q','%V'], outputs:['%M','%Out'],
+      attributes:[['intra_buf_count','1'],['inter_buf_count','1'],['load_buf_count','1']],
+      loops:[
+        {id:'60',kind:'scf.for',lines:'60–159',parent:'无',blocks:'2、8、9',cores:'Cube、Vector',carried:'无'},
+        {id:'101',kind:'scf.for',lines:'101–151',parent:'60',blocks:'4、6、10、11、12、13',cores:'Cube、Vector',carried:'5 组：输出累加器、行和、行最大值、K/V 地址状态'}
+      ],
+      gmPaths:[
+        'copy：%Q → %Q_block_ptr_51 → %q → %q_52',
+        'copy：%K → %V_block_ptr_62 → %k → %k_63',
+        'copy：%V → %V_block_ptr_76 → %v → %v_77',
+        'materialize：%m_i_54 → %m_ptrs_35 → %M',
+        'materialize：%0 → %O_block_ptr → %Out'
+      ],
+      affected:{alpha:'d',rowSum:'d',storeM:'m',storeOut:'m'},
+      valueDetails:{
+        alpha:{kind:'SSA value',definition:'arith.subf',inputs:'%arg19、%m_ij_69',users:'%alpha_82 = math.exp(%alpha)',type:'tensor<64xf32>；AIV 二分后 32 × f32 = 128 B',location:'VECTOR 12；内层循环 101；IR 第 143 行',effect:'DynamicCV 参数 d；d 每增加 1，候选缓冲增加 128 B'},
+        rowSum:{kind:'SSA value',definition:'linalg.reduce',inputs:'%p、%l_ij',users:'%l_i_83 的计算',type:'tensor<64xf32>；AIV 二分后 32 × f32 = 128 B',location:'VECTOR 12；内层循环 101；IR 第 138 行',effect:'DynamicCV 参数 d；d 每增加 1，候选缓冲增加 128 B'},
+        storeM:{kind:'GM materialize 路径摘要，不是核心 value 节点',definition:'bufferization.materialize_in_destination',inputs:'source %m_i_54；destination %m_ptrs_35',users:'最终写入 GM 参数 %M',type:'物理 staging [32]xf32 = 128 B',location:'VECTOR 9；外层循环 60；IR 第 157 行',effect:'ordinary MultiBuffer 参数 m；m 每增加 1，UB 增加 128 B'},
+        storeOut:{kind:'GM materialize 路径摘要，不是核心 value 节点',definition:'bufferization.materialize_in_destination',inputs:'source %0；destination %O_block_ptr',users:'最终写入 GM 参数 %Out',type:'物理 staging [32,64]xbf16 = 4096 B',location:'VECTOR 9；外层循环 60；IR 第 158 行',effect:'ordinary MultiBuffer 参数 m；m 每增加 1，UB 增加 4096 B'}
+      }
+    },
+    flash: {
+      functionName:'fwd_kernel', target:'Ascend950PR_9579', sourceLines:482,
+      valueNodes:291, operations:265, arguments:21, definitionKeys:535, useKeys:300,
+      blocks:{total:16,cube:6,vector:10}, paths:{copy:4,materialize:2},
+      inputs:['%cu_seqlens_k','%cu_seqlens_q','%k_ptr','%mask_tensor_ptr','%q_ptr','%v_ptr'], outputs:['%l_ptr','%o_ptr'],
+      attributes:[['intra_buf_count','1'],['inter_buf_count','1'],['load_buf_count','1']],
+      loops:[
+        {id:'64',kind:'scf.for',lines:'64–325',parent:'无',blocks:'2、3、4、10、11、12、13、14',cores:'Cube、Vector',carried:'无'},
+        {id:'193',kind:'scf.for',lines:'193–313',parent:'64',blocks:'6、8、15、16、17、18',cores:'Cube、Vector',carried:'6 组：K/V/mask 地址、输出累加器、行最大值、行和'}
+      ],
+      gmPaths:[
+        'copy：%q_ptr → %q_block_ptr_90 → %q_99 → %q_112',
+        'copy：%k_ptr → %k_155 → %k_156 → %k_169',
+        'copy：%mask_tensor_ptr → %l_123 → %mask_124 → %mask_146',
+        'copy：%v_ptr → %l_184 → %v_185 → %v_198',
+        'materialize：%extracted_slice_116 → %l_block_ptr_67 → %l_ptr',
+        'materialize：%extracted_slice → %o_block_ptr → %o_ptr'
+      ],
+      affected:{alpha:'d',rowSum:'d',storeL:'m',storeO:'m'},
+      valueDetails:{
+        alpha:{kind:'SSA value',definition:'arith.subf',inputs:'%arg27、%m_new_177',users:'%alpha_203 = math.exp(%alpha)',type:'tensor<64xf32>；AIV 二分后 32 × f32 = 128 B',location:'VECTOR 17；内层循环 193；IR 第 305 行',effect:'DynamicCV 参数 d；d 每增加 1，候选缓冲增加 128 B'},
+        rowSum:{kind:'SSA value',definition:'linalg.reduce',inputs:'%p_179、%p_sum',users:'%l_206 的计算',type:'tensor<64xf32>；AIV 二分后 32 × f32 = 128 B',location:'VECTOR 17；内层循环 193；IR 第 300 行',effect:'DynamicCV 参数 d；d 每增加 1，候选缓冲增加 128 B'},
+        storeL:{kind:'GM materialize 路径摘要，不是核心 value 节点',definition:'bufferization.materialize_in_destination',inputs:'source %extracted_slice_116；destination %subview_74',users:'最终写入 GM 参数 %l_ptr',type:'物理 staging [32]xf32 = 128 B',location:'VECTOR 14；外层循环 64；IR 第 322 行',effect:'ordinary MultiBuffer 参数 m；m 每增加 1，UB 增加 128 B'},
+        storeO:{kind:'GM materialize 路径摘要，不是核心 value 节点',definition:'bufferization.materialize_in_destination',inputs:'source %extracted_slice；destination %subview',users:'最终写入 GM 参数 %o_ptr',type:'物理 staging [32,64]xbf16 = 4096 B',location:'VECTOR 14；外层循环 64；IR 第 321 行',effect:'ordinary MultiBuffer 参数 m；m 每增加 1，UB 增加 4096 B'}
+      }
+    }
+  };
+
+  const documentLayers = {
+    fused: [
+      {
+        id:'3.1',group:'dynamic',groupLabel:'DynamicCV',label:'筛选合格循环',
+        summary:'在两个 mixed-core 循环中，只保留具有可还原循环携带状态的内层 loop 101。',
+        rule:'同时包含 Cube/Vector、属于 scf.for、存在 iter_arg/yield 一一对应。',
+        result:'外层 loop 60 排除；内层 loop 101 保留。',edgeMode:'internal',
+        keyEdges:[['runningMax','mPrev'],['newL','lPrev'],['newAcc','accPrev']],
+        nodes:['kview','kalloc','ktensor','transk','qkmatmul','scaledQk','rowMax','runningMax','maxBroadcast','shifted','p','pcast','vview','valloc','vtensor','pvinit','pvmatmul','lZero','rowSum','mPrev','lPrev','accPrev','alpha','alphaExp','scaledL','newL','alphaBroadcast','scaledAcc','newAcc','loopM','loopL','loopAcc']
+      },
+      {
+        id:'3.2',group:'dynamic',groupLabel:'DynamicCV',label:'跨块 shaped 依赖',
+        summary:'展示模型收集到的 11 条跨计算块 shaped def-use。',
+        rule:'两端 block_id 不同，producer 结果具有静态 shape，并排除 scalar/index 与纯分配占位。',
+        result:'8 条同核跨块依赖，3 条跨核依赖。',
+        keyEdges:[['runningMax','alpha'],['p','rowSum']],
+        nodes:['qkinit','qkmatmul','qtensor','scaledQk','pvmatmul','newAcc','mInit','rowMax','scaleTile','lZero','rowSum','pcast','runningMax','alpha','p','alphaBroadcast','scaledAcc'],
+        edges:[['qkinit','qkmatmul'],['qtensor','qkmatmul'],['qkmatmul','scaledQk'],['pvmatmul','newAcc'],['mInit','mPrev'],['scaleTile','scaledQk'],['lZero','rowSum'],['pcast','pvmatmul'],['runningMax','alpha'],['p','rowSum'],['alphaBroadcast','scaledAcc']]
+      },
+      {
+        id:'3.3',group:'dynamic',groupLabel:'DynamicCV',label:'还原循环携带',
+        summary:'把内层循环的 iter_arg 映射回同一位置的 yield value，恢复跨轮状态。',
+        rule:'循环交界处旧状态和新状态可能同时存活，因此 carried 边权乘 2。',
+        result:'行最大值、行和和输出 accumulator 的跨轮关系被显式连接。',
+        keyEdges:[['runningMax','mPrev'],['newL','lPrev'],['newAcc','accPrev']],
+        nodes:['mPrev','runningMax','loopM','lPrev','newL','loopL','accPrev','newAcc','loopAcc'],
+        edges:[['runningMax','loopM'],['runningMax','mPrev'],['newL','loopL'],['newL','lPrev'],['newAcc','loopAcc'],['newAcc','accPrev']]
+      },
+      {
+        id:'3.4',group:'dynamic',groupLabel:'DynamicCV',label:'选择更小边界',
+        summary:'比较移动 operation 前后的跨块字节数，并只采用严格更小的 cut。',
+        rule:'同为 Vector、依赖只落在两个相关块、内部计算链唯一、新边界严格更小。',
+        result:'行最大值路径 512→256 B；行求和路径 33024→256 B。',
+        before:'%m_ij_69 → inner %arg19：循环携带 512 B；%p 与 %l_ij → linalg.reduce：合计 33024 B。',
+        after:'%alpha → math.exp：256 B；%l_ij_81 → arith.addf：256 B。',
+        beforeEdges:[['runningMax','mPrev'],['p','rowSum'],['lZero','rowSum']],
+        keyEdges:[['alpha','alphaExp'],['rowSum','newL']],
+        nodes:['mPrev','runningMax','alpha','alphaExp','p','lZero','rowSum','newL'],
+        edges:[['runningMax','mPrev'],['mPrev','alpha'],['runningMax','alpha'],['alpha','alphaExp'],['p','rowSum'],['lZero','rowSum'],['rowSum','newL']]
+      },
+      {
+        id:'3.5',group:'dynamic',groupLabel:'DynamicCV',label:'最终 d 候选',
+        summary:'在调整后的图中保留最终由 DynamicCV 参数 d 控制的跨 Vector 块 value。',
+        rule:'仍然跨块、两端为 Vector、静态 shaped、会形成实际本地存储且未被其他机制接管。',
+        result:'%alpha 与 %l_ij_81；AIV 二分后各 128 B，单步 Delta 为 256 B。',
+        keyEdges:[['alpha','alphaExp'],['rowSum','newL']],
+        nodes:['alpha','alphaExp','rowSum','newL'],edges:[['alpha','alphaExp'],['rowSum','newL']]
+      },
+      {
+        id:'4.1',group:'ordinary',groupLabel:'ordinary MultiBuffer',label:'找到边界语句',
+        summary:'从 2 条 materialize_in_destination 和 3 条 memref.copy 提取直接 source/destination。',
+        rule:'这一层只确认边界语句及其直接 operands，不提前判断 GM 根对象。',
+        result:'得到 5 条边界候选、10 个直接端点。',
+        keyEdges:[['qview','qalloc'],['kview','kalloc'],['vview','valloc'],['finalM','storeM'],['outbf16','storeOut']],
+        nodes:['finalM','mview','storeM','outbf16','outview','storeOut','qview','qalloc','kview','kalloc','vview','valloc'],
+        edges:[['finalM','storeM'],['mview','storeM'],['outbf16','storeOut'],['outview','storeOut'],['qview','qalloc'],['kview','kalloc'],['vview','valloc']]
+      },
+      {
+        id:'4.2',group:'ordinary',groupLabel:'ordinary MultiBuffer',label:'解析真实对象',
+        summary:'沿受限的 view/cast base 边，把直接端点解析到 GM argument 或真实 local allocation。',
+        rule:'GM 侧追踪到 tensor_kind argument；load local 侧追踪到 memref.alloc。',
+        result:'确认 %Q/%K/%V 三条输入 load，以及 %M/%Out 两条输出 store。',
+        keyEdges:[['Q','qview'],['K','kview'],['V','vview'],['M','mview'],['Out','outview']],
+        edgeMode:'internal',
+        nodes:['Q','qview','qalloc','K','kview','kalloc','V','vview','valloc','M','mview','finalM','storeM','Out','outview','outbf16','storeOut']
+      },
+      {
+        id:'4.3',group:'ordinary',groupLabel:'ordinary MultiBuffer',label:'检查循环与核类型',
+        summary:'检查候选路径是否处于支持的循环链，并判断 staging 属于 Vector 还是 Cube。',
+        rule:'只支持 scf.for/scf.while；output store 必须为 Vector，input load 必须可判定为 Vector/Cube。',
+        result:'Q/K/V load 属于 Cube，作为可解释排除项；M/Out store 属于 Vector，继续筛选。',
+        keyEdges:[['qview','qalloc'],['kview','kalloc'],['vview','valloc'],['finalM','storeM'],['outbf16','storeOut']],
+        edgeMode:'internal',
+        nodes:['Q','qview','qalloc','qtensor','K','kview','kalloc','ktensor','V','vview','valloc','vtensor','M','mview','finalM','storeM','Out','outview','outbf16','storeOut']
+      },
+      {
+        id:'4.4',group:'ordinary',groupLabel:'ordinary MultiBuffer',label:'确定唯一归属',
+        summary:'按机制优先级为每个实际存储确定唯一控制来源。',
+        rule:'non-UB/Cube → Fixpipe → DynamicCV → fixed GM-load → preload/explicit → ordinary。',
+        result:'Q/K/V 排除为 Cube；%alpha/%l_ij_81 归 DynamicCV；M/Out staging 归 ordinary。',
+        keyEdges:[['qview','qalloc'],['kview','kalloc'],['vview','valloc'],['alpha','alphaExp'],['rowSum','newL'],['finalM','storeM'],['outbf16','storeOut']],
+        nodes:['qalloc','kalloc','valloc','alpha','rowSum','storeM','storeOut'],
+        edges:[['qview','qalloc'],['kview','kalloc'],['vview','valloc'],['alpha','alphaExp'],['rowSum','newL'],['finalM','storeM'],['outbf16','storeOut']]
+      },
+      {
+        id:'4.5',group:'ordinary',groupLabel:'ordinary MultiBuffer',label:'计算物理大小',
+        summary:'把最终 ordinary staging 投影到单个 AIV，并执行 32 B UB 对齐。',
+        rule:'逻辑 shape 按 AIV 子块化因子 2 投影，再按 UB alignment 对齐。',
+        result:'M staging 128 B，Out staging 4096 B；m 每增加 1，总 Delta 增加 4224 B。',
+        keyEdges:[['finalM','storeM'],['outbf16','storeOut']],
+        nodes:['finalM','mview','storeM','outbf16','outview','storeOut'],
+        edges:[['finalM','storeM'],['mview','storeM'],['outbf16','storeOut'],['outview','storeOut']]
+      }
+    ]
+  };
+
+  const datasets = {
+    fused: {
+      ir: {
+        title:'Fused Attention: IRGraph 紧凑 value 图',
+        subtitle:'完整 IRGraph 的关键 value 子图；纯标量地址计算省略，完整模型数据见上方概览',
+        aria:'Fused Attention IRGraph 紧凑 value 图', viewBox:'0 0 1900 1120', width:1900, height:1120,
+        nodes:fusedNodes, edges:fusedEdges, groups:fusedGroups, reset:{scale:0.88,tx:18,ty:22}
+      },
+      blocks: {
+        title:'Fused Attention: 计算块依赖图',
+        subtitle:'由 IRGraph 按 block_id 聚合；紫色为筛选起点，青绿色为调整计算归属后形成的新跨块边界',
+        meta:'11 个 block · 11 条原始跨块边 · 2 条调整后新边界',
+        aria:'Fused Attention 计算块依赖图', viewBox:'0 0 1650 860', width:1650, height:860,
+        nodes:fusedBlockNodes, edges:fusedBlockEdges, groups:fusedBlockGroups, reset:{scale:0.94,tx:12,ty:14}
+      }
+    },
+    flash: {
+      ir: {
+        title:'Flash Attention: IRGraph 紧凑 value 图',
+        subtitle:'完整 IRGraph 的关键 value 子图；纯标量地址计算省略，完整模型数据见上方概览',
+        aria:'Flash Attention IRGraph 紧凑 value 图', viewBox:'0 0 2200 1320', width:2200, height:1320,
+        nodes:flashNodes, edges:flashEdges, groups:flashGroups, reset:{scale:0.76,tx:14,ty:18}
+      },
+      blocks: {
+        title:'Flash Attention: 计算块依赖图',
+        subtitle:'由 IRGraph 按 block_id 聚合；紫色为筛选起点，青绿色为调整计算归属后形成的新跨块边界',
+        meta:'16 个 block · 18 条原始跨块边 · 2 条调整后新边界',
+        aria:'Flash Attention 计算块依赖图', viewBox:'0 0 1900 1100', width:1900, height:1100,
+        nodes:flashBlockNodes, edges:flashBlockEdges, groups:flashBlockGroups, reset:{scale:0.86,tx:10,ty:14}
+      }
+    }
+  };
+
+  let activeOperator = 'fused';
+  let activeView = 'ir';
+  let activeDataset = datasets[activeOperator][activeView];
+  let activeModel = staticModels[activeOperator];
+  let nodes = [];
+  let edges = [];
+  let groups = [];
+  let nodeById = new Map();
+  let nodeEls = new Map();
+  let edgeEls = new Map();
+  let scale = activeDataset.reset.scale;
+  let tx = activeDataset.reset.tx;
+  let ty = activeDataset.reset.ty;
+  let dragging = false;
+  let start = null;
+  let activeLayerId = null;
+
+  function el(name, attrs={}) {
+    const e = document.createElementNS(NS,name);
+    Object.entries(attrs).forEach(([k,v]) => e.setAttribute(k,String(v)));
+    return e;
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'",'&#039;');
+  }
+
+  function codeList(values) {
+    return values.map(value=>`<code>${escapeHtml(value)}</code>`).join('、');
+  }
+
+  function renderModelOverview() {
+    const compactCount = datasets[activeOperator].ir.nodes.length;
+    root.querySelector('[data-role="model-function"]').textContent = `@${activeModel.functionName}`;
+    root.querySelector('[data-role="model-target"]').textContent = activeModel.target;
+    root.querySelector('[data-role="model-coverage"]').textContent =
+      `画布展示 ${compactCount} 个关键元素；完整 IRGraph 含 ${activeModel.valueNodes} 个 value。展示元素还包含循环状态和 GM 路径摘要，因此不等同于完整 value 数量。`;
+    const stats = [
+      ['核心 value',activeModel.valueNodes],
+      ['定义操作',activeModel.operations],
+      ['函数参数',activeModel.arguments],
+      ['循环',activeModel.loops.length],
+      ['计算块',`${activeModel.blocks.total}（${activeModel.blocks.cube} Cube + ${activeModel.blocks.vector} Vector）`],
+      ['GM 路径',`${activeModel.paths.copy} copy + ${activeModel.paths.materialize} materialize`]
+    ];
+    root.querySelector('[data-role="model-stats"]').innerHTML = stats.map(([label,value])=>
+      `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`
+    ).join('');
+    root.querySelector('[data-role="model-module"]').innerHTML = [
+      '<p>核心图的节点全部是 SSA value；operation、计算块、循环和函数只作为 value 的属性或查询索引。</p>',
+      '<p>构建输入：PlanComputeBlock 输出 IR + CompilerProfile。当前 profile 固定 AIV 子块化因子 2、UB 对齐 32 B、inter/load count 1/1、vf_merge_level 0。</p>',
+      '<p>查询参数：<code>d ∈ {1,2,3}</code>、<code>m ∈ {1,2,3,4}</code>；改变查询值不会重建静态模型。</p>',
+      `<p>输入：${codeList(activeModel.inputs)}</p>`,
+      `<p>输出：${codeList(activeModel.outputs)}</p>`,
+      `<p>模块属性：${activeModel.attributes.map(([key,value])=>`<code>${escapeHtml(key)}=${escapeHtml(value)}</code>`).join('、')}</p>`,
+      `<p>def-use 索引：定义键 ${activeModel.definitionKeys} 个，使用键 ${activeModel.useKeys} 个；其中包含 <code>%x</code> 与 <code>%x#0</code> 这类等价查询键。</p>`,
+      `<p>源 IR 共 ${activeModel.sourceLines} 行。</p>`
+    ].join('');
+    root.querySelector('[data-role="model-loops"]').innerHTML = activeModel.loops.map(loop=>
+      `<p><code>loop ${escapeHtml(loop.id)}</code> · ${escapeHtml(loop.kind)} · 行 ${escapeHtml(loop.lines)}；父循环 ${escapeHtml(loop.parent)}；block ${escapeHtml(loop.blocks)}；${escapeHtml(loop.cores)}；循环携带：${escapeHtml(loop.carried)}。</p>`
+    ).join('');
+    root.querySelector('[data-role="model-gm"]').innerHTML = activeModel.gmPaths.map(path=>
+      `<p><code>${escapeHtml(path)}</code></p>`
+    ).join('');
+  }
+
+  function renderDetail(kind,title,description,fields) {
+    detail.innerHTML = `
+      <div class="fa-detail-heading">
+        <span class="fa-detail-kind">${escapeHtml(kind)}</span>
+        <strong>${escapeHtml(title)}</strong>
+        <p>${escapeHtml(description)}</p>
+      </div>
+      <dl class="fa-detail-fields">
+        ${fields.map(([label,value])=>`<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}
+      </dl>`;
+  }
+
+  function edgePath(a,b,edge) {
+    const lane=edge.lane||0;
+    const sx=a.x+a.w/2, sy=a.y+lane, tx=b.x-b.w/2, ty=b.y+lane;
+    const forward = tx >= sx;
+    if (forward) {
+      const bend=Math.max(35,(tx-sx)*0.46);
+      return `M ${sx} ${sy} C ${sx+bend} ${sy}, ${tx-bend} ${ty}, ${tx} ${ty}`;
+    }
+    const lift=Math.min(sy,ty)-55;
+    return `M ${sx} ${sy} C ${sx+55} ${lift}, ${tx-55} ${lift}, ${tx} ${ty}`;
+  }
+
+  function setActiveLayerButton(id) {
+    activeLayerId = id;
+    layerGuideGroups.querySelectorAll('[data-layer-id]').forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.layerId === id));
+    });
+  }
+
+  function renderLayerGuide() {
+    const layers = activeView === 'ir' ? documentLayers[activeOperator] : null;
+    const visible = Boolean(layers?.length);
+    layerGuide.hidden = !visible;
+    graphStage.classList.toggle('has-layer-guide', visible);
+    layerGuideGroups.replaceChildren();
+    if (!visible) return;
+
+    const orderedGroups = [
+      ['dynamic','DynamicCV'],
+      ['ordinary','ordinary MultiBuffer']
+    ];
+    orderedGroups.forEach(([groupId, groupLabel]) => {
+      const groupLayers = layers.filter(layer => layer.group === groupId);
+      if (!groupLayers.length) return;
+      const section = document.createElement('section');
+      section.className = `fa-layer-group ${groupId}`;
+      const heading = document.createElement('h3');
+      heading.className = 'fa-layer-group-title';
+      heading.textContent = groupLabel;
+      const buttons = document.createElement('div');
+      buttons.className = 'fa-layer-buttons';
+      groupLayers.forEach(layer => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'fa-layer-button';
+        button.dataset.layerId = layer.id;
+        button.setAttribute('aria-pressed','false');
+        button.title = layer.summary;
+        button.innerHTML = `<span class="fa-layer-number">${escapeHtml(layer.id)}</span><span class="fa-layer-label">${escapeHtml(layer.label)}</span>`;
+        button.addEventListener('click', () => {
+          if (activeLayerId === layer.id) clearSelection();
+          else selectDocumentLayer(layer.id);
+        });
+        buttons.appendChild(button);
+      });
+      section.append(heading,buttons);
+      layerGuideGroups.appendChild(section);
+    });
+  }
+
+  function selectDocumentLayer(id) {
+    const layer = documentLayers[activeOperator]?.find(item => item.id === id);
+    if (!layer || activeView !== 'ir') return;
+    const selectedNodes = new Set(layer.nodes.filter(nodeId => nodeById.has(nodeId)));
+    const keyPairs = new Set((layer.keyEdges || []).map(([source,target]) => `${source}\u0000${target}`));
+    const keyEdges = new Set(edges.filter(edge =>
+      keyPairs.has(`${edge.source}\u0000${edge.target}`)
+    ).map(edge => edge.id));
+    const beforePairs = new Set((layer.beforeEdges || []).map(([source,target]) => `${source}\u0000${target}`));
+    const beforeEdges = new Set(edges.filter(edge =>
+      beforePairs.has(`${edge.source}\u0000${edge.target}`)
+    ).map(edge => edge.id));
+    let selectedEdges;
+    if (layer.edgeMode === 'internal') {
+      selectedEdges = new Set(edges.filter(edge =>
+        selectedNodes.has(edge.source) && selectedNodes.has(edge.target)
+      ).map(edge => edge.id));
+    } else {
+      const pairs = new Set((layer.edges || []).map(([source,target]) => `${source}\u0000${target}`));
+      selectedEdges = new Set(edges.filter(edge =>
+        pairs.has(`${edge.source}\u0000${edge.target}`)
+      ).map(edge => edge.id));
+    }
+    edges.forEach(edge => {
+      if (!selectedEdges.has(edge.id)) return;
+      selectedNodes.add(edge.source);
+      selectedNodes.add(edge.target);
+    });
+    setActiveLayerButton(id);
+    nodeEls.forEach((group,nodeId) => {
+      const selected = selectedNodes.has(nodeId);
+      group.classList.toggle('selected',selected);
+      group.classList.toggle('dimmed',!selected);
+    });
+    edgeEls.forEach((group,edgeId) => {
+      const selected = selectedEdges.has(edgeId);
+      const key = keyEdges.has(edgeId);
+      const before = beforeEdges.has(edgeId);
+      const path = group.querySelector('.edge');
+      path.classList.toggle('active',selected);
+      path.classList.toggle('dimmed',!selected);
+      path.classList.toggle('before-key',before);
+      path.classList.toggle('key',key);
+      const label = group.querySelector('.edge-label');
+      label?.classList.toggle('dimmed',!selected);
+      label?.classList.toggle('before-key',before);
+      label?.classList.toggle('key',key);
+    });
+    const detailFields = [
+      ['对应机制',layer.groupLabel],
+      ['本层规则',layer.rule],
+      ['Fused Attention 结果',layer.result],
+      ...(layer.before ? [['调整前',layer.before],['调整后',layer.after]] : []),
+      ['高亮节点',`${selectedNodes.size} 个`],
+      ['高亮路径',`${selectedEdges.size} 条`],
+      ...(beforeEdges.size ? [['紫色调整前关系',`${beforeEdges.size} 条`]] : []),
+      ['红色关键关系',`${keyEdges.size} 条`],
+      ['操作','再次点击当前层级可取消高亮']
+    ];
+    renderDetail(`文档层级 ${layer.id}`,layer.label,layer.summary,detailFields);
+  }
+
+  function clearLayerRelationships() {
+    edgeEls.forEach(group => {
+      group.querySelector('.edge')?.classList.remove('before-key','key');
+      group.querySelector('.edge-label')?.classList.remove('before-key','key');
+    });
+  }
+
+  function selectNode(id) {
+    setActiveLayerButton(null);
+    clearLayerRelationships();
+    const adjacent=new Set([id]);
+    const incident=new Set();
+    edges.forEach(e=>{if(e.source===id||e.target===id){adjacent.add(e.source);adjacent.add(e.target);incident.add(e.id);}});
+    nodeEls.forEach((g,nid)=>{g.classList.toggle('selected',nid===id);g.classList.toggle('dimmed',!adjacent.has(nid));});
+    edgeEls.forEach((g,eid)=>{const active=incident.has(eid);const p=g.querySelector('.edge');p.classList.toggle('active',active);p.classList.toggle('dimmed',!active);g.querySelector('.edge-label')?.classList.toggle('dimmed',!active);});
+    const n=nodeById.get(id);
+    const location=n.lineEnd?`IR 第 ${n.line}–${n.lineEnd} 行`:`IR 第 ${n.line} 行`;
+    const incoming = edges.filter(edge=>edge.target===id).map(edge=>{
+      const source=nodeById.get(edge.source);
+      return `${source.label}${edge.label?`（${edge.label}）`:''}`;
+    }).join('；')||'无';
+    const outgoing = edges.filter(edge=>edge.source===id).map(edge=>{
+      const target=nodeById.get(edge.target);
+      return `${target.label}${edge.label?`（${edge.label}）`:''}`;
+    }).join('；')||'无';
+    const exact = activeView==='ir'?activeModel.valueDetails[id]:null;
+    if (exact) {
+      renderDetail(exact.kind,n.label,n.desc,[
+        ['定义操作',exact.definition],
+        ['输入',exact.inputs],
+        ['使用者',exact.users],
+        ['类型与物理大小',exact.type],
+        ['位置',exact.location],
+        ['参数作用',exact.effect]
+      ]);
+      return;
+    }
+    if (activeView==='blocks') {
+      renderDetail('由 IRGraph 聚合出的计算块，不是核心 value 节点',n.label,n.desc,[
+        ['block_id',n.block],
+        ['覆盖范围',location],
+        ['进入该块的 value',incoming],
+        ['离开该块的 value',outgoing],
+        ['核心节点类型','完整模型中的 SSA value'],
+        ['用途','查看跨计算块的数据依赖和参数筛选边界']
+      ]);
+      return;
+    }
+    renderDetail('IRGraph value 或可视化路径节点',n.label,n.desc,[
+      ['图中角色',n.sub],
+      ['所在范围',`${n.block}；${location}`],
+      ['图中输入',incoming],
+      ['图中使用者',outgoing],
+      ['参数作用','当前未标记为 d 或 m 的直接作用对象'],
+      ['完整模型','定义操作与全部使用关系保存在定义索引、使用索引和操作记录中']
+    ]);
+  }
+
+  function selectEdge(id) {
+    setActiveLayerButton(null);
+    clearLayerRelationships();
+    const selected=edges.find(edge=>edge.id===id);
+    if (!selected) return;
+    nodeEls.forEach((g,nid)=>{const endpoint=nid===selected.source||nid===selected.target;g.classList.toggle('selected',endpoint);g.classList.toggle('dimmed',!endpoint);});
+    edgeEls.forEach((g,eid)=>{const active=eid===id;const p=g.querySelector('.edge');p.classList.toggle('active',active);p.classList.toggle('dimmed',!active);g.querySelector('.edge-label')?.classList.toggle('dimmed',!active);});
+    const source=nodeById.get(selected.source);
+    const target=nodeById.get(selected.target);
+    const semantics={data:'数据依赖',alias:'view / 地址关系',copy:'copy / materialize',loop:'循环携带',intra:'同核跨块 value',inter:'跨核 value',boundary:'参数筛选使用的起点 value',adjusted:'调整计算归属后形成的新跨块边界'};
+    const semantic=semantics[selected.kind]||'数据关系';
+    renderDetail('关系',selected.label||semantic,selected.desc||semantic,[
+      ['起点',source.label],
+      ['终点',target.label],
+      ['关系类型',semantic],
+      ['起点位置',source.block],
+      ['终点位置',target.block],
+      ['模型含义',activeView==='ir'?'该边来自 value 的 def-use、地址别名、搬运或循环携带关系':'该边由跨计算块且具有 shape 的 value 聚合得到']
+    ]);
+  }
+
+  function clearSelection() {
+    setActiveLayerButton(null);
+    nodeEls.forEach(g=>g.classList.remove('selected','dimmed'));
+    edgeEls.forEach(g=>{g.querySelector('.edge').classList.remove('active','dimmed','before-key','key');g.querySelector('.edge-label')?.classList.remove('dimmed','before-key','key');});
+    if (activeView==='ir') {
+      renderDetail('当前视图','IRGraph 紧凑 value 图','画布只突出与注意力主计算和 UB 参数作用相关的路径；完整静态模型由上方概览描述。',[
+        ['核心节点',`${activeModel.valueNodes} 个 SSA value`],
+        ['当前画布',`${nodes.length} 个展示元素、${edges.length} 条关系`],
+        ['定义操作',`${activeModel.operations} 条，作为 value 属性`],
+        ['循环索引',`${activeModel.loops.length} 个`],
+        ['计算块索引',`${activeModel.blocks.total} 个`],
+        ['查看方式','点击带 d/m 标记的节点可查看参数作用和物理字节数']
+      ]);
+      return;
+    }
+    renderDetail('当前视图','计算块依赖图','这是从同一份 IRGraph 按 block_id 聚合出的辅助图，计算块不是静态模型的核心节点。',[
+      ['聚合节点',`${nodes.length} 个计算块`],
+      ['依赖边',`${edges.length} 条`],
+      ['底层来源','跨计算块的 shaped value'],
+      ['完整模型',`${activeModel.valueNodes} 个 SSA value`],
+      ['紫色边','参数作用对象筛选的原始起点'],
+      ['青绿色边','调整计算归属后形成的新边界']
+    ]);
+  }
+
+  function applyTransform(){viewport.setAttribute('transform',`translate(${tx} ${ty}) scale(${scale})`);}
+  function setZoom(next,cx=activeDataset.width/2,cy=activeDataset.height/2){const old=scale;scale=Math.max(0.4,Math.min(2.4,next));tx=cx-(cx-tx)*(scale/old);ty=cy-(cy-ty)*(scale/old);applyTransform();}
+
+  function renderDataset(operator=activeOperator,view=activeView) {
+    activeOperator = operator;
+    activeView = view;
+    activeLayerId = null;
+    activeDataset = datasets[activeOperator][activeView];
+    activeModel = staticModels[activeOperator];
+    nodes = activeDataset.nodes;
+    edges = activeDataset.edges;
+    groups = activeDataset.groups;
+    nodeById = new Map(nodes.map(n => [n.id,n]));
+    nodeEls = new Map();
+    edgeEls = new Map();
+    groupLayer.replaceChildren();
+    edgeLayer.replaceChildren();
+    nodeLayer.replaceChildren();
+    svg.setAttribute('viewBox', activeDataset.viewBox);
+    svg.setAttribute('aria-label', activeDataset.aria);
+    root.querySelector('[data-role="title"]').textContent = activeDataset.title;
+    root.querySelector('[data-role="subtitle"]').textContent = activeDataset.subtitle;
+    renderModelOverview();
+    root.querySelectorAll('[data-operator]').forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.operator === activeOperator));
+    });
+    root.querySelectorAll('[data-view]').forEach(button => {
+      button.setAttribute('aria-selected', String(button.dataset.view === activeView));
+    });
+    root.querySelectorAll('[data-legend]').forEach(legend => {
+      legend.hidden = legend.dataset.legend !== activeView;
+    });
+    renderLayerGuide();
+    root.querySelector('[data-role="graph-meta"]').textContent = activeDataset.meta||`${nodes.length} 个展示元素 · ${edges.length} 条边`;
+
+    groups.forEach(group => {
+      const ge = el('g',{class:'group'});
+      ge.appendChild(el('rect',{x:group.x,y:group.y,width:group.w,height:group.h}));
+      const label = el('text',{x:group.x+10,y:group.y+18});
+      label.textContent = group.label;
+      ge.appendChild(label);
+      groupLayer.appendChild(ge);
+    });
+
+    edges.forEach(edge => {
+      const source = nodeById.get(edge.source);
+      const target = nodeById.get(edge.target);
+      const ge = el('g');
+      const path = el('path',{class:`edge ${edge.kind}`,'data-edge':edge.id,d:edgePath(source,target,edge),tabindex:'0',role:'button','aria-label':`${edge.label||'数据依赖'}, ${source.label} 到 ${target.label}`});
+      ge.appendChild(path);
+      if (edge.label) {
+        const lane=edge.lane||0;
+        const label = el('text',{class:'edge-label',x:(source.x+target.x)/2,y:(source.y+target.y)/2+lane-7});
+        label.textContent = edge.label;
+        ge.appendChild(label);
+      }
+      edgeLayer.appendChild(ge);
+      edgeEls.set(edge.id,ge);
+      path.addEventListener('click',event=>{event.stopPropagation();selectEdge(edge.id);});
+      path.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();selectEdge(edge.id);}});
+    });
+
+    nodes.forEach(node => {
+      const parameter = activeView==='ir'?activeModel.affected[node.id]:null;
+      const group = el('g',{class:`node ${node.kind}${parameter?` parameter-${parameter}`:''}`,transform:`translate(${node.x},${node.y})`,tabindex:'0',role:'button','aria-label':`${node.label}, ${node.sub}${parameter?`, 受参数 ${parameter} 影响`:''}`,'data-node':node.id});
+      const height=node.h||50;
+      group.appendChild(el('rect',{x:-node.w/2,y:-height/2,width:node.w,height}));
+      const title = el('text',{y:height>50?-5:-4});
+      title.textContent = node.label;
+      group.appendChild(title);
+      const subtitle = el('text',{class:'sub',y:height>50?14:13});
+      subtitle.textContent = node.sub;
+      group.appendChild(subtitle);
+      if (parameter) {
+        const badge = el('g',{class:`parameter-badge ${parameter}`,transform:`translate(${node.w/2-3} ${-height/2+3})`});
+        badge.appendChild(el('circle',{cx:0,cy:0,r:11}));
+        const badgeText = el('text',{x:0,y:0.5});
+        badgeText.textContent = parameter;
+        badge.appendChild(badgeText);
+        group.appendChild(badge);
+      }
+      nodeLayer.appendChild(group);
+      nodeEls.set(node.id,group);
+      group.addEventListener('click',event=>{event.stopPropagation();selectNode(node.id);});
+      group.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();selectNode(node.id);}});
+    });
+
+    scale = activeDataset.reset.scale;
+    tx = activeDataset.reset.tx;
+    ty = activeDataset.reset.ty;
+    applyTransform();
+    clearSelection();
+  }
+
+  svg.addEventListener('wheel',ev=>{ev.preventDefault();const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;const loc=pt.matrixTransform(svg.getScreenCTM().inverse());const delta=Math.max(-100,Math.min(100,ev.deltaY));setZoom(scale*Math.exp(-delta*0.0007),loc.x,loc.y);},{passive:false});
+  svg.addEventListener('pointerdown',ev=>{if(ev.target.closest('.node,.edge'))return;dragging=true;start={x:ev.clientX,y:ev.clientY,tx,ty};svg.setPointerCapture(ev.pointerId);root.querySelector('.fa-canvas-wrap').classList.add('dragging');});
+  svg.addEventListener('pointermove',ev=>{if(!dragging)return;const ratio=activeDataset.width/svg.getBoundingClientRect().width;tx=start.tx+(ev.clientX-start.x)*ratio;ty=start.ty+(ev.clientY-start.y)*ratio;applyTransform();});
+  svg.addEventListener('pointerup',ev=>{if(!dragging)return;dragging=false;svg.releasePointerCapture(ev.pointerId);root.querySelector('.fa-canvas-wrap').classList.remove('dragging');});
+  svg.addEventListener('click',ev=>{if(!ev.target.closest('.node,.edge'))clearSelection();});
+  root.querySelector('[data-action="zoom-in"]').addEventListener('click',()=>setZoom(scale*1.1));
+  root.querySelector('[data-action="zoom-out"]').addEventListener('click',()=>setZoom(scale/1.1));
+  root.querySelector('[data-action="reset"]').addEventListener('click',()=>{scale=activeDataset.reset.scale;tx=activeDataset.reset.tx;ty=activeDataset.reset.ty;applyTransform();clearSelection();});
+  root.querySelectorAll('[data-operator]').forEach(button => button.addEventListener('click',()=>renderDataset(button.dataset.operator,activeView)));
+  root.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click',()=>renderDataset(activeOperator,button.dataset.view)));
+
+  renderDataset('fused','ir');
+})();
+</script>
+
+<script src="https://unpkg.com/@floating-ui/core@1.7.3/dist/floating-ui.core.umd.min.js"></script>
+<script src="https://unpkg.com/@floating-ui/dom@1.7.4/dist/floating-ui.dom.umd.min.js"></script>
+<script>
+(() => {
+  if (window.FloatingUIDOM == null) {
+    return;
+  }
+  const { autoUpdate, computePosition, flip, offset, shift, size } =
+    window.FloatingUIDOM;
+  const tooltipPlacements = new Set(["top", "right", "bottom", "left"]);
+  const tooltipId = `codex-visualization-tooltip-${
+    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
+  }`;
+  const tooltipGap = 5;
+  const hoverDelay = 700;
+  const skipDelay = 300;
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let tooltip = null;
+  let openTimeout = null;
+  let autoUpdateCleanup = null;
+  let positionRequest = 0;
+  let skipDelayUntil = 0;
+  let lastPointerWasTouch = false;
+  let pinnedByTouch = false;
+
+  const getTrigger = (target) =>
+    target?.nodeType === Node.ELEMENT_NODE
+      ? target.closest("[data-tooltip]")
+      : null;
+  const containsTarget = (trigger, target) =>
+    target?.nodeType != null && trigger.contains(target);
+  const getContent = (trigger) =>
+    trigger.getAttribute("data-tooltip")?.trim() ?? "";
+  const getPlacement = (trigger) => {
+    const placement = trigger.getAttribute("data-tooltip-placement");
+    return tooltipPlacements.has(placement) ? placement : "top";
+  };
+  const getTooltip = () => {
+    if (tooltip == null) {
+      tooltip = document.createElement("div");
+      tooltip.id = tooltipId;
+      tooltip.className = "tooltip";
+      tooltip.setAttribute("role", "tooltip");
+    }
+    return tooltip;
+  };
+  const setDescribedBy = (trigger, described) => {
+    const ids = new Set(
+      (trigger.getAttribute("aria-describedby") ?? "")
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+    if (described) {
+      ids.add(tooltipId);
+    } else {
+      ids.delete(tooltipId);
+    }
+    if (ids.size === 0) {
+      trigger.removeAttribute("aria-describedby");
+    } else {
+      trigger.setAttribute("aria-describedby", [...ids].join(" "));
+    }
+  };
+  const clearOpenTimeout = () => {
+    if (openTimeout != null) {
+      window.clearTimeout(openTimeout);
+      openTimeout = null;
+    }
+    pendingTrigger = null;
+  };
+  const closeTooltip = (activateSkipDelay = true) => {
+    clearOpenTimeout();
+    pinnedByTouch = false;
+    positionRequest += 1;
+    autoUpdateCleanup?.();
+    autoUpdateCleanup = null;
+    if (activeTrigger == null) {
+      return;
+    }
+    setDescribedBy(activeTrigger, false);
+    activeTrigger = null;
+    tooltip?.remove();
+    if (activateSkipDelay) {
+      skipDelayUntil = Date.now() + skipDelay;
+    }
+  };
+  const updatePosition = (trigger, floating) => {
+    const request = ++positionRequest;
+    void computePosition(trigger, floating, {
+      middleware: [
+        offset(tooltipGap),
+        flip({ padding: tooltipGap }),
+        shift({ padding: tooltipGap }),
+        size({
+          padding: tooltipGap,
+          apply({ availableHeight, availableWidth, elements }) {
+            elements.floating.style.setProperty(
+              "--tooltip-available-width",
+              `${Math.max(0, availableWidth)}px`,
+            );
+            elements.floating.style.setProperty(
+              "--tooltip-available-height",
+              `${Math.max(0, availableHeight)}px`,
+            );
+          },
+        }),
+      ],
+      placement: getPlacement(trigger),
+      strategy: "fixed",
+    })
+      .then(({ x, y }) => {
+        if (activeTrigger !== trigger || request !== positionRequest) {
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
+        floating.style.visibility = "visible";
+      })
+      .catch(() => {
+        if (activeTrigger === trigger && request === positionRequest) {
+          closeTooltip(false);
+        }
+      });
+  };
+  const openTooltip = (trigger) => {
+    const content = getContent(trigger);
+    if (!trigger.isConnected || content.length === 0) {
+      return;
+    }
+    clearOpenTimeout();
+    if (activeTrigger === trigger) {
+      return;
+    }
+    closeTooltip();
+    const floating = getTooltip();
+    floating.textContent = content;
+    floating.style.visibility = "hidden";
+    floating.style.transform = "translate(0, 0)";
+    document.body.appendChild(floating);
+    activeTrigger = trigger;
+    setDescribedBy(trigger, true);
+    autoUpdateCleanup = autoUpdate(trigger, floating, () => {
+      updatePosition(trigger, floating);
+    });
+  };
+  const requestOpen = (trigger, immediate = false) => {
+    if (
+      getContent(trigger).length === 0 ||
+      activeTrigger === trigger ||
+      pendingTrigger === trigger
+    ) {
+      return;
+    }
+    clearOpenTimeout();
+    pendingTrigger = trigger;
+    const delay =
+      immediate || activeTrigger != null || Date.now() < skipDelayUntil
+        ? 0
+        : hoverDelay;
+    if (delay === 0) {
+      openTooltip(trigger);
+      return;
+    }
+    openTimeout = window.setTimeout(() => {
+      openTimeout = null;
+      pendingTrigger = null;
+      openTooltip(trigger);
+    }, delay);
+  };
+  const handlePointerOpen = (event) => {
+    if (event.pointerType === "touch") {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    requestOpen(trigger);
+  };
+  const handlePointer = (event) => {
+    lastPointerWasTouch =
+      event.type === "pointerdown" && event.pointerType === "touch";
+  };
+  const handleTouchClick = (event) => {
+    const isTouch = event.pointerType === "touch" || lastPointerWasTouch;
+    lastPointerWasTouch = false;
+    if (!isTouch || event.detail === 0) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (
+      trigger == null ||
+      !trigger.isConnected ||
+      getContent(trigger).length === 0 ||
+      (pinnedByTouch && activeTrigger === trigger)
+    ) {
+      if (pinnedByTouch) {
+        closeTooltip();
+      }
+      return;
+    }
+    openTooltip(trigger);
+    pinnedByTouch = activeTrigger === trigger;
+    window.setTimeout(() => {
+      if (activeTrigger === trigger && !trigger.isConnected) {
+        closeTooltip(false);
+      }
+    }, 0);
+  };
+  const handleLeave = (event) => {
+    if (pinnedByTouch) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handleFocusIn = (event) => {
+    const trigger = getTrigger(event.target);
+    if (trigger?.matches(":focus-visible")) {
+      requestOpen(trigger, true);
+    }
+  };
+  const handleKeyDown = (event) => {
+    if (event.key === "Escape") {
+      closeTooltip();
+    }
+  };
+  const handleContextMenu = (event) => {
+    lastPointerWasTouch = false;
+    const trigger = getTrigger(event.target);
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const destroy = () => {
+    closeTooltip(false);
+    lastPointerWasTouch = false;
+    document.removeEventListener("pointerover", handlePointerOpen);
+    document.removeEventListener("pointerdown", handlePointer);
+    document.removeEventListener("pointercancel", handlePointer);
+    document.removeEventListener("click", handleTouchClick);
+    document.removeEventListener("pointerout", handleLeave);
+    document.removeEventListener("focusin", handleFocusIn);
+    document.removeEventListener("focusout", handleLeave);
+    document.removeEventListener("keydown", handleKeyDown);
+    document.removeEventListener("contextmenu", handleContextMenu);
+    tooltip = null;
+  };
+
+  document.addEventListener("pointerover", handlePointerOpen);
+  document.addEventListener("pointerdown", handlePointer);
+  document.addEventListener("pointercancel", handlePointer);
+  document.addEventListener("click", handleTouchClick);
+  document.addEventListener("pointerout", handleLeave);
+  document.addEventListener("focusin", handleFocusIn);
+  document.addEventListener("focusout", handleLeave);
+  document.addEventListener("keydown", handleKeyDown);
+  document.addEventListener("contextmenu", handleContextMenu);
+  window.addEventListener("pagehide", destroy, { once: true });
+})();
+</script>
+<script id="codex-visualization-lucide" async src="https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js"></script>
+<script>
+(() => {
+  const initialize = () => {
+    globalThis.lucide?.createIcons({ attrs: { width: 16, height: 16 } });
+  };
+  if (globalThis.lucide != null) {
+    initialize();
+    return;
+  }
+  document
+    .getElementById("codex-visualization-lucide")
+    ?.addEventListener("load", initialize, { once: true });
+})();
+</script>
+
+</body>
+</html>

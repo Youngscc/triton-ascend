@@ -100,3 +100,12 @@ The statuses are:
 - `unsupported`: the case timed out, DynamicCV was inapplicable, compiler metadata did not match, or UB data was missing.
 
 See `EXECUTION_GUIDE.md` for container creation, build commands, and the complete operating procedure.
+
+The A5 DynamicCV and ordinary MultiBuffer UB cost model for the
+`PlanComputeBlock` boundary is specified in
+[`UB_COST_MODEL_DESIGN.md`](UB_COST_MODEL_DESIGN.md).
+The guarded reference implementation, PlanLite, certificate schema, regression
+suite, and timing benchmark are under
+[`cost_model_demo/`](cost_model_demo/README.md).
+The complete shape and kernel-structure validation matrix is in
+[`DYNAMIC_CV_MODEL_VALIDATION_REPORT.md`](DYNAMIC_CV_MODEL_VALIDATION_REPORT.md).

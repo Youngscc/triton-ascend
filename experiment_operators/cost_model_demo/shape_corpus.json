@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "operator": "fused_attention",
+  "dynamic_values": [1, 2, 3],
+  "fixed_controls": {
+    "multibuffer_num": 1,
+    "vf_merge_level": 0
+  },
+  "cases": [
+    {
+      "case_id": "reference_current",
+      "class": "known_reference",
+      "description": "The previously validated Fused Attention shape.",
+      "constants": {}
+    },
+    {
+      "case_id": "local_base_bn32",
+      "class": "local_tile_base",
+      "description": "The orthogonal local-tile baseline used by the remaining one-factor cases.",
+      "constants": {
+        "BLOCK_N": 32
+      }
+    },
+    {
+      "case_id": "global_n512",
+      "class": "global_size_control",
+      "description": "Change only the global context length while preserving local tiles.",
+      "constants": {
+        "N_CTX": 512,
+        "BLOCK_N": 32
+      }
+    },
+    {
+      "case_id": "global_n2048",
+      "class": "global_size_control",
+      "description": "Change only the global context length while preserving local tiles.",
+      "constants": {
+        "N_CTX": 2048,
+        "BLOCK_N": 32
+      }
+    },
+    {
+      "case_id": "block_m32",
+      "class": "local_tile_size",
+      "description": "Halve the Vector row tile and its row-shaped DynamicCV values.",
+      "constants": {
+        "BLOCK_M": 32,
+        "BLOCK_N": 32
+      }
+    },
+    {
+      "case_id": "block_m128",
+      "class": "local_tile_size",
+      "description": "Double the Vector row tile and its row-shaped DynamicCV values.",
+      "constants": {
+        "BLOCK_M": 128,
+        "BLOCK_N": 32
+      }
+    },
+    {
+      "case_id": "head_dim32",
+      "class": "local_matrix_size",
+      "description": "Change accumulator and output width without changing BLOCK_M.",
+      "constants": {
+        "HEAD_DIM": 32,
+        "BLOCK_N": 32
+      }
+    },
+    {
+      "case_id": "head_dim128",
+      "class": "local_matrix_size",
+      "description": "Change accumulator and output width without changing BLOCK_M.",
+      "constants": {
+        "HEAD_DIM": 128,
+        "BLOCK_N": 32
+      }
+    },
+    {
+      "case_id": "head_dim256_boundary",
+      "class": "topology_boundary",
+      "description": "Exercise the HEAD_DIM >= 256 sliced-accumulator branch.",
+      "constants": {
+        "HEAD_DIM": 256,
+        "BLOCK_N": 32
+      }
+    }
+  ]
+}
