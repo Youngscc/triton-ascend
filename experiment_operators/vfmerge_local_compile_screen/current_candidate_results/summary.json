@@ -1,0 +1,21 @@
+{
+  "compiler": "/private/tmp/triton-ascend-main-dev-rerun-20260831/third_party/ascend/AscendNPU-IR/.mac-ub-build/bin/bishengir-compile",
+  "adapter_dir": "/private/tmp/vfmerge-current-live-adapters",
+  "target": "Ascend910B1",
+  "adapter_count": 4,
+  "compile_count": 12,
+  "affected_any_count": 0,
+  "affected_level1_count": 0,
+  "affected_level2_count": 0,
+  "all_levels_ub_line_observed_count": 4,
+  "all_levels_nonzero_ub_count": 4,
+  "criterion": "normalized IR before/after the actual hfusion-merge-vf pass",
+  "ub_role": "reported independently; never used to select affected operators",
+  "fixed_controls": {
+    "workspace_multibuffer": 2,
+    "ordinary_local_multibuffer": 1,
+    "ordinary_auto_multibuffer": true,
+    "mix_multibuffer_strategy": "no-limit",
+    "plan_memory_seed": 0
+  }
+}

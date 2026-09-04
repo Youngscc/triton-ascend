@@ -1,0 +1,13 @@
+adapter,vf_merge_level,elapsed_s,returncode,timed_out,pass_observed,pass_attempts,affected,affected_attempts,changed_diff_lines_max,vector_functions_before_max,vector_functions_after_max,before_sha256,after_sha256,ub_reported_bits,ub_bits,ub_bytes,ub_kib,ub_line_observed,diagnostic
+flash_attention_npu_v8.ttadapter,0,0.148169,1,False,False,0,False,0,0,0,0,,,703744,703744,87968,85.90625,True,
+flash_attention_npu_v8.ttadapter,1,0.169262,1,False,True,1,False,0,0,0,0,b13e5d9a414155c595e3990a6d37df90c7f8ab614c1afd86be7b0831d43fd135,b13e5d9a414155c595e3990a6d37df90c7f8ab614c1afd86be7b0831d43fd135,703744,703744,87968,85.90625,True,
+flash_attention_npu_v8.ttadapter,2,0.166492,1,False,True,1,False,0,0,0,0,b13e5d9a414155c595e3990a6d37df90c7f8ab614c1afd86be7b0831d43fd135,b13e5d9a414155c595e3990a6d37df90c7f8ab614c1afd86be7b0831d43fd135,703744,703744,87968,85.90625,True,
+fused_attention.ttadapter,0,0.11725,1,False,False,0,False,0,0,0,0,,,578560,578560,72320,70.625,True,
+fused_attention.ttadapter,1,0.156123,1,False,True,1,False,0,0,0,0,b13e5d9a414155c595e3990a6d37df90c7f8ab614c1afd86be7b0831d43fd135,b13e5d9a414155c595e3990a6d37df90c7f8ab614c1afd86be7b0831d43fd135,578560,578560,72320,70.625,True,
+fused_attention.ttadapter,2,0.157687,1,False,True,1,False,0,0,0,0,b13e5d9a414155c595e3990a6d37df90c7f8ab614c1afd86be7b0831d43fd135,b13e5d9a414155c595e3990a6d37df90c7f8ab614c1afd86be7b0831d43fd135,578560,578560,72320,70.625,True,
+hstu_attention.ttadapter,0,0.149001,1,False,False,0,False,0,0,0,0,,,562176,562176,70272,68.625,True,
+hstu_attention.ttadapter,1,0.17017,1,False,True,1,False,0,0,0,0,b13e5d9a414155c595e3990a6d37df90c7f8ab614c1afd86be7b0831d43fd135,b13e5d9a414155c595e3990a6d37df90c7f8ab614c1afd86be7b0831d43fd135,562176,562176,70272,68.625,True,
+hstu_attention.ttadapter,2,0.195772,1,False,True,1,False,0,0,0,0,b13e5d9a414155c595e3990a6d37df90c7f8ab614c1afd86be7b0831d43fd135,b13e5d9a414155c595e3990a6d37df90c7f8ab614c1afd86be7b0831d43fd135,562176,562176,70272,68.625,True,
+unified_attention.ttadapter,0,0.141957,1,False,False,0,False,0,0,0,0,,,218112,218112,27264,26.625,True,
+unified_attention.ttadapter,1,0.169688,1,False,True,1,False,0,0,0,0,b13e5d9a414155c595e3990a6d37df90c7f8ab614c1afd86be7b0831d43fd135,b13e5d9a414155c595e3990a6d37df90c7f8ab614c1afd86be7b0831d43fd135,218112,218112,27264,26.625,True,
+unified_attention.ttadapter,2,0.164643,1,False,True,1,False,0,0,0,0,b13e5d9a414155c595e3990a6d37df90c7f8ab614c1afd86be7b0831d43fd135,b13e5d9a414155c595e3990a6d37df90c7f8ab614c1afd86be7b0831d43fd135,218112,218112,27264,26.625,True,

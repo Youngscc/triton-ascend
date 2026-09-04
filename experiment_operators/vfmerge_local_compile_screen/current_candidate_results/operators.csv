@@ -1,0 +1,5 @@
+adapter,level1_affected,level2_affected,any_affected,level0_ub_bits,level1_ub_bits,level2_ub_bits,level0_ub_kib,level1_ub_kib,level2_ub_kib,level1_pass_observed,level2_pass_observed,level1_vector_functions_before,level2_vector_functions_before,all_levels_ub_line_observed,diagnostic
+flash_attention_npu_v8.ttadapter,False,False,False,703744,703744,703744,85.90625,85.90625,85.90625,True,True,0,0,True,
+fused_attention.ttadapter,False,False,False,578560,578560,578560,70.625,70.625,70.625,True,True,0,0,True,
+hstu_attention.ttadapter,False,False,False,562176,562176,562176,68.625,68.625,68.625,True,True,0,0,True,
+unified_attention.ttadapter,False,False,False,218112,218112,218112,26.625,26.625,26.625,True,True,0,0,True,
