@@ -27,6 +27,7 @@ fi
 # scoped below because LLVM source contains tracked binary test fixtures.
 generated_excludes=(
   '--exclude=.codex-remote/'
+  '--exclude=offline-wheel/'
   '--exclude=tmp/'
   '--exclude=__pycache__/'
   '--exclude=*.py[cod]'
