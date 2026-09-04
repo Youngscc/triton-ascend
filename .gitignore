@@ -93,3 +93,7 @@ docs/sg_execution_times.rst
 
 # macOS
 .DS_Store
+
+# Local remote-sync configuration and generated state
+/.codex-remote/
+/tools/remote_experiment/config.local.sh
