@@ -59,7 +59,7 @@ After checking the itemized output, run it without the preview flag:
 RSYNC_DELETE=1 ./tools/remote_experiment/sync.sh
 ```
 
-Deletion is restricted to `experiment_operators/`, `tools/remote_experiment/`, and the top-level DynamicCVPipeline `include/lib` source. The AscendNPU-IR allowlist is `bishengir/{cmake,include,lib,python,test,tools,unittests}` plus `bishengir/triton/{bin,cmake,include,lib,test,unittest,utils}`. AscendNPU-IR's `third-party/` dependencies, candidate kernels, archived originals, `config.local.sh`, caches, logs, results, profiles, artifacts, and temporary files are protected. The project root, `python/`, every non-allowlisted `third_party/` path, `.codex-remote/`, and every other directory remain additive-only. The `.codex-remote/top-git` metadata mirror remains independently replaceable and cannot remove build or experiment output.
+Deletion is restricted to `experiment_operators/`, `tools/remote_experiment/`, and the top-level DynamicCVPipeline `include/lib` source. The AscendNPU-IR allowlist is `bishengir/{cmake,include,lib,python,test,tools,unittests}` plus `bishengir/triton/{bin,cmake,include,lib,test,unittest,utils}`. AscendNPU-IR's `third-party/` dependencies, candidate kernels, archived originals, `config.local.sh`, `offline-wheel/`, caches, logs, results, profiles, artifacts, and temporary files are protected. The project root, `python/`, every non-allowlisted `third_party/` path, `.codex-remote/`, and every other directory remain additive-only. The `.codex-remote/top-git` metadata mirror remains independently replaceable and cannot remove build or experiment output.
 
 ## Run the experiment
 
