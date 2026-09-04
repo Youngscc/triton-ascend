@@ -31,6 +31,7 @@ rsync_args=(
   --stats
   --exclude=.git
   --exclude=.codex-remote/
+  --exclude=offline-wheel/
   --exclude=.venv/
   --exclude=__pycache__/
   --exclude='*.py[cod]'
@@ -63,6 +64,7 @@ rsync -az --delete \
 # server-side LLVM/MLIR tree produces an ABI/API-incompatible compiler build.
 rsync -az --delete \
   --exclude=.git \
+  --exclude=offline-wheel/ \
   --exclude=__pycache__/ \
   --exclude='*.py[cod]' \
   --exclude=build/ \
@@ -75,6 +77,7 @@ rsync -az --delete \
 # backend source into that generated package. Deletion is scoped to this one
 # generated directory and cannot affect builds, caches, results, or other code.
 rsync -az --delete \
+  --exclude=offline-wheel/ \
   --exclude=__pycache__/ \
   --exclude='*.py[cod]' \
   "$PROJECT_ROOT/third_party/ascend/backend/" \
