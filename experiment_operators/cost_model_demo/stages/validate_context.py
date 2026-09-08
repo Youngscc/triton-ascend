@@ -70,6 +70,7 @@ class CompilerProfile:
     limit_auto_multi_buffer_of_local_buffer: str = "no-limit"
     limit_auto_multi_buffer_buffer: str = "no-limit"
     enable_hfusion_auto_schedule: bool = False
+    enable_vf_operand_substitution: bool = False
     inter_cache_num: int = 1
     load_cache_num: int = 1
     aiv_subblock_factor: int = AIV_SUBBLOCK_FACTOR
@@ -95,6 +96,7 @@ class CompilerProfile:
             "disable_enable_stride_align",
             "disable_infer_hivm_data_layout",
             "enable_hfusion_auto_schedule",
+            "enable_vf_operand_substitution",
         )
         for field_name in boolean_fields:
             if type(getattr(self, field_name)) is not bool:
@@ -119,7 +121,10 @@ class CompilerProfile:
 
     @property
     def fingerprint(self) -> str:
-        payload = json.dumps(asdict(self), sort_keys=True, separators=(",", ":"))
+        identity = asdict(self)
+        if not identity["enable_vf_operand_substitution"]:
+            identity.pop("enable_vf_operand_substitution")
+        payload = json.dumps(identity, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     @classmethod
@@ -199,6 +204,7 @@ def validate_context(
     if profile.limit_auto_multi_buffer_of_local_buffer != "no-limit":
         raise UnsupportedModelError("profile local-buffer strategy must be no-limit")
     required_false = {
+        "enable_vf_operand_substitution": profile.enable_vf_operand_substitution,
         "enable_preload": profile.enable_preload,
         "enable_ubuf_saving": profile.enable_ubuf_saving,
         "disable_align_alloc_size": profile.disable_align_alloc_size,

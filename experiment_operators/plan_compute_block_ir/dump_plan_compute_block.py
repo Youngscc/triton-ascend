@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 from typing import Any, Mapping, Optional
 
 KERNEL_FUNCTIONS = {
@@ -276,6 +277,9 @@ def main() -> None:
         help="JSON object containing compile-time constant overrides.",
     )
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--multibuffer-num", type=int, choices=(1, 2, 3, 4))
+    parser.add_argument("--allow-missing-plan", action="store_true",
+                        help="Retain frontend output and the reason when DynamicCV has no PlanComputeBlock snapshot.")
     args = parser.parse_args()
 
     from triton._C.libtriton import ir
@@ -284,7 +288,6 @@ def main() -> None:
     from triton.backends.ascend.compiler import (
         NPUOptions,
         bc_to_linalg_by_bishengir_opt,
-        linalg_to_bc_by_triton_mlir_opt,
         make_ttir,
         min_dot_size,
         ttir_to_linalg,
@@ -317,29 +320,25 @@ def main() -> None:
     context = ir.context()
     ir.load_dialects(context)
     ascend_ir.load_dialects(context)
-    option_fields = NPUOptions.__dataclass_fields__
     dynamic_enabled = args.dynamic_cv != "off"
     dynamic_value = int(args.dynamic_cv) if dynamic_enabled else None
     dynamic_counts = {}
     if dynamic_enabled:
-        dynamic_counts = ({"intra_cache_num": dynamic_value, "inter_cache_num": 1, "load_cache_num": 1}
-                          if "intra_cache_num" in option_fields else
-                          {"buf_slot_num_of_veccore": dynamic_value,
-                           "buf_slot_num_of_crosscore": 1,
-                           "buf_slot_num_of_gm": 1})
+        dynamic_counts = {
+            "buf_slot_num_of_veccore": dynamic_value,
+            "buf_slot_num_of_crosscore": 1,
+            "buf_slot_num_of_gm": 1,
+        }
     option_values = {
         "arch": "Ascend950PR_9579",
         "enable_dynamic_cv_pipeline": dynamic_enabled,
-        "cv_pipeline_mode": "off",
         "set_workspace_multibuffer": 0,
         "multibuffer": False,
         "vf_merge_level": 0,
         **dynamic_counts,
     }
-    if option_fields.get("compile_on_910_95") is not None and option_fields["compile_on_910_95"].init:
-        option_values["compile_on_910_95"] = True
-    if option_fields.get("use_bytecode") is not None:
-        option_values["use_bytecode"] = False
+    if args.multibuffer_num is not None:
+        option_values.update(multibuffer=True, multibuffer_num=args.multibuffer_num)
     options = NPUOptions(**option_values)
     source = ASTSource(kernel, signature, constants)
     codegen_fns = {"min_dot_size": min_dot_size(None)}
@@ -358,17 +357,33 @@ def main() -> None:
         os.close(saved_stderr)
 
     log_text = raw_log_path.read_text()
-    plan_ir = extract_plan_ir(log_text) if dynamic_enabled else None
+    plan_error = None
+    try:
+        plan_ir = extract_plan_ir(log_text) if dynamic_enabled else None
+    except RuntimeError as error:
+        if not args.allow_missing_plan:
+            raise
+        plan_ir = None
+        plan_error = str(error)
     if plan_ir is not None:
         (args.output_dir / "after-plan-compute-block.mlir").write_text(plan_ir)
     # Match the production backend boundary: MLIR 22 writes bytecode and the
     # pinned AscendNPU-IR MLIR 19 reader prints compiler-compatible text.
     metadata.setdefault("hash", hashlib.sha256(str(final_ir).encode()).hexdigest())
-    bridged_ir = bc_to_linalg_by_bishengir_opt(
-        linalg_to_bc_by_triton_mlir_opt(str(final_ir), metadata, options),
-        metadata,
-        options,
-    )
+    from triton.backends.ascend.utils import _get_triton_mlir_opt_path
+    # MLIR 22 and the repository-pinned MLIR 19 reader share bytecode version 4.
+    # This is format adaptation only; no optimization is added here.
+    adapter_path = args.output_dir / "final.mlir22.mlir"
+    bytecode_path = args.output_dir / "final.mlirbc"
+    adapter_path.write_text(str(final_ir))
+    try:
+        subprocess.run([
+            _get_triton_mlir_opt_path(), str(adapter_path), "--emit-bytecode",
+            "--emit-bytecode-version=4", "-o", str(bytecode_path),
+        ], check=True, capture_output=True, text=True)
+        bridged_ir = bc_to_linalg_by_bishengir_opt(bytecode_path.read_bytes(), metadata, options)
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(f"MLIR version bridge failed: {error.stderr}") from error
     (args.output_dir / "final.ttadapter.mlir").write_text(bridged_ir)
     summary = {
         "operator": args.operator,
@@ -381,9 +396,9 @@ def main() -> None:
         "compiler_options": {
             "arch": getattr(options, "target_arch", getattr(options, "arch", "Ascend950PR_9579")),
             "enable_dynamic_cv_pipeline": options.enable_dynamic_cv_pipeline,
-            "intra_cache_num": dynamic_value,
-            "inter_cache_num": dynamic_counts.get("inter_cache_num", dynamic_counts.get("buf_slot_num_of_crosscore")),
-            "load_cache_num": dynamic_counts.get("load_cache_num", dynamic_counts.get("buf_slot_num_of_gm")),
+            "buf_slot_num_of_veccore": dynamic_value,
+            "buf_slot_num_of_crosscore": dynamic_counts.get("buf_slot_num_of_crosscore"),
+            "buf_slot_num_of_gm": dynamic_counts.get("buf_slot_num_of_gm"),
             "multibuffer_num": options.multibuffer_num,
             "vf_merge_level": options.vf_merge_level,
         },
@@ -391,10 +406,13 @@ def main() -> None:
         "plan_ir_boundary": ("input to ComputeBlockOptPass immediately after the complete "
                              "PlanComputeBlockPass nested pipeline"
                              if plan_ir is not None else
-                             "not applicable: DynamicCV and PlanComputeBlock are disabled"),
+                             "unavailable: " + (plan_error or "DynamicCV and PlanComputeBlock are disabled")),
         "dynamic_cv_result": metadata.get("dynamic_cv_result"),
         "dynamic_cv_errcode": metadata.get("dynamic_cv_errcode"),
-        "ttadapter_bridge": "mlir22-bytecode-to-mlir19-text-v1",
+        "plan_ir_unavailable_reason": plan_error,
+        "resolved_options": {key: metadata.get(key, value) for key, value in options.__dict__.items()},
+        "disable_vf_operand_substitution": metadata.get("disable_vf_operand_substitution", False),
+        "ttadapter_bridge": "mlir22-bytecode-v4-to-mlir19-text",
         "plan_capture_version": "after-complete-plan-compute-block-pass-v2",
     }
     (args.output_dir / "metadata.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")

@@ -28,6 +28,7 @@
 #include "ascend/include/DynamicCVPipeline/PlanComputeBlock/Common.h"
 #include "ascend/include/DynamicCVPipeline/PlanComputeBlock/ComputeBlockIdManager.h"
 #include "mlir/Analysis/AliasAnalysis.h"
+#include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Operation.h"
@@ -109,8 +110,15 @@ static void applyMerge(scf::ForOp forOp, int target,
     if (op == forOp.getOperation()) {
       return;
     }
+    // Never fold a sync into a compute block: it must keep its own unique
+    // block id so the fence between before/after ops survives.
+    if (CVPipeline::isSyncOp(op)) {
+      return;
+    }
     if (CVPipeline::getOpBlockId(op).has_value()) {
       bm.updateBlockId(op, target);
+      op->setAttr(CVPipeline::kCoreType,
+                  StringAttr::get(op->getContext(), "CUBE"));
     }
   });
 }

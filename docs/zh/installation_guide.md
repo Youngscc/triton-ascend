@@ -102,9 +102,84 @@ pip install -e .
     python3 setup_ascend.py install
     ```
 
-## 开发镜像
+  **源码编译参数说明表**
 
-### 检查镜像版本
+  | 参数（环境变量）                 | 默认值         | 说明                                                                                                                                           |
+  |-------------------------------|---------------|----------------------------------------------------------------------------------------------------------------------------------------------|
+  | `LLVM_SYSPATH`                | None          | 指定本地已编译好的 LLVM 安装路径。设置后不再下载 LLVM 预编译包，离线构建时必填，即上文构建 LLVM 步骤中的 `${LLVM_INSTALL_PREFIX}`。                                                      |
+  | `TRITON_BUILD_WITH_CLANG_LLD` | true          | 使用 clang/clang++ 作为编译器、lld 作为链接器，需提前安装 clang>=15、lld>=15。                                                                                    |
+  | `TRITON_BUILD_WITH_CCACHE`    | true          | 启用 ccache 缓存编译结果，加速重复构建，需提前安装 ccache。                                                                                                        |
+  | `TRITON_BUILD_PROTON`         | OFF           | 是否构建 Proton 性能分析器（profiler）。需要时设为 `ON`。                                                                                                      |
+  | `TRITON_BUILD_TD`             | OFF           | 是否构建 TD（Triton-distributed-ascend）相关组件，默认关闭。                                                                                                 |
+  | `TRITON_BUILD_NPUIR`          | OFF           | 是否在安装过程中同步编译 AscendNPU-IR。设为 `ON` 时会触发 `build_npuir.py` 流程。<br> AscendNPU-IR编译依赖CANN,需source {home}/Ascend/cann/set_env.sh且可用磁盘大于30G。 |
+  | `TRITON_WHEEL_NAME`           | triton_ascend | 生成的 wheel 包名称，一般无需修改。                                                                                                                        |
+  | `TRITON_APPEND_CMAKE_ARGS`    | None          | 追加透传给 CMake 的参数，多个参数用空格分隔。例如追加 `-DTRITON_BUILD_UT=ON` 可开启单元测试构建。                                                                             |
+  | `TRITON_OFFLINE_BUILD`        | OFF           | 设为 `ON` 后禁止构建过程中访问网络下载依赖（会自动关闭需联网拉取 googletest 的单元测试构建），用于离线环境。                                                                              |
+  | `MAX_JOBS`                    | 2 × CPU core  | 编译并行任务数。内存紧张时可调小，例如 `export MAX_JOBS=8`。                                                                                                     |
+  | `TRITON_PARALLEL_LINK_JOBS`   | None          | 并行链接任务数。链接阶段占用内存较大，内存不足时可设为 `1`。                                                                                                             |
+  | `IS_MANYLINUX`                | OFF           | 设为 `ON` 后构建生成的 wheel 包为 manylinux 兼容格式，用于在不同 Linux 发行版上安装。                                                                                   |
+
+## 镜像
+
+### 开箱即用镜像
+
+#### 镜像内关键组件
+
+| 组件              | 版本          |
+|-----------------|-------------|
+| Triton-Ascend   | 3.2.2       |
+| CANN            | 9.1.0       |
+| Torch-NPU       | 2.7.1.post8 |
+
+#### 镜像列表
+
+| 镜像标签                                                            | Dockerfile                                                                               | 镜像下载命令                                                                                            |
+|-----------------------------------------------------------------|------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------|
+| 3.2.2-cann9.1.0-torch_npu2.7.1.post8-910b-debian12-py3.11       | [Dockerfile](../../docker/3.2.2-cann9.1.0-torch_npu2.7.1.post8-910b-debian12-py3.11/Dockerfile)       | docker pull quay.io/ascend/triton:3.2.2-cann9.1.0-torch_npu2.7.1.post8-910b-debian12-py3.11       |
+| 3.2.2-cann9.1.0-torch_npu2.7.1.post8-910b-ubuntu24.04-py3.11    | [Dockerfile](../../docker/3.2.2-cann9.1.0-torch_npu2.7.1.post8-910b-ubuntu24.04-py3.11/Dockerfile)    | docker pull quay.io/ascend/triton:3.2.2-cann9.1.0-torch_npu2.7.1.post8-910b-ubuntu24.04-py3.11    |
+| 3.2.2-cann9.1.0-torch_npu2.7.1.post8-910b-openeuler24.03-py3.11 | [Dockerfile](../../docker/3.2.2-cann9.1.0-torch_npu2.7.1.post8-910b-openeuler24.03-py3.11/Dockerfile) | docker pull quay.io/ascend/triton:3.2.2-cann9.1.0-torch_npu2.7.1.post8-910b-openeuler24.03-py3.11 |
+| 3.2.2-cann9.1.0-torch_npu2.7.1.post8-a3-debian12-py3.11         | [Dockerfile](../../docker/3.2.2-cann9.1.0-torch_npu2.7.1.post8-a3-debian12-py3.11/Dockerfile)         | docker pull quay.io/ascend/triton:3.2.2-cann9.1.0-torch_npu2.7.1.post8-a3-debian12-py3.11         |
+| 3.2.2-cann9.1.0-torch_npu2.7.1.post8-a3-ubuntu24.04-py3.11      | [Dockerfile](../../docker/3.2.2-cann9.1.0-torch_npu2.7.1.post8-a3-ubuntu24.04-py3.11/Dockerfile)      | docker pull quay.io/ascend/triton:3.2.2-cann9.1.0-torch_npu2.7.1.post8-a3-ubuntu24.04-py3.11      |
+| 3.2.2-cann9.1.0-torch_npu2.7.1.post8-a3-openeuler24.03-py3.11   | [Dockerfile](../../docker/3.2.2-cann9.1.0-torch_npu2.7.1.post8-a3-openeuler24.03-py3.11/Dockerfile)   | docker pull quay.io/ascend/triton:3.2.2-cann9.1.0-torch_npu2.7.1.post8-a3-openeuler24.03-py3.11   |
+| 3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-debian12-py3.11        | [Dockerfile](../../docker/3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-debian12-py3.11/Dockerfile)        | docker pull quay.io/ascend/triton:3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-debian12-py3.11        |
+| 3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-ubuntu24.04-py3.11     | [Dockerfile](../../docker/3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-ubuntu24.04-py3.11/Dockerfile)     | docker pull quay.io/ascend/triton:3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-ubuntu24.04-py3.11     |
+| 3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-openeuler24.03-py3.11  | [Dockerfile](../../docker/3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-openeuler24.03-py3.11/Dockerfile)  | docker pull quay.io/ascend/triton:3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-openeuler24.03-py3.11  |
+
+更多镜像参见[OVERVIEW.md](../../docker/OVERVIEW.zh.md)
+
+#### 镜像使用
+
+```bash
+# 这里以 3.2.2-cann9.1.0-torch_npu2.7.1.post8-910b-ubuntu24.04-py3.11 为例
+docker run -u 0 -dit --shm-size=512g --name=triton-ascend_container \
+--security-opt seccomp=unconfined \
+--device=/dev/davinci0 \
+--device=/dev/davinci1 \
+--device=/dev/davinci2 \
+--device=/dev/davinci3 \
+--device=/dev/davinci4 \
+--device=/dev/davinci5 \
+--device=/dev/davinci6 \
+--device=/dev/davinci7 \
+--device=/dev/davinci_manager \
+--device=/dev/devmm_svm \
+--device=/dev/hisi_hdc \
+-v /usr/local/dcmi:/usr/local/dcmi \
+-v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+-v /usr/local/sbin/npu-smi:/usr/local/sbin/npu-smi \
+-v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
+-v /home:/home \
+-v /etc/ascend_install.info:/etc/ascend_install.info \
+quay.io/ascend/triton:3.2.2-cann9.1.0-torch_npu2.7.1.post8-910b-ubuntu24.04-py3.11 \
+/bin/bash
+
+# 镜像已安装运行算子所需的基础组件（比如CANN, Torch-NPU, Triton-Ascend等），可直接运行样例
+docker exec -u root -it triton-ascend_container /bin/bash
+```
+
+### 开发镜像
+
+#### 检查镜像版本
 
 **表1** CANN版本与镜像标签对照表。
 <table style="table-layout: fixed; width: 100%; border-collapse: collapse;">
@@ -113,30 +188,6 @@ pip install -e .
     <th style="width: 20%; border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f5f5f5;">芯片类型</th>
     <th style="width: 20%; border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f5f5f5;">Python版本</th>
     <th style="width: 40%; border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f5f5f5;">镜像标签</th>
-  </tr>
-  <tr style="height: 50px;">
-    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">8.5.0</td>
-    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">A2</td>
-    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">3.10</td>
-    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">8.5.0-910b-ubuntu22.04-py3.10</td>
-  </tr>
-  <tr style="height: 50px;">
-    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">8.5.0</td>
-    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">A3</td>
-    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">3.10</td>
-    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">8.5.0-a3-ubuntu22.04-py3.10</td>
-  </tr>
-  <tr style="height: 50px;">
-    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">8.5.0</td>
-    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">A2</td>
-    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">3.11</td>
-    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">8.5.0-910b-ubuntu22.04-py3.11</td>
-  </tr>
-  <tr style="height: 50px;">
-    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">8.5.0</td>
-    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">A3</td>
-    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">3.11</td>
-    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">8.5.0-a3-ubuntu22.04-py3.11</td>
   </tr>
   <tr style="height: 50px;">
     <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">9.0.0</td>
@@ -174,9 +225,27 @@ pip install -e .
     <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">3.12</td>
     <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">9.0.0-950-ubuntu22.04-py3.12</td>
   </tr>
+  <tr style="height: 50px;">
+    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">9.1.0</td>
+    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">A2</td>
+    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">3.12</td>
+    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">9.1.0-910b-ubuntu22.04-py3.12</td>
+  </tr>
+  <tr style="height: 50px;">
+    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">9.1.0</td>
+    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">A3</td>
+    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">3.12</td>
+    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">9.1.0-a3-ubuntu22.04-py3.12</td>
+  </tr>
+  <tr style="height: 50px;">
+    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">9.1.0</td>
+    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">950</td>
+    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">3.12</td>
+    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">9.1.0-950-ubuntu22.04-py3.12</td>
+  </tr>
 </table>
 
-### 镜像使用
+#### 镜像使用
 
 ```bash
 # 这里以 9.0.0-a3-ubuntu22.04-py3.11 为例
@@ -208,16 +277,16 @@ docker exec -u root -it triton-ascend_container /bin/bash
 
 ## 运行样例
 
-**运行tutorials中向量加法实例验证结果**
+**运行tutorials中向量加法示例验证结果**
 
-向量加法实例：<a href="https://github.com/triton-lang/triton-ascend/blob/main/third_party/ascend/tutorials/01-vector-add.py" style="text-decoration: none; color: #0066cc;">01-vector-add.py </a>
+向量加法示例：<a href="https://github.com/triton-lang/triton-ascend/blob/main/third_party/ascend/tutorials/01-vector-add.py" style="text-decoration: none; color: #0066cc;">01-vector-add.py </a>
 
 ```bash
 # 设置CANN环境变量（以root用户默认安装路径`/usr/local/Ascend`为例）
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 # 拉取triton-ascend源码仓及用例（使用源码安装Triton-Ascend的无需重复拉取）
 git clone https://github.com/triton-lang/triton-ascend.git
-# 运行tutorials实例
+# 运行tutorials示例
 python3 ./third_party/ascend/tutorials/01-vector-add.py
 ```
 
@@ -227,6 +296,50 @@ python3 ./third_party/ascend/tutorials/01-vector-add.py
 tensor([0.8329, 1.0024, 1.3639,  ..., 1.0796, 1.0406, 1.5811], device='npu:0')
 tensor([0.8329, 1.0024, 1.3639,  ..., 1.0796, 1.0406, 1.5811], device='npu:0')
 The maximum difference between torch and triton is 0.0
+```
+
+## 运行Pytest UT
+
+源码仓中提供了单op测试用例，位于`third_party/ascend/unittest/pytest_ut`目录下。执行前需完成Triton-Ascend安装，并设置CANN环境变量。
+
+```bash
+# 设置CANN环境变量（默认安装路径`/usr/local/Ascend`为例）
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+# 安装pytest
+pip install pytest pytest-xdist
+```
+
+**运行单个测试用例**
+
+```bash
+# 以向量加法测试用例为例
+python -m pytest third_party/ascend/unittest/pytest_ut/test_add.py
+```
+
+**运行全部测试用例**
+
+```bash
+# 串行执行全部用例
+python -m pytest third_party/ascend/unittest/pytest_ut
+```
+
+如需加速测试，可通过`-n`指定并行worker数（并行执行需安装pytest-xdist）：
+
+```bash
+python -m pytest -n 8 third_party/ascend/unittest/pytest_ut
+```
+
+如需要打印测试过程详细信息，添加`-sv`参数：
+
+```bash
+python -m pytest -sv -n 8 third_party/ascend/unittest/pytest_ut
+```
+
+执行完成后输出示例如下：
+
+```text
+collected 6 items
+third_party/ascend/unittest/pytest_ut/test_add.py ......
 ```
 
 ## 安装常见问题

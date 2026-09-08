@@ -19,14 +19,11 @@
 # THE SOFTWARE.
 
 from triton.language import math
-from triton.backends.ascend.utils import triton_enable_libdevice_simt
 
 from . import libdevice
 from . import extension
 
 extension.parallel = extension.aux_ops.parallel
-if not triton_enable_libdevice_simt():
-    libdevice.atan2 = extension.math_ops.atan2
 math.tanh = libdevice.tanh
 
 __all__ = ["libdevice", "extension"]

@@ -1,3 +1,18 @@
+# Local main costmodel validation
+
+The active `costmodel` branch tracks `upstream/main`. Keep current upstream compiler
+logic and the ordinary MultiBuffer parameter exposure; preserve the existing model.
+For this task, build and validate locally on macOS with target `Ascend950PR_9579`.
+No NPU execution is required. Capture UB after successful native local PlanMemory
+using the production `runPipeline` entry, including backup-function pass filtering.
+Use current-source tools; never fabricate device binaries or count failed compilation
+as a UB observation. Native build caches may be reused, but copy versioned tools into
+each new results directory and record their hashes and source revisions.
+Keep requested DynamicCV counts separate from actual IR counts and record VF operand
+substitution independently of VFMerge level. A numerical audit is not a validated profile.
+The main model API currently uses `intra_cache_num`; the current backend's equivalent
+is `buf_slot_num_of_veccore`. The validation adapter bridges these names.
+
 # Project memory: server-side experiments
 
 The server checkout is the primary working tree. Source normally updates with

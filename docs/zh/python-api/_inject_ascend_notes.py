@@ -159,7 +159,32 @@ def autodoc_process_docstring(app, what, name, obj, options, lines):
     lines.extend(note_lines)
 
 
+def _patch_module_docstrings():
+    """Patch ``__doc__`` on libdevice functions from ``replace_docstring`` entries.
+
+    The autodoc-process-docstring event above only fires when autodoc renders
+    a stub page — not when autosummary builds the summary table on the
+    overview page.  Autosummary extracts summaries from the object's real
+    ``__doc__``, and most libdevice functions have no source docstring, so
+    their table summaries would be empty.  Patch the module in place so the
+    guide-derived ``replace_docstring`` text is used everywhere.
+    """
+    import sys as _sys
+
+    _mod = _sys.modules.get("triton.language.extra.cann.libdevice")
+    if _mod is None:
+        return
+    for _name, _data in ASCEND_CONSTRAINTS.items():
+        _lines = _data.get("replace_docstring")
+        if not _lines or not _name.startswith("triton.language.extra.cann.libdevice."):
+            continue
+        _fn = getattr(_mod, _name.rsplit(".", 1)[-1], None)
+        if _fn is not None:
+            _fn.__doc__ = "\n".join(_lines)
+
+
 def setup(app):
     """Register the extension with Sphinx."""
+    _patch_module_docstrings()
     app.connect("autodoc-process-docstring", autodoc_process_docstring)
     return {"version": "0.1", "parallel_read_safe": True, "parallel_write_safe": True}

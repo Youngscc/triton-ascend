@@ -22,7 +22,7 @@
 
 static constexpr const char *DEBUG_TYPE = "AddMultiBufferOuterScope";
 #define LDBG(...)                                                              \
-  LLVM_DEBUG(llvm::dbgs() << " [" << DEBUG_TYPE << "] " << __VA_ARGS__)
+  LLVM_DEBUG(llvm::dbgs() << " [" << DEBUG_TYPE << "] " << __VA_ARGS__ << "\n")
 
 using namespace mlir;
 using namespace triton;
@@ -33,7 +33,9 @@ namespace triton {
 
 // Maximum number of flag allocation attempts per transfer group
 static constexpr int kMaxFlagAttempts = 16;
-static constexpr int kMaxTotalFlags = 15;
+// Flag ID 15 is reserved for pipe synchronization (e.g. PIPE_S) and must not
+// be allocated to cross-core transfers. Usable IDs are 0..MAX_FLAG_ID (14).
+static constexpr int kReservedPipeFlagId = 15;
 
 // --- Attribute helpers ---
 
@@ -76,28 +78,13 @@ static bool isInVectorScope(Operation *op) {
 
 // --- main_loop attribute helpers ---
 
-/// Check if forOp (or its terminator) has ssbuffer.main_loop attribute
-static bool forOpHasMainLoopAttr(scf::ForOp forOp) {
-  if (forOp->hasAttr("ssbuffer.main_loop")) {
-    return true;
-  }
-  Operation *terminator = forOp.getBody()->getTerminator();
-  return terminator && terminator->hasAttr("ssbuffer.main_loop");
-}
-
-/// Check if a sync op's direct parent has ssbuffer.main_loop attribute
+/// Check if a sync op's direct parent is a main_loop op (forOp / whileOp
+/// carrying the ssbuffer.main_loop attribute)
 static bool parentOpHasMainLoopAttr(Operation *syncOp) {
   if (!syncOp) {
     return false;
   }
-  Operation *parent = syncOp->getParentOp();
-  if (!parent) {
-    return false;
-  }
-  if (auto forOp = dyn_cast<scf::ForOp>(parent)) {
-    return forOpHasMainLoopAttr(forOp);
-  }
-  return false;
+  return CVPipeline::isMainLoopOp(syncOp->getParentOp());
 }
 
 // --- Operation search helpers ---
@@ -180,53 +167,99 @@ collectOpsByTransferId(ModuleOp module,
       opsByTid[tid].push_back(op);
     }
   });
-  LDBG("Collected " << opsByTid.size() << " transfer groups");
+  LDBG("Collected " << opsByTid.size() << " transfer groups.");
 
   for (auto &p : opsByTid) {
-    LDBG("  tid=" << p.first << " has " << p.second.size() << " ops");
+    LDBG("  tid=" << p.first << " has " << p.second.size() << " ops.");
     DenseMap<int, int> blockIdCount;
     for (auto *op : p.second) {
       int bid = getBlockId(op);
       blockIdCount[bid]++;
     }
     for (auto &bp : blockIdCount) {
-      LDBG("    block_id=" << bp.first << ": " << bp.second << " ops");
+      LDBG("    block_id=" << bp.first << ": " << bp.second << " ops.");
     }
   }
   return 0;
 }
 
-/// Collect alloc/mark pairs (independent of block_id and main_loop)
+/// Collect alloc/mark pairs from transfer ops in the group.
+/// Identifies the correct cross-core buffer (ub/cbuf) used by each transfer op,
+/// ignoring local buffers (cc on CUBE side) that are not part of the data
+/// transfer.
 static int collectBufferAllocs(const SmallVector<Operation *> &ops,
-                               BufferAllocInfo &info) {
-  SmallVector<Operation *> allocs;
-  SmallVector<Operation *> marks;
+                               TransferGroupInfo &info) {
+  // Helper: find the annotation.mark for a given alloc op
+  auto findMarkForAlloc = [](Operation *allocOp) -> Operation * {
+    Value allocResult = allocOp->getResult(0);
+    for (auto *user : allocResult.getUsers()) {
+      if (isa<annotation::MarkOp>(user))
+        return user;
+    }
+    return nullptr;
+  };
 
-  for (Operation *op : ops) {
-    if (isa<memref::AllocOp>(op)) {
-      allocs.push_back(op);
-    } else if (isa<annotation::MarkOp>(op)) {
-      marks.push_back(op);
+  // Identify sender's cross-core buffer from transferOp's outs operand
+  if (info.senderChain.transferOp) {
+    Operation *transferOp = info.senderChain.transferOp;
+    // fixpipe / hir.copy: cross-core buffer is the last operand (outs)
+    Value crossCoreBuf =
+        transferOp->getOperand(transferOp->getNumOperands() - 1);
+    if (auto *defOp = crossCoreBuf.getDefiningOp()) {
+      if (isa<memref::AllocOp>(defOp)) {
+        info.senderBuf.allocOp = defOp;
+        info.senderBuf.markOp = findMarkForAlloc(defOp);
+        LDBG("Sender cross-core buffer: alloc from transferOp outs.");
+      }
     }
   }
 
-  LDBG("collectBufferAllocs: allocs=" << allocs.size()
-                                      << ", marks=" << marks.size());
-
-  // Pair in order: sender first, receiver second
-  if (!allocs.empty()) {
-    info.sender.allocOp = allocs[0];
-  }
-  if (allocs.size() > 1) {
-    info.receiver.allocOp = allocs[1];
-  }
-  if (!marks.empty()) {
-    info.sender.markOp = marks[0];
-  }
-  if (marks.size() > 1) {
-    info.receiver.markOp = marks[1];
+  // Identify receiver's cross-core buffer from transferOp's input operand
+  if (info.receiverChain.transferOp) {
+    Operation *transferOp = info.receiverChain.transferOp;
+    // memref.memory_space_cast / hivm.convert_layout: cross-core buffer is
+    // the first operand
+    Value crossCoreBuf = transferOp->getOperand(0);
+    if (auto *defOp = crossCoreBuf.getDefiningOp()) {
+      if (isa<memref::AllocOp>(defOp)) {
+        info.receiverBuf.allocOp = defOp;
+        info.receiverBuf.markOp = findMarkForAlloc(defOp);
+        LDBG("Receiver cross-core buffer: alloc from transferOp input.");
+      }
+    }
   }
 
+  // Collect alloc/mark for the OTHER side if not yet found.
+  // Some transfer ops (e.g. fixpipe) have both a local input (cc) and a
+  // cross-core output (ub). The receiver side's buffer is the cross-core one.
+  // Walk all allocs in the group to find any remaining unassigned buffer.
+  SmallVector<Operation *> allocs;
+  for (Operation *op : ops) {
+    if (isa<memref::AllocOp>(op))
+      allocs.push_back(op);
+  }
+
+  // Fill missing side from remaining allocs (prefer allocs with marks)
+  for (auto *allocOp : allocs) {
+    if (allocOp == info.senderBuf.allocOp ||
+        allocOp == info.receiverBuf.allocOp)
+      continue;
+    Operation *mark = findMarkForAlloc(allocOp);
+    if (!info.senderBuf.allocOp) {
+      info.senderBuf.allocOp = allocOp;
+      info.senderBuf.markOp = mark;
+    } else if (!info.receiverBuf.allocOp) {
+      info.receiverBuf.allocOp = allocOp;
+      info.receiverBuf.markOp = mark;
+    }
+  }
+
+  LDBG("Sender buffer: " << (info.senderBuf.allocOp ? "alloc" : "none") << " + "
+                         << (info.senderBuf.markOp ? "mark" : "none") << ".");
+  LDBG("Receiver buffer: " << (info.receiverBuf.allocOp ? "alloc" : "none")
+                           << " + "
+                           << (info.receiverBuf.markOp ? "mark" : "none")
+                           << ".");
   return 0;
 }
 
@@ -246,7 +279,7 @@ static int collectLoadStoreOpsByTransferId(
     }
   });
   LDBG("Collected load/store ops for " << loadStoreByTid.size()
-                                       << " transfer groups");
+                                       << " transfer groups.");
   return 0;
 }
 
@@ -268,7 +301,7 @@ static int tagLoadStoreOpsWithCrossDeps(
               mlir::CVPipeline::kCrossCoreDeps,
               builder.getArrayAttr({builder.getI32IntegerAttr(tid),
                                     builder.getI32IntegerAttr(1)}));
-          LDBG("Tagged ptr-defining-op with crossDeps={tid=" << tid << ", 1}");
+          LDBG("Tagged ptr-defining-op with crossDeps={tid=" << tid << ", 1}.");
         }
       } else if (auto loadOp = dyn_cast<mlir::LLVM::LoadOp>(op)) {
         // consumer: crossDeps = {tid, 0}
@@ -276,7 +309,8 @@ static int tagLoadStoreOpsWithCrossDeps(
         op->setAttr(mlir::CVPipeline::kCrossCoreDeps,
                     builder.getArrayAttr({builder.getI32IntegerAttr(tid),
                                           builder.getI32IntegerAttr(0)}));
-        LDBG("Tagged llvm.load volatile with crossDeps={tid=" << tid << ", 0}");
+        LDBG("Tagged llvm.load volatile with crossDeps={tid=" << tid
+                                                              << ", 0}.");
       }
     }
   }
@@ -297,7 +331,7 @@ static int collectExtraSync(const SmallVector<Operation *> &ops,
     bool hasMainLoop = parentOpHasMainLoopAttr(op);
     LDBG("sync op: flag=" << getFlagFromSyncOp(op)
                           << ", block_id=" << getBlockId(op)
-                          << ", parentHasMainLoop=" << hasMainLoop);
+                          << ", parentHasMainLoop=" << hasMainLoop << ".");
 
     if (!hasMainLoop) {
       if (isa<hivm::SyncBlockSetOp>(op)) {
@@ -319,10 +353,10 @@ static int collectExtraSync(const SmallVector<Operation *> &ops,
       }
       info.setOp = setOp;
       info.waitOp = waitOp;
-      LDBG("Extra sync pair: set(flag=" << originalFlag
-                                        << ", block_id=" << getBlockId(setOp)
-                                        << "), wait(flag=" << originalFlag
-                                        << ", block_id=" << getBlockId(waitOp));
+      LDBG("Extra sync pair: set(flag="
+           << originalFlag << ", block_id=" << getBlockId(setOp)
+           << "), wait(flag=" << originalFlag
+           << ", block_id=" << getBlockId(waitOp) << ".");
       return 0;
     }
   }
@@ -356,14 +390,14 @@ static int collectTransferChains(const SmallVector<Operation *> &ops,
           findSyncOpWithFlag(block, op, originalFlag, false, true);
       info.sender.setOp =
           findSyncOpWithFlag(block, op, originalFlag, true, false);
-      LDBG("Sender chain (CUBE): fixpipe, flag=" << originalFlag);
+      LDBG("Sender chain (CUBE): fixpipe, flag=" << originalFlag << ".");
     } else if (isa<hivm::CopyOp>(op)) {
       info.sender.transferOp = op;
       info.sender.waitOp =
           findSyncOpWithFlag(block, op, originalFlag, false, true);
       info.sender.setOp =
           findSyncOpWithFlag(block, op, originalFlag, true, false);
-      LDBG("Sender chain (VECTOR): hir.copy, flag=" << originalFlag);
+      LDBG("Sender chain (VECTOR): hir.copy, flag=" << originalFlag << ".");
     } else if (isa<memref::MemorySpaceCastOp>(op) && isInVectorScope(op)) {
       info.receiver.transferOp = op;
       info.receiver.waitOp =
@@ -371,7 +405,8 @@ static int collectTransferChains(const SmallVector<Operation *> &ops,
       info.receiver.setOp =
           findSyncOpWithFlag(block, op, originalFlag, true, false);
       info.receiver.toTensorOp = findToTensorAfter(block, op);
-      LDBG("Receiver chain (VECTOR): memory_space_cast, flag=" << originalFlag);
+      LDBG("Receiver chain (VECTOR): memory_space_cast, flag=" << originalFlag
+                                                               << ".");
     } else if (isa<hivm::ConvertLayoutOp>(op)) {
       info.receiver.transferOp = op;
       info.receiver.waitOp =
@@ -379,7 +414,8 @@ static int collectTransferChains(const SmallVector<Operation *> &ops,
       info.receiver.setOp =
           findSyncOpWithFlag(block, op, originalFlag, true, false);
       info.receiver.toTensorOp = findToTensorAfter(block, op);
-      LDBG("Receiver chain (CUBE): convert_layout, flag=" << originalFlag);
+      LDBG("Receiver chain (CUBE): convert_layout, flag=" << originalFlag
+                                                          << ".");
     }
   }
 
@@ -392,22 +428,9 @@ static int buildTransferGroupData(int tid, const SmallVector<Operation *> &ops,
                                   TransferGroupInfo &info) {
   info.tid = tid;
 
-  LDBG("Building group tid=" << tid << ", ops=" << ops.size());
+  LDBG("Building group tid=" << tid << ", ops=" << ops.size() << ".");
 
-  // 1. Collect buffer alloc/mark pairs
-  BufferAllocInfo bufInfo;
-  if (collectBufferAllocs(ops, bufInfo)) {
-    return -1;
-  }
-  info.senderBuf = bufInfo.sender;
-  info.receiverBuf = bufInfo.receiver;
-  LDBG("Sender buffer: " << (info.senderBuf.allocOp ? "alloc" : "none") << " + "
-                         << (info.senderBuf.markOp ? "mark" : "none"));
-  LDBG("Receiver buffer: " << (info.receiverBuf.allocOp ? "alloc" : "none")
-                           << " + "
-                           << (info.receiverBuf.markOp ? "mark" : "none"));
-
-  // 2. Determine original flag
+  // 1. Determine original flag
   for (Operation *op : ops) {
     if ((isa<hivm::SyncBlockSetOp>(op) || isa<hivm::SyncBlockWaitOp>(op))) {
       int f = getFlagFromSyncOp(op);
@@ -418,7 +441,7 @@ static int buildTransferGroupData(int tid, const SmallVector<Operation *> &ops,
     }
   }
 
-  // 3. Collect extra sync (parent has no main_loop)
+  // 2. Collect extra sync (parent has no main_loop)
   ExtraSyncInfo extraInfo;
   if (collectExtraSync(ops, info.originalFlag, extraInfo)) {
     return -1;
@@ -428,12 +451,12 @@ static int buildTransferGroupData(int tid, const SmallVector<Operation *> &ops,
   if (extraInfo.setOp && extraInfo.waitOp) {
     LDBG("Extra sync: set(block_id=" << getBlockId(extraInfo.setOp)
                                      << "), wait(block_id="
-                                     << getBlockId(extraInfo.waitOp));
+                                     << getBlockId(extraInfo.waitOp) << ".");
   } else {
-    LDBG("Extra sync: not found");
+    LDBG("Extra sync: not found.");
   }
 
-  // 4. Collect transfer chain (parent has main_loop)
+  // 3. Collect transfer chain (parent has main_loop)
   TransferChainInfo chainInfo;
   if (collectTransferChains(ops, info.originalFlag, chainInfo)) {
     return -1;
@@ -441,7 +464,7 @@ static int buildTransferGroupData(int tid, const SmallVector<Operation *> &ops,
   info.senderChain = chainInfo.sender;
   info.receiverChain = chainInfo.receiver;
 
-  // 5. Determine direction
+  // 4. Determine direction
   if (info.senderChain.transferOp) {
     if (isa<hivm::FixpipeOp>(info.senderChain.transferOp)) {
       info.isCtoV = true;
@@ -450,10 +473,12 @@ static int buildTransferGroupData(int tid, const SmallVector<Operation *> &ops,
     }
   }
 
-  // For C→V transfer, sender uses receiver's buffer (the second alloc)
-  if (info.isCtoV && info.senderBuf.allocOp && info.receiverBuf.allocOp) {
-    LDBG("C→V transfer: swapping sender/receiver buffers");
-    std::swap(info.senderBuf, info.receiverBuf);
+  // 5. Collect buffer alloc/mark pairs from transfer ops
+  //    Must run after transfer chain collection to identify the correct
+  //    cross-core buffer (ub/cbuf) from each transfer op's operands,
+  //    ignoring local buffers (e.g. cc on CUBE side).
+  if (collectBufferAllocs(ops, info)) {
+    return -1;
   }
 
   // 6. Acquire output flag
@@ -471,7 +496,7 @@ static int buildTransferGroupData(int tid, const SmallVector<Operation *> &ops,
   if (info.senderChain.transferOp || info.receiverChain.transferOp) {
     LDBG("Direction: " << (info.isCtoV ? "C→V" : "V→C")
                        << ", flag=" << info.originalFlag
-                       << ", outputFlag=" << info.outputFlag);
+                       << ", outputFlag=" << info.outputFlag << ".");
   }
 
   return 0;
@@ -501,28 +526,13 @@ static int collectTransferGroupData(
     if (it != outputFlagByKey.end()) {
       g.outputFlag = it->second;
       LDBG("Group tid=" << g.tid << " reuses outputFlag=" << g.outputFlag
-                        << " (shared originalFlag=" << g.originalFlag << ")");
+                        << " (shared originalFlag=" << g.originalFlag << ").");
     } else {
       outputFlagByKey[key] = g.outputFlag;
       LDBG("Group tid=" << g.tid
                         << " gets new shared outputFlag=" << g.outputFlag
-                        << " for originalFlag=" << g.originalFlag);
+                        << " for originalFlag=" << g.originalFlag << ".");
     }
-  }
-
-  LDBG("=== Step 1 Summary ===");
-  LDBG("Transfer groups: " << groups.size());
-  for (auto &p : groups) {
-    LDBG("Group tid=" << p.first
-                      << ", dir=" << (p.second.isCtoV ? "C→V" : "V→C")
-                      << ", flag=" << p.second.originalFlag
-                      << ", outputFlag=" << p.second.outputFlag);
-    if (p.second.senderChain.transferOp)
-      LDBG("  Sender: "
-           << p.second.senderChain.transferOp->getName().getStringRef());
-    if (p.second.receiverChain.transferOp)
-      LDBG("  Receiver: "
-           << p.second.receiverChain.transferOp->getName().getStringRef());
   }
 
   return 0;
@@ -588,7 +598,7 @@ static int createOutputBufferPair(Operation *inputAllocOp, int tid, int tcbId,
       hivm::HIVMTightlyCoupledBufferAttr::get(builder.getContext(), tcbId));
   LDBG("Created " << (isSender ? "sender" : "receiver")
                   << " output buffer: block_id=" << outputBlockId
-                  << ", tcb_id=" << tcbId);
+                  << ", tcb_id=" << tcbId << ".");
   return 0;
 }
 
@@ -646,7 +656,7 @@ static int createOutputBufferForGroup(TransferGroupInfo &g,
     createOutputSyncSetOp(g.extraSyncSetOp, g.outputFlag, g.tid, builder);
     LDBG("Created output sync set with flag=" << g.outputFlag << " at block_id="
                                               << getBlockId(g.extraSyncSetOp)
-                                              << " (sender scope)");
+                                              << " (sender scope).");
   }
 
   // Insert output sync wait at extra_sync position
@@ -656,7 +666,7 @@ static int createOutputBufferForGroup(TransferGroupInfo &g,
     createOutputSyncWaitOp(outputWaitInsertOp, g.outputFlag, g.tid, builder);
     LDBG("Created output sync wait with flag="
          << g.outputFlag << " at block_id=" << getBlockId(outputWaitInsertOp)
-         << " (receiver scope)");
+         << " (receiver scope).");
   }
   return 0;
 }
@@ -673,32 +683,32 @@ static int createOutputBuffers(DenseMap<int, TransferGroupInfo> &groups,
             "hivm.tightly_coupled_buffer")) {
       auto id = tcbAttr.getId();
       if (id.has_value()) {
-        LDBG("Found mark op with tcb_id=" << id.value());
+        LDBG("Found mark op with tcb_id=" << id.value() << ".");
         usedTcbIds.insert(id.value());
       }
     }
   });
 
-  LDBG("=== Step 2: Creating output buffers ===");
+  LDBG("=== Step 2: Creating output buffers ===.");
   {
     std::string ids;
     llvm::raw_string_ostream os(ids);
     for (int id : usedTcbIds)
       os << id << " ";
-    LDBG("Collected existing tcb_ids: " << ids);
+    LDBG("Collected existing tcb_ids: " << ids << ".");
   }
 
   int maxExistingTcbId = usedTcbIds.empty() ? 0 : *usedTcbIds.rbegin();
-  LDBG("Max existing tcb_id: " << maxExistingTcbId);
+  LDBG("Max existing tcb_id: " << maxExistingTcbId << ".");
 
   int nextTcbId = maxExistingTcbId + 1;
 
   for (auto &p : groups) {
     TransferGroupInfo &g = p.second;
-    LDBG("Group tid=" << g.tid << " (" << (g.isCtoV ? "C→V" : "V→C") << ")");
+    LDBG("Group tid=" << g.tid << " (" << (g.isCtoV ? "C→V" : "V→C") << ").");
 
     g.tcbId = allocateNewTcbId(nextTcbId, usedTcbIds);
-    LDBG("Allocated tcb_id=" << g.tcbId);
+    LDBG("Allocated tcb_id=" << g.tcbId << ".");
 
     nextTcbId = g.tcbId + 1;
 
@@ -739,6 +749,87 @@ static int setSsbufferTags(Operation *op, OpBuilder &builder, int blockId,
   op->setAttr(mlir::CVPipeline::kBlockId, builder.getI32IntegerAttr(blockId));
   op->setAttr(mlir::CVPipeline::kTransferId, builder.getI32IntegerAttr(tid));
   return 0;
+}
+
+/// Ensure a WhileOp has an i32 iteration counter loop-carried variable.
+/// Returns the counter Value; polling condition is (counter % 2) == 0.
+/// Reuses an existing counter (e.g. one injected by InnerScope, detected via
+/// ssbuffer.iterCounter); injects a new one only when absent.
+static Value ensureWhileOpHasCounter(scf::WhileOp whileOp) {
+  if (whileOp->hasAttr(CVPipeline::kIterCounter)) {
+    Block &after = whileOp.getAfter().front();
+    return after.getArgument(after.getNumArguments() - 1);
+  }
+
+  OpBuilder builder(whileOp);
+  Location loc = whileOp.getLoc();
+  auto oldWhile = whileOp;
+  Type i32Type = builder.getI32Type();
+
+  // Init counter = 0
+  Value zero = builder.create<arith::ConstantIntOp>(loc, 0, 32);
+
+  SmallVector<Value> newInits(oldWhile.getInits());
+  newInits.push_back(zero);
+  SmallVector<Type> newResultTypes(oldWhile.getResultTypes());
+  newResultTypes.push_back(i32Type);
+
+  Value counterIterArg;
+
+  // Rebuild via the Builder callback API (matching InnerScope's
+  // setupWhileIterArgCounter)
+  auto newWhile = builder.create<scf::WhileOp>(
+      loc, newResultTypes, newInits,
+      [&](OpBuilder &bb, Location bl, ValueRange iterArgs) {
+        Block *oldBefore = oldWhile.getBeforeBody();
+        unsigned n = oldBefore->getNumArguments();
+        IRMapping map;
+        for (unsigned i = 0; i < n; ++i)
+          map.map(oldBefore->getArgument(i), iterArgs[i]);
+
+        for (Operation &op : oldBefore->without_terminator())
+          bb.clone(op, map);
+
+        auto oldCond = cast<scf::ConditionOp>(oldBefore->getTerminator());
+        SmallVector<Value> condArgs;
+        for (Value a : oldCond.getArgs())
+          condArgs.push_back(map.lookupOrDefault(a));
+        condArgs.push_back(iterArgs[n]); // counter
+        bb.create<scf::ConditionOp>(
+            bl, map.lookupOrDefault(oldCond.getCondition()), condArgs);
+      },
+      [&](OpBuilder &ab, Location al, ValueRange iterArgs) {
+        Block *oldAfter = oldWhile.getAfterBody();
+        unsigned n = oldAfter->getNumArguments();
+        counterIterArg = iterArgs[n];
+        IRMapping map;
+        for (unsigned i = 0; i < n; ++i)
+          map.map(oldAfter->getArgument(i), iterArgs[i]);
+
+        for (Operation &op : oldAfter->without_terminator())
+          ab.clone(op, map);
+
+        auto oldYield = cast<scf::YieldOp>(oldAfter->getTerminator());
+        Value one = ab.create<arith::ConstantIntOp>(al, 1, 32);
+        Value nextCounter = ab.create<arith::AddIOp>(al, counterIterArg, one);
+        SmallVector<Value> yOps;
+        for (Value v : oldYield.getOperands())
+          yOps.push_back(map.lookupOrDefault(v));
+        yOps.push_back(nextCounter);
+        ab.create<scf::YieldOp>(al, yOps);
+      });
+
+  // Copy attrs (must include ssbuffer.main_loop) and mark as processed
+  for (auto attr : oldWhile->getAttrs())
+    newWhile->setAttr(attr.getName(), attr.getValue());
+  newWhile->setAttr(CVPipeline::kIterCounter, builder.getUnitAttr());
+
+  // Replace results (exclude counter result)
+  for (unsigned i = 0, e = oldWhile.getNumResults(); i < e; ++i)
+    oldWhile.getResult(i).replaceAllUsesWith(newWhile.getResult(i));
+  oldWhile.erase();
+
+  return counterIterArg;
 }
 
 /// Create polling condition: (iter / step) % 2 == 0 (true=input, false=output)
@@ -1069,7 +1160,7 @@ static int processTransferChain(TransferOpChain &chain, Value cond,
     // (transferOp → memspace_cast → to_tensor) so the scf.if returns tensor.
     if (!isProducer && chain.toTensorOp) {
       LDBG("transferOp: " << chain.transferOp->getName()
-                          << " (receiver, wrapping to_tensor)");
+                          << " (receiver, wrapping to_tensor).");
       chain.transferOp = wrapReceiverChainWithScfIf(
           chain.transferOp, chain.toTensorOp, cond, inputBuffer, outputBuffer,
           bid, tid, builder);
@@ -1079,7 +1170,7 @@ static int processTransferChain(TransferOpChain &chain, Value cond,
                              !chain.transferOp->getResult(0).getUses().empty();
 
       LDBG("transferOp: " << chain.transferOp->getName()
-                          << ", hasExternalUses=" << hasExternalUses);
+                          << ", hasExternalUses=" << hasExternalUses << ".");
 
       chain.transferOp =
           hasExternalUses
@@ -1108,24 +1199,53 @@ static int processTransferChain(TransferOpChain &chain, Value cond,
   return 0;
 }
 
+/// Create polling condition and builder for a loop op (ForOp or WhileOp).
+/// Returns the condition Value; `builderOut` is set to the insertion point
+/// for subsequent wrapping ops (before the loop terminator).
+static Value prepareLoopPolling(Operation *loopOp, Operation *waitOp,
+                                OpBuilder &builderOut) {
+  int bid = getBlockId(waitOp);
+  int tid = getTransferId(waitOp);
+
+  if (auto forOp = dyn_cast<scf::ForOp>(loopOp)) {
+    OpBuilder condBuilder(forOp.getBody(), Block::iterator(waitOp));
+    Value cond = createPollingCondition(forOp, condBuilder, bid, tid);
+    builderOut.setInsertionPoint(forOp.getBody()->getTerminator());
+    return cond;
+  }
+
+  if (auto whileOp = dyn_cast<scf::WhileOp>(loopOp)) {
+    // Counter was already injected in preprocessing. Polling condition:
+    // (counter % 2) == 0
+    Block &after = whileOp.getAfter().front();
+    Value counter = after.getArgument(after.getNumArguments() - 1);
+    builderOut.setInsertionPoint(after.getTerminator());
+    OpBuilder condBuilder(builderOut);
+    Value c2 =
+        condBuilder.create<arith::ConstantIntOp>(whileOp.getLoc(), 2, 32);
+    Value rem =
+        condBuilder.create<arith::RemSIOp>(whileOp.getLoc(), counter, c2);
+    Value c0 =
+        condBuilder.create<arith::ConstantIntOp>(whileOp.getLoc(), 0, 32);
+    return condBuilder.create<arith::CmpIOp>(whileOp.getLoc(),
+                                             arith::CmpIPredicate::eq, rem, c0);
+  }
+
+  llvm_unreachable("unexpected loop op type");
+}
+
 /// Add polling control flow for all transfer groups
 static int addPollingControlFlow(DenseMap<int, TransferGroupInfo> &groups) {
   for (auto &p : groups) {
     TransferGroupInfo &g = p.second;
 
-    // Get sender's scf.for
+    // Get sender's loop op (ForOp or WhileOp)
     Operation *senderWaitParent = g.senderChain.waitOp->getParentOp();
-    scf::ForOp senderForOp = cast<scf::ForOp>(senderWaitParent);
 
-    int senderBid = getBlockId(g.senderChain.waitOp);
-    int senderTid = getTransferId(g.senderChain.waitOp);
-
-    // Insert polling condition at sender waitOp's position
-    OpBuilder senderCondBuilderForInsert(senderForOp.getBody(),
-                                         Block::iterator(g.senderChain.waitOp));
-    Value senderCond = createPollingCondition(
-        senderForOp, senderCondBuilderForInsert, senderBid, senderTid);
-    OpBuilder senderBuilder(senderForOp.getBody()->getTerminator());
+    // Prepare polling condition and builder for sender loop
+    OpBuilder senderBuilder(senderWaitParent->getContext());
+    Value senderCond = prepareLoopPolling(senderWaitParent,
+                                          g.senderChain.waitOp, senderBuilder);
 
     // Process sender chain (isProducer=true)
     if (processTransferChain(g.senderChain, senderCond, g.senderInputBuffer,
@@ -1134,28 +1254,22 @@ static int addPollingControlFlow(DenseMap<int, TransferGroupInfo> &groups) {
       return -1;
     }
 
-    // Process receiver chain (may use different scf.for) (isProducer=false)
+    // Process receiver chain (may use different loop op) (isProducer=false)
     if (g.receiverChain.waitOp) {
       Operation *receiverWaitParent = g.receiverChain.waitOp->getParentOp();
 
       if (receiverWaitParent == senderWaitParent) {
-        // Use the same cond
+        // Use the same cond and builder
         if (processTransferChain(g.receiverChain, senderCond,
                                  g.receiverInputBuffer, g.receiverOutputBuffer,
                                  g.outputFlag, false, senderBuilder) != 0) {
           return -1;
         }
       } else {
-        // Receiver uses a different scf.for, create new cond
-        scf::ForOp receiverForOp = cast<scf::ForOp>(receiverWaitParent);
-        int receiverBid = getBlockId(g.receiverChain.waitOp);
-        int receiverTid = getTransferId(g.receiverChain.waitOp);
-        OpBuilder receiverCondBuilderForInsert(
-            receiverForOp.getBody(), Block::iterator(g.receiverChain.waitOp));
-        Value receiverCond =
-            createPollingCondition(receiverForOp, receiverCondBuilderForInsert,
-                                   receiverBid, receiverTid);
-        OpBuilder receiverBuilder(receiverForOp.getBody()->getTerminator());
+        // Receiver uses a different loop op, prepare new cond and builder
+        OpBuilder receiverBuilder(receiverWaitParent->getContext());
+        Value receiverCond = prepareLoopPolling(
+            receiverWaitParent, g.receiverChain.waitOp, receiverBuilder);
         if (processTransferChain(g.receiverChain, receiverCond,
                                  g.receiverInputBuffer, g.receiverOutputBuffer,
                                  g.outputFlag, false, receiverBuilder) != 0) {
@@ -1165,6 +1279,37 @@ static int addPollingControlFlow(DenseMap<int, TransferGroupInfo> &groups) {
     }
   }
   return 0;
+}
+
+// ============================================================================
+// Preprocessing: inject iteration counter into WhileOps with main_loop
+// ============================================================================
+
+/// Inject an i32 iteration counter loop-carried variable into every WhileOp
+/// that has main_loop and contains transfer_id ops. Must run BEFORE Step 1 so
+/// subsequent data collection sees the already-modified IR.
+static void preInjectWhileOpToggles(ModuleOp module) {
+  SmallVector<scf::WhileOp> whileOps;
+  module.walk([&](scf::WhileOp whileOp) {
+    if (!CVPipeline::isMainLoopOp(whileOp))
+      return;
+    bool hasTransferOps = false;
+    whileOp.walk([&](Operation *op) {
+      if (op->hasAttr(mlir::CVPipeline::kTransferId)) {
+        hasTransferOps = true;
+        return WalkResult::interrupt();
+      }
+      return WalkResult::advance();
+    });
+    if (hasTransferOps)
+      whileOps.push_back(whileOp);
+  });
+
+  for (auto whileOp : whileOps)
+    ensureWhileOpHasCounter(whileOp);
+
+  LDBG("Preprocessed " << whileOps.size()
+                       << " WhileOps with toggle injection.");
 }
 
 // ============================================================================
@@ -1179,39 +1324,41 @@ void AddMultiBufferOuterScopePass::runOnOperation() {
   }
 
   LDBG("============================================================");
-  LDBG("[AddMultiBufferOuterScope] ENTER");
+  LDBG("Enter AddMultiBufferOuterScope pass.");
   LDBG("============================================================");
 
+  // Determine buffer mode early; only inject toggle for double-buffer
+  int interCoreBufNum = BufferCountManager(module).getBufferCountByType(
+      BufferCountManager::DepType::InterCore);
+  bool isDoubleBuf = (interCoreBufNum > 1);
+  LDBG("[BufferCount] interCoreBufNum=" << interCoreBufNum
+                                        << " doubleBuf=" << isDoubleBuf << ".");
+
+  // Preprocessing: inject iteration counter into WhileOps before data
+  // collection (only needed for double-buffer polling)
+  if (isDoubleBuf) {
+    preInjectWhileOpToggles(module);
+  }
+
   // Step 1: Collect transfer group information
-  LDBG("[Step 1/3] Start: transfer group collection");
+  LDBG("[Step 1/3] Start: transfer group collection.");
   FlagIdManager flagIdMgr(module);
   DenseMap<int, SmallVector<Operation *>> opsByTid;
   collectOpsByTransferId(module, opsByTid);
   DenseMap<int, TransferGroupInfo> groups;
   if (collectTransferGroupData(module, opsByTid, flagIdMgr, groups)) {
-    LDBG("[Step 1/3] FAILED: no valid transfer groups found");
+    LDBG("FALLBACK: Step 1/3 failed, no valid transfer groups found, rc="
+         << CVPipeline::ERRCODE_FAILED << ".");
     CVPipeline::setFallbackAttr(module, CVPipeline::ERRCODE_FAILED);
     return;
   }
-  LDBG("[Step 1/3] Done: " << groups.size() << " transfer groups");
+  LDBG("[Step 1/3] Done: " << groups.size() << " transfer groups.");
 
-  int interCoreBufNum = BufferCountManager(module).getBufferCountByType(
-      BufferCountManager::DepType::InterCore);
-  bool isDoubleBuf = (interCoreBufNum > 1);
-  LDBG("[BufferCount] interCoreBufNum=" << interCoreBufNum
-                                        << " doubleBuf=" << isDoubleBuf);
-  if (isDoubleBuf) {
-    // Tag llvm.load/store volatile ops with crossDeps
-    DenseMap<int, SmallVector<Operation *>> loadStoreByTid;
-    collectLoadStoreOpsByTransferId(module, loadStoreByTid);
-    tagLoadStoreOpsWithCrossDeps(loadStoreByTid);
-  }
-
-  // Check flag ID budget: hardware supports 16 flags (0-15).
-  // Each cross-core double-buffer group needs 1 additional output flag
-  // (in the worst case, ignoring output flag reuse). Module flags that
-  // are unrelated to fixpipe/copy multi-buffer must not trigger a
-  // downgrade, so we compare (maxFlagId + groupCount) against 15.
+  // Flag ID budget:
+  // 1. Usable ids 0..MAX_FLAG_ID (14); kReservedPipeFlagId (15) is reserved.
+  // 2. Final max id = largest output flag acquired in Step 1.
+  // 3. Exceed budget -> keep single-buffer mode.
+  // 4. Input flag > kReservedPipeFlagId -> fallback rc=2.
   std::set<int> usedFlags;
   module.walk([&](Operation *op) {
     if (isa<hivm::SyncBlockSetOp>(op) || isa<hivm::SyncBlockWaitOp>(op)) {
@@ -1220,58 +1367,70 @@ void AddMultiBufferOuterScopePass::runOnOperation() {
         usedFlags.insert(f);
     }
   });
-  int flagCount = static_cast<int>(usedFlags.size());
-  LDBG("[FlagBudget] used=" << flagCount << " (max=" << (kMaxTotalFlags + 1)
-                            << ")");
-  if (flagCount > kMaxTotalFlags) {
-    LDBG("[FlagBudget] FATAL: flag count "
-         << flagCount << " > " << kMaxTotalFlags << ", halting pass");
-    module->emitError() << "[FlagBudget] flag count " << flagCount << " > "
-                        << kMaxTotalFlags << ", halting pass";
-    CVPipeline::setFallbackAttr(module, CVPipeline::ERRCODE_FAILED);
+  // Input flags:
+  // 1. Flag id > kReservedPipeFlagId not producible by this pass.
+  // 2. kReservedPipeFlagId (pipe) itself is allowed.
+  bool inputOverBudget = false;
+  for (int f : usedFlags) {
+    if (f > kReservedPipeFlagId)
+      inputOverBudget = true;
+  }
+  if (inputOverBudget) {
+    LDBG("FALLBACK: FlagBudget, input flag id > "
+         << kReservedPipeFlagId << ", rc=" << CVPipeline::ERRCODE_IGNORED
+         << ".");
+    CVPipeline::setFallbackAttr(module, CVPipeline::ERRCODE_IGNORED);
     return;
   }
-  // Soft downgrade: only fixpipe/copy transfer groups consume new
-  // output flags. If (maxFlagId + groupCount) >= kMaxTotalFlags,
-  // the budget cannot accommodate all groups.
-  int maxFlagId = -1;
-  for (int f : usedFlags) {
-    if (f > maxFlagId)
-      maxFlagId = f;
-  }
-  int groupCount = static_cast<int>(groups.size());
-  int sum = maxFlagId + groupCount;
-  LDBG("[FlagBudget] maxFlagId=" << maxFlagId << " groupCount=" << groupCount
-                                 << " sum=" << sum << " (need < "
-                                 << kMaxTotalFlags << ")");
-  if (sum >= kMaxTotalFlags) {
-    LDBG("[FlagBudget] budget exceeded (maxFlagId + groupCount >= "
-         << kMaxTotalFlags << "), forcing single-buffer");
-    isDoubleBuf = false;
+  if (isDoubleBuf) {
+    int maxOutputFlag = -1;
+    for (auto &p : groups) {
+      if (p.second.outputFlag > maxOutputFlag)
+        maxOutputFlag = p.second.outputFlag;
+    }
+    LDBG("[FlagBudget] maxOutputFlag=" << maxOutputFlag
+                                       << " (usable flag ids 0.."
+                                       << FlagIdManager::MAX_FLAG_ID << ").");
+    if (maxOutputFlag > FlagIdManager::MAX_FLAG_ID) {
+      LDBG("FALLBACK: FlagBudget, estimated flag id "
+           << maxOutputFlag << " exceeds usable range (0.."
+           << FlagIdManager::MAX_FLAG_ID
+           << "), fallback to single-buffer mode.");
+      isDoubleBuf = false;
+    }
   }
 
   if (isDoubleBuf) {
-    LDBG("[Step 2/3] Start: output buffer creation");
-    if (createOutputBuffers(groups, module)) {
-      LDBG("[Step 2/3] FAILED: output buffer creation failed");
-      CVPipeline::setFallbackAttr(module, CVPipeline::ERRCODE_FAILED);
-      return;
-    }
-    LDBG("[Step 2/3] Done");
+    // Tag llvm.load/store volatile ops with crossDeps
+    DenseMap<int, SmallVector<Operation *>> loadStoreByTid;
+    collectLoadStoreOpsByTransferId(module, loadStoreByTid);
+    tagLoadStoreOpsWithCrossDeps(loadStoreByTid);
+  }
 
-    LDBG("[Step 3/3] Start: polling control flow");
-    if (addPollingControlFlow(groups)) {
-      LDBG("[Step 3/3] FAILED: polling control flow failed");
+  if (isDoubleBuf) {
+    LDBG("[Step 2/3] Start: output buffer creation.");
+    if (createOutputBuffers(groups, module)) {
+      LDBG("FALLBACK: Step 2/3 failed, output buffer creation failed, rc="
+           << CVPipeline::ERRCODE_FAILED << ".");
       CVPipeline::setFallbackAttr(module, CVPipeline::ERRCODE_FAILED);
       return;
     }
-    LDBG("[Step 3/3] Done");
+    LDBG("[Step 2/3] Done.");
+
+    LDBG("[Step 3/3] Start: polling control flow.");
+    if (addPollingControlFlow(groups)) {
+      LDBG("FALLBACK: Step 3/3 failed, polling control flow failed, rc="
+           << CVPipeline::ERRCODE_FAILED << ".");
+      CVPipeline::setFallbackAttr(module, CVPipeline::ERRCODE_FAILED);
+      return;
+    }
+    LDBG("[Step 3/3] Done.");
   } else {
-    LDBG("[Step 2-3] Skipped (single-buffer mode)");
+    LDBG("[Step 2-3] Skipped (single-buffer mode).");
   }
 
   LDBG("============================================================");
-  LDBG("[AddMultiBufferOuterScope] EXIT successfully");
+  LDBG("Exit AddMultiBufferOuterScope pass.");
   LDBG("============================================================");
 }
 

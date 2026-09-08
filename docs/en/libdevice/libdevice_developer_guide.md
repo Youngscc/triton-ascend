@@ -2,9 +2,10 @@
 
 ## SIMT Compilation Mode Example
 
-Triton kernel example with SIMT compilation mode
+Triton kernel example with SIMT compilation mode. Set `compile_mode='simt_only'` in the kernel launch parameters to enable SIMT-only compilation.
 
 ```python
+# Enable libdevice SIMT compilation
 import triton
 import triton.language as tl
 import triton.language.extra.cann.libdevice as libdevice
@@ -24,8 +25,8 @@ def triton_kernel(input, output, XBLOCK: tl.constexpr, XBLOCK_SUB: tl.constexpr)
 dtype, shape, ncore, xblock, xblock_sub = ['int32', (128, 4096), 512, 1024, 1024]
 input = torch.randn(shape, dtype=eval('torch.' + dtype)).npu()
 output = torch.zeros_like(input)
-# Enable SIMT compilation with option "force_simt_only=True"
-triton_kernel[ncore, 1, 1](input, output, xblock, xblock_sub, force_simt_only=True)
+# Enable SIMT-only compilation with compile_mode='simt_only'
+triton_kernel[ncore, 1, 1](input, output, xblock, xblock_sub, compile_mode='simt_only')
 ```
 
 ## 1. triton.language.extra.cann.libdevice.abs
@@ -48,7 +49,7 @@ Return Value: `tl.tensor`, containing the absolute value of the input parameter.
 
 Return Type: `int32`, `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 2. triton.language.extra.cann.libdevice.acos
 
@@ -70,7 +71,7 @@ Return Value: `tl.tensor`, containing the inverse cosine of the input parameter,
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
 ## 3. triton.language.extra.cann.libdevice.acosh
 
@@ -92,7 +93,7 @@ Return Value: `tl.tensor`, containing the inverse hyperbolic cosine of the input
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
 ## 4. triton.language.extra.cann.libdevice.add_rd
 
@@ -115,7 +116,7 @@ Return Value: `tl.tensor`, containing the addition result rounded down.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 5. triton.language.extra.cann.libdevice.add_rn
 
@@ -138,7 +139,7 @@ Return Value: `tl.tensor`, containing the addition result rounded to the nearest
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 6. triton.language.extra.cann.libdevice.add_ru
 
@@ -161,7 +162,7 @@ Return Value: `tl.tensor`, containing the addition result rounded up.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 7. triton.language.extra.cann.libdevice.add_rz
 
@@ -184,7 +185,7 @@ Return Value: `tl.tensor`, containing the addition result rounded toward zero.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 8. triton.language.extra.cann.libdevice.asin
 
@@ -206,7 +207,7 @@ Return Value: `tl.tensor`, containing the inverse sine of the input parameter, i
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
 ## 9. triton.language.extra.cann.libdevice.asinh
 
@@ -228,7 +229,7 @@ Return Value: `tl.tensor`, containing the inverse hyperbolic sine of the input p
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
 ## 10. triton.language.extra.cann.libdevice.atan
 
@@ -250,7 +251,7 @@ Return Value: `tl.tensor`, containing the inverse tangent of the input parameter
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
 ## 11. triton.language.extra.cann.libdevice.atan2
 
@@ -273,7 +274,7 @@ Return Value: `tl.tensor`, containing the arctangent of x / y, in the range \[-�
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
 ## 12. triton.language.extra.cann.libdevice.atanh
 
@@ -291,11 +292,11 @@ Input Types:
 
 - x: `float32`
 
-Return Value: `tl.tensor`, containing the inverse hyperbolic tangent of the input parameter, in the range \[-1, 1].
+Return Value: `tl.tensor`, containing the inverse hyperbolic tangent of the input parameter, in the range (-∞, +∞).
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
 ## 13. triton.language.extra.cann.libdevice.brev
 
@@ -317,7 +318,7 @@ Return Value: `tl.tensor`, containing the 32-bit integer with reversed bit order
 
 Return Type: `int32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 14. triton.language.extra.cann.libdevice.byte_perm
 
@@ -355,7 +356,7 @@ Return Value: `tl.tensor`, where return[n] := input[selector[n]], where n repres
 
 Return Type: `int32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 15. triton.language.extra.cann.libdevice.cbrt
 
@@ -377,7 +378,7 @@ Return Value: `tl.tensor`, containing the cube root of the input parameter.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 16. triton.language.extra.cann.libdevice.ceil
 
@@ -399,7 +400,7 @@ Return Value: `tl.tensor`, containing the ceiling result.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 17. triton.language.extra.cann.libdevice.clz
 
@@ -421,7 +422,7 @@ Return Value: `tl.tensor`, containing the number of leading zeros in the input p
 
 Return Type: `int32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 18. triton.language.extra.cann.libdevice.copysign
 
@@ -444,7 +445,7 @@ Return Value: `tl.tensor`, containing a floating-point number with magnitude equ
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
 ## 19. triton.language.extra.cann.libdevice.cos
 
@@ -466,7 +467,7 @@ Return Value: `tl.tensor`, containing the cosine of the input parameter.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 20. triton.language.extra.cann.libdevice.cosh
 
@@ -488,7 +489,7 @@ Return Value: `tl.tensor`, containing the hyperbolic cosine of the input paramet
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
 ## 21. triton.language.extra.cann.libdevice.cospi
 
@@ -510,7 +511,7 @@ Return Value: `tl.tensor`, containing the value of cos(π × x).
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 22. triton.language.extra.cann.libdevice.cyl_bessel_i0
 
@@ -532,7 +533,7 @@ Return Value: `tl.tensor`, containing the modified Bessel function of the first 
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
 ## 23. triton.language.extra.cann.libdevice.cyl_bessel_i1
 
@@ -554,7 +555,7 @@ Return Value: `tl.tensor`, containing the modified Bessel function of the first 
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 24. triton.language.extra.cann.libdevice.div_rd
 
@@ -577,7 +578,7 @@ Return Value: `tl.tensor`, containing the division result.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 25. triton.language.extra.cann.libdevice.div_rn
 
@@ -600,7 +601,7 @@ Return Value: `tl.tensor`, containing the division result.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 26. triton.language.extra.cann.libdevice.div_ru
 
@@ -623,7 +624,7 @@ Return Value: `tl.tensor`, containing the division result.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 27. triton.language.extra.cann.libdevice.div_rz
 
@@ -646,7 +647,7 @@ Return Value: `tl.tensor`, containing the division result.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
 ## 28. triton.language.extra.cann.libdevice.erf
 
@@ -668,7 +669,7 @@ Return Value: `tl.tensor`, containing the error function of the input parameter.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 29. triton.language.extra.cann.libdevice.erfc
 
@@ -690,7 +691,7 @@ Return Value: `tl.tensor`, containing the complementary error function of the in
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 30. triton.language.extra.cann.libdevice.erfcinv
 
@@ -712,7 +713,7 @@ Return Value: `tl.tensor`, containing the inverse complementary error function o
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 31. triton.language.extra.cann.libdevice.erfcx
 
@@ -734,7 +735,7 @@ Return Value: `tl.tensor`, containing the scaled complementary error function of
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 32. triton.language.extra.cann.libdevice.erfinv
 
@@ -756,7 +757,7 @@ Return Value: `tl.tensor`, containing the inverse error function of the input pa
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
 ## 33. triton.language.extra.cann.libdevice.exp
 
@@ -778,7 +779,7 @@ Return Value: `tl.tensor`, containing the result of e raised to the power of x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 34. triton.language.extra.cann.libdevice.exp10
 
@@ -800,7 +801,7 @@ Return Value: `tl.tensor`, containing the result of 10 raised to the power of x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 35. triton.language.extra.cann.libdevice.exp2
 
@@ -822,7 +823,7 @@ Return Value: `tl.tensor`, containing the result of 2 raised to the power of x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 36. triton.language.extra.cann.libdevice.expm1
 
@@ -844,7 +845,7 @@ Return Value: `tl.tensor`, containing the result of e raised to the power of x, 
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
 ## 37. triton.language.extra.cann.libdevice.fast_cosf
 
@@ -866,7 +867,7 @@ Return Value: `tl.tensor`, containing the result of the fast approximate cosine 
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 38. triton.language.extra.cann.libdevice.fast_dividef
 
@@ -889,31 +890,9 @@ Return Value: `tl.tensor`, containing the result of fast approximate division.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 39. triton.language.extra.cann.libdevice.fast_exp10f
-
-### OP Overview
-
-Fast approximate base-10 exponential function.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.fast_exp10f(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the result of the fast approximate base-10 exponential function.
-
-Return Type: `float32`
-
-Supported Compilation Mode: SIMT
-
-## 40. triton.language.extra.cann.libdevice.fast_expf
+## 39. triton.language.extra.cann.libdevice.fast_expf
 
 ### OP Overview
 
@@ -933,53 +912,31 @@ Return Value: `tl.tensor`, containing the result of the fast approximate exponen
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 41. triton.language.extra.cann.libdevice.fast_log10f
+## 40. triton.language.extra.cann.libdevice.fast_exp10f
 
 ### OP Overview
 
-Fast approximate base-10 logarithm function.
+Fast approximate base-10 exponential function.
 
 Prototype:
 
 ```python
-triton.language.extra.cann.libdevice.fast_log10f(x, _builder=None)
+triton.language.extra.cann.libdevice.fast_exp10f(x, _builder=None)
 ```
 
 Input Types:
 
 - x: `float32`
 
-Return Value: `tl.tensor`, containing the result of the fast approximate base-10 logarithm function.
+Return Value: `tl.tensor`, containing the result of the fast approximate base-10 exponential function.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 42. triton.language.extra.cann.libdevice.fast_log2f
-
-### OP Overview
-
-Fast approximate base-2 logarithm function.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.fast_log2f(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the result of the fast approximate base-2 logarithm function.
-
-Return Type: `float32`
-
-Supported Compilation Mode: SIMT
-
-## 43. triton.language.extra.cann.libdevice.fast_logf
+## 41. triton.language.extra.cann.libdevice.fast_logf
 
 ### OP Overview
 
@@ -999,7 +956,51 @@ Return Value: `tl.tensor`, containing the result of the fast approximate natural
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
+
+## 42. triton.language.extra.cann.libdevice.fast_log10f
+
+### OP Overview
+
+Fast approximate base-10 logarithm function.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.fast_log10f(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the result of the fast approximate base-10 logarithm function.
+
+Return Type: `float32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 43. triton.language.extra.cann.libdevice.fast_log2f
+
+### OP Overview
+
+Fast approximate base-2 logarithm function.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.fast_log2f(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the result of the fast approximate base-2 logarithm function.
+
+Return Type: `float32`
+
+Supported Compilation Mode: SIMD, SIMT
 
 ## 44. triton.language.extra.cann.libdevice.fast_powf
 
@@ -1022,7 +1023,7 @@ Return Value: `tl.tensor`, containing the result of fast approximate power funct
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 45. triton.language.extra.cann.libdevice.fast_sinf
 
@@ -1044,7 +1045,7 @@ Return Value: `tl.tensor`, containing the result of the fast approximate sine fu
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
 ## 46. triton.language.extra.cann.libdevice.fast_tanf
 
@@ -1066,9 +1067,31 @@ Return Value: `tl.tensor`, containing the result of the fast approximate tangent
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 47. triton.language.extra.cann.libdevice.fdim
+## 47. triton.language.extra.cann.libdevice.fast_tanhf
+
+### OP Overview
+
+Computes the hyperbolic tangent of x using a fast approximation.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.fast_tanhf(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the fast approximate hyperbolic tangent of x.
+
+Return Type: `float32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 48. triton.language.extra.cann.libdevice.fdim
 
 ### OP Overview
 
@@ -1089,9 +1112,9 @@ Return Value: `tl.tensor`, containing the positive difference between x and y.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 48. triton.language.extra.cann.libdevice.ffs
+## 49. triton.language.extra.cann.libdevice.ffs
 
 ### OP Overview
 
@@ -1111,9 +1134,9 @@ Return Value: `tl.tensor`, containing the index of the lowest bit set to 1. Rang
 
 Return Type: `int32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 49. triton.language.extra.cann.libdevice.finitef
+## 50. triton.language.extra.cann.libdevice.finitef
 
 ### OP Overview
 
@@ -1133,361 +1156,9 @@ Return Value: `tl.tensor`, returns True if the input is finite, otherwise return
 
 Return Type: `bool`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 50. triton.language.extra.cann.libdevice.float2int_rd
-
-### OP Overview
-
-Converts a floating-point number to a 32-bit integer with round-down mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.float2int_rd(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the converted 32-bit integer.
-
-Return Type: `int32`
-
-Supported Compilation Mode: SIMT
-
-## 51. triton.language.extra.cann.libdevice.float2int_rn
-
-### OP Overview
-
-Converts a floating-point number to a 32-bit integer with round-to-nearest-even mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.float2int_rn(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the converted 32-bit integer.
-
-Return Type: `int32`
-
-Supported Compilation Mode: SIMT
-
-## 52. triton.language.extra.cann.libdevice.float2int_ru
-
-### OP Overview
-
-Converts a floating-point number to a 32-bit integer with round-up mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.float2int_ru(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the converted 32-bit integer.
-
-Return Type: `int32`
-
-Supported Compilation Mode: SIMT
-
-## 53. triton.language.extra.cann.libdevice.float2int_rz
-
-### OP Overview
-
-Converts a floating-point number to a 32-bit integer with round-toward-zero mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.float2int_rz(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the converted 32-bit integer.
-
-Return Type: `int32`
-
-Supported Compilation Mode: SIMT
-
-## 54. triton.language.extra.cann.libdevice.float2ll_rd
-
-### OP Overview
-
-Converts a floating-point number to a 64-bit integer with round-down mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.float2ll_rd(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the converted 64-bit integer.
-
-Return Type: `int64`
-
-Supported Compilation Mode: SIMT
-
-## 55. triton.language.extra.cann.libdevice.float2ll_rn
-
-### OP Overview
-
-Converts a floating-point number to a 64-bit integer with round-to-nearest-even mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.float2ll_rn(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the converted 64-bit integer.
-
-Return Type: `int64`
-
-Supported Compilation Mode: SIMT
-
-## 56. triton.language.extra.cann.libdevice.float2ll_ru
-
-### OP Overview
-
-Converts a floating-point number to a 64-bit integer with round-up mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.float2ll_ru(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the converted 64-bit integer.
-
-Return Type: `int64`
-
-Supported Compilation Mode: SIMT
-
-## 57. triton.language.extra.cann.libdevice.float2ll_rz
-
-### OP Overview
-
-Converts a floating-point number to a 64-bit integer with round-toward-zero mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.float2ll_rz(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the converted 64-bit integer.
-
-Return Type: `int64`
-
-Supported Compilation Mode: SIMT
-
-## 58. triton.language.extra.cann.libdevice.float2uint_rd
-
-### OP Overview
-
-Converts a floating-point number to a 32-bit unsigned integer with round-down mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.float2uint_rd(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the converted 32-bit unsigned integer.
-
-Return Type: `uint32`
-
-Supported Compilation Mode: SIMT
-
-## 59. triton.language.extra.cann.libdevice.float2uint_rn
-
-### OP Overview
-
-Converts a floating-point number to a 32-bit unsigned integer with round-to-nearest-even mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.float2uint_rn(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the converted 32-bit unsigned integer.
-
-Return Type: `uint32`
-
-Supported Compilation Mode: SIMT
-
-## 60. triton.language.extra.cann.libdevice.float2uint_ru
-
-### OP Overview
-
-Converts a floating-point number to a 32-bit unsigned integer with round-up mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.float2uint_ru(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the converted 32-bit unsigned integer.
-
-Return Type: `uint32`
-
-Supported Compilation Mode: SIMT
-
-## 61. triton.language.extra.cann.libdevice.float2uint_rz
-
-### OP Overview
-
-Converts a floating-point number to a 32-bit unsigned integer with round-toward-zero mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.float2uint_rz(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the converted 32-bit unsigned integer.
-
-Return Type: `uint32`
-
-Supported Compilation Mode: SIMT
-
-## 62. triton.language.extra.cann.libdevice.float2ull_rd
-
-### OP Overview
-
-Converts a floating-point number to a 64-bit unsigned integer with round-down mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.float2ull_rd(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the converted 64-bit unsigned integer.
-
-Return Type: `uint64`
-
-Supported Compilation Mode: SIMT
-
-## 63. triton.language.extra.cann.libdevice.float2ull_rn
-
-### OP Overview
-
-Converts a floating-point number to a 64-bit unsigned integer with round-to-nearest-even mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.float2ull_rn(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the converted 64-bit unsigned integer.
-
-Return Type: `uint64`
-
-Supported Compilation Mode: SIMT
-
-## 64. triton.language.extra.cann.libdevice.float2ull_ru
-
-### OP Overview
-
-Converts a floating-point number to a 64-bit unsigned integer with round-up mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.float2ull_ru(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the converted 64-bit unsigned integer.
-
-Return Type: `uint64`
-
-Supported Compilation Mode: SIMT
-
-## 65. triton.language.extra.cann.libdevice.float2ull_rz
-
-### OP Overview
-
-Converts a floating-point number to a 64-bit unsigned integer with round-toward-zero mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.float2ull_rz(x, _builder=None)
-```
-
-Input Types:
-
-- x: `float32`
-
-Return Value: `tl.tensor`, containing the converted 64-bit unsigned integer.
-
-Return Type: `uint64`
-
-Supported Compilation Mode: SIMT
-
-## 66. triton.language.extra.cann.libdevice.float_as_int
+## 51. triton.language.extra.cann.libdevice.float_as_int
 
 ### OP Overview
 
@@ -1507,9 +1178,9 @@ Return Value: `tl.tensor`, containing the bit pattern of the floating-point numb
 
 Return Type: `int32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 67. triton.language.extra.cann.libdevice.float_as_uint
+## 52. triton.language.extra.cann.libdevice.float_as_uint
 
 ### OP Overview
 
@@ -1529,9 +1200,383 @@ Return Value: `tl.tensor`, containing the bit pattern of the floating-point numb
 
 Return Type: `uint32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 68. triton.language.extra.cann.libdevice.floor
+## 53. triton.language.extra.cann.libdevice.float2half_rn
+
+### OP Overview
+
+Converts x from a 32-bit floating-point value to a 16-bit floating-point value using round-to-nearest-even.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2half_rn(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 16-bit floating-point value.
+
+Return Type: `float16`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 54. triton.language.extra.cann.libdevice.float2int_rd
+
+### OP Overview
+
+Converts a floating-point number to a 32-bit integer with round-down mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2int_rd(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 32-bit integer.
+
+Return Type: `int32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 55. triton.language.extra.cann.libdevice.float2int_rn
+
+### OP Overview
+
+Converts a floating-point number to a 32-bit integer with round-to-nearest-even mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2int_rn(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 32-bit integer.
+
+Return Type: `int32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 56. triton.language.extra.cann.libdevice.float2int_ru
+
+### OP Overview
+
+Converts a floating-point number to a 32-bit integer with round-up mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2int_ru(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 32-bit integer.
+
+Return Type: `int32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 57. triton.language.extra.cann.libdevice.float2int_rz
+
+### OP Overview
+
+Converts a floating-point number to a 32-bit integer with round-toward-zero mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2int_rz(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 32-bit integer.
+
+Return Type: `int32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 58. triton.language.extra.cann.libdevice.float2ll_rd
+
+### OP Overview
+
+Converts a floating-point number to a 64-bit integer with round-down mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2ll_rd(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 64-bit integer.
+
+Return Type: `int64`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 59. triton.language.extra.cann.libdevice.float2ll_rn
+
+### OP Overview
+
+Converts a floating-point number to a 64-bit integer with round-to-nearest-even mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2ll_rn(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 64-bit integer.
+
+Return Type: `int64`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 60. triton.language.extra.cann.libdevice.float2ll_ru
+
+### OP Overview
+
+Converts a floating-point number to a 64-bit integer with round-up mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2ll_ru(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 64-bit integer.
+
+Return Type: `int64`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 61. triton.language.extra.cann.libdevice.float2ll_rz
+
+### OP Overview
+
+Converts a floating-point number to a 64-bit integer with round-toward-zero mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2ll_rz(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 64-bit integer.
+
+Return Type: `int64`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 62. triton.language.extra.cann.libdevice.float2uint_rd
+
+### OP Overview
+
+Converts a floating-point number to a 32-bit unsigned integer with round-down mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2uint_rd(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 32-bit unsigned integer.
+
+Return Type: `uint32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 63. triton.language.extra.cann.libdevice.float2uint_rn
+
+### OP Overview
+
+Converts a floating-point number to a 32-bit unsigned integer with round-to-nearest-even mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2uint_rn(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 32-bit unsigned integer.
+
+Return Type: `uint32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 64. triton.language.extra.cann.libdevice.float2uint_ru
+
+### OP Overview
+
+Converts a floating-point number to a 32-bit unsigned integer with round-up mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2uint_ru(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 32-bit unsigned integer.
+
+Return Type: `uint32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 65. triton.language.extra.cann.libdevice.float2uint_rz
+
+### OP Overview
+
+Converts a floating-point number to a 32-bit unsigned integer with round-toward-zero mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2uint_rz(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 32-bit unsigned integer.
+
+Return Type: `uint32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 66. triton.language.extra.cann.libdevice.float2ull_rd
+
+### OP Overview
+
+Converts a floating-point number to a 64-bit unsigned integer with round-down mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2ull_rd(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 64-bit unsigned integer.
+
+Return Type: `uint64`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 67. triton.language.extra.cann.libdevice.float2ull_rn
+
+### OP Overview
+
+Converts a floating-point number to a 64-bit unsigned integer with round-to-nearest-even mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2ull_rn(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 64-bit unsigned integer.
+
+Return Type: `uint64`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 68. triton.language.extra.cann.libdevice.float2ull_ru
+
+### OP Overview
+
+Converts a floating-point number to a 64-bit unsigned integer with round-up mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2ull_ru(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 64-bit unsigned integer.
+
+Return Type: `uint64`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 69. triton.language.extra.cann.libdevice.float2ull_rz
+
+### OP Overview
+
+Converts a floating-point number to a 64-bit unsigned integer with round-toward-zero mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.float2ull_rz(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the converted 64-bit unsigned integer.
+
+Return Type: `uint64`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 70. triton.language.extra.cann.libdevice.floor
 
 ### OP Overview
 
@@ -1551,9 +1596,9 @@ Return Value: `tl.tensor`, containing the floor result.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 69. triton.language.extra.cann.libdevice.fma
+## 71. triton.language.extra.cann.libdevice.fma
 
 ### OP Overview
 
@@ -1575,9 +1620,9 @@ Return Value: `tl.tensor`, containing the result of fused multiply-add.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 70. triton.language.extra.cann.libdevice.fma_rd
+## 72. triton.language.extra.cann.libdevice.fma_rd
 
 ### OP Overview
 
@@ -1599,9 +1644,9 @@ Return Value: `tl.tensor`, containing the result of fused multiply-add.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 71. triton.language.extra.cann.libdevice.fma_rn
+## 73. triton.language.extra.cann.libdevice.fma_rn
 
 ### OP Overview
 
@@ -1623,9 +1668,9 @@ Return Value: `tl.tensor`, containing the result of fused multiply-add.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 72. triton.language.extra.cann.libdevice.fma_ru
+## 74. triton.language.extra.cann.libdevice.fma_ru
 
 ### OP Overview
 
@@ -1647,9 +1692,9 @@ Return Value: `tl.tensor`, containing the result of fused multiply-add.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 73. triton.language.extra.cann.libdevice.fma_rz
+## 75. triton.language.extra.cann.libdevice.fma_rz
 
 ### OP Overview
 
@@ -1671,9 +1716,9 @@ Return Value: `tl.tensor`, containing the result of fused multiply-add.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 74. triton.language.extra.cann.libdevice.fmod
+## 76. triton.language.extra.cann.libdevice.fmod
 
 ### OP Overview
 
@@ -1694,9 +1739,9 @@ Return Value: `tl.tensor`, containing the floating-point modulo result.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 75. triton.language.extra.cann.libdevice.gamma
+## 77. triton.language.extra.cann.libdevice.gamma
 
 ### OP Overview
 
@@ -1716,9 +1761,9 @@ Return Value: `tl.tensor`, containing the gamma function of the input parameter.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 76. triton.language.extra.cann.libdevice.hadd
+## 78. triton.language.extra.cann.libdevice.hadd
 
 ### OP Overview
 
@@ -1732,16 +1777,38 @@ triton.language.extra.cann.libdevice.hadd(x, y, _builder=None)
 
 Input Types:
 
-- x: `int32`
-- y: `int32`
+- x: `int32` or `uint32`
+- y: `int32` or `uint32`; must have the same type as x
 
 Return Value: `tl.tensor`, containing the average of x and y.
 
-Return Type: `int32`
+Return Type: Same as the input type (`int32` or `uint32`).
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 77. triton.language.extra.cann.libdevice.hypot
+## 79. triton.language.extra.cann.libdevice.half2float
+
+### OP Overview
+
+Converts x from a 16-bit floating-point value to a 32-bit floating-point value.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.half2float(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float16`
+
+Return Value: `tl.tensor`, containing the converted 32-bit floating-point value.
+
+Return Type: `float32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 80. triton.language.extra.cann.libdevice.hypot
 
 ### OP Overview
 
@@ -1762,9 +1829,9 @@ Return Value: `tl.tensor`, containing the Euclidean distance between x and y.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 78. triton.language.extra.cann.libdevice.ilogb
+## 81. triton.language.extra.cann.libdevice.ilogb
 
 ### OP Overview
 
@@ -1784,97 +1851,9 @@ Return Value: `tl.tensor`, containing the unbiased exponent of the input paramet
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 79. triton.language.extra.cann.libdevice.int2float_rd
-
-### OP Overview
-
-Converts a 32-bit integer to a floating-point number with round-down mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.int2float_rd(x, _builder=None)
-```
-
-Input Types:
-
-- x: `int32`
-
-Return Value: `tl.tensor`, containing the converted floating-point number.
-
-Return Type: `float32`
-
-Supported Compilation Mode: SIMT
-
-## 80. triton.language.extra.cann.libdevice.int2float_rn
-
-### OP Overview
-
-Converts a 32-bit integer to a floating-point number with round-to-nearest-even mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.int2float_rn(x, _builder=None)
-```
-
-Input Types:
-
-- x: `int32`
-
-Return Value: `tl.tensor`, containing the converted floating-point number.
-
-Return Type: `float32`
-
-Supported Compilation Mode: SIMT
-
-## 81. triton.language.extra.cann.libdevice.int2float_ru
-
-### OP Overview
-
-Converts a 32-bit integer to a floating-point number with round-up mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.int2float_ru(x, _builder=None)
-```
-
-Input Types:
-
-- x: `int32`
-
-Return Value: `tl.tensor`, containing the converted floating-point number.
-
-Return Type: `float32`
-
-Supported Compilation Mode: SIMT
-
-## 82. triton.language.extra.cann.libdevice.int2float_rz
-
-### OP Overview
-
-Converts a 32-bit integer to a floating-point number with round-toward-zero mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.int2float_rz(x, _builder=None)
-```
-
-Input Types:
-
-- x: `int32`
-
-Return Value: `tl.tensor`, containing the converted floating-point number.
-
-Return Type: `float32`
-
-Supported Compilation Mode: SIMT
-
-## 83. triton.language.extra.cann.libdevice.int_as_float
+## 82. triton.language.extra.cann.libdevice.int_as_float
 
 ### OP Overview
 
@@ -1894,9 +1873,97 @@ Return Value: `tl.tensor`, containing the bit pattern of the 32-bit integer rein
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 84. triton.language.extra.cann.libdevice.isinf
+## 83. triton.language.extra.cann.libdevice.int2float_rd
+
+### OP Overview
+
+Converts a 32-bit integer to a floating-point number with round-down mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.int2float_rd(x, _builder=None)
+```
+
+Input Types:
+
+- x: `int32`
+
+Return Value: `tl.tensor`, containing the converted floating-point number.
+
+Return Type: `float32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 84. triton.language.extra.cann.libdevice.int2float_rn
+
+### OP Overview
+
+Converts a 32-bit integer to a floating-point number with round-to-nearest-even mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.int2float_rn(x, _builder=None)
+```
+
+Input Types:
+
+- x: `int32`
+
+Return Value: `tl.tensor`, containing the converted floating-point number.
+
+Return Type: `float32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 85. triton.language.extra.cann.libdevice.int2float_ru
+
+### OP Overview
+
+Converts a 32-bit integer to a floating-point number with round-up mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.int2float_ru(x, _builder=None)
+```
+
+Input Types:
+
+- x: `int32`
+
+Return Value: `tl.tensor`, containing the converted floating-point number.
+
+Return Type: `float32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 86. triton.language.extra.cann.libdevice.int2float_rz
+
+### OP Overview
+
+Converts a 32-bit integer to a floating-point number with round-toward-zero mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.int2float_rz(x, _builder=None)
+```
+
+Input Types:
+
+- x: `int32`
+
+Return Value: `tl.tensor`, containing the converted floating-point number.
+
+Return Type: `float32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 87. triton.language.extra.cann.libdevice.isinf
 
 ### OP Overview
 
@@ -1916,9 +1983,9 @@ Return Value: `tl.tensor`, returns True if the input is infinity, otherwise retu
 
 Return Type: `bool`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 85. triton.language.extra.cann.libdevice.isnan
+## 88. triton.language.extra.cann.libdevice.isnan
 
 ### OP Overview
 
@@ -1938,9 +2005,9 @@ Return Value: `tl.tensor`, returns True if the input is NaN, otherwise returns F
 
 Return Type: `bool`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 86. triton.language.extra.cann.libdevice.j0
+## 89. triton.language.extra.cann.libdevice.j0
 
 ### OP Overview
 
@@ -1960,9 +2027,9 @@ Return Value: `tl.tensor`, containing the Bessel function of the first kind of o
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 87. triton.language.extra.cann.libdevice.j1
+## 90. triton.language.extra.cann.libdevice.j1
 
 ### OP Overview
 
@@ -1982,9 +2049,9 @@ Return Value: `tl.tensor`, containing the Bessel function of the first kind of o
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 88. triton.language.extra.cann.libdevice.jn
+## 91. triton.language.extra.cann.libdevice.jn
 
 ### OP Overview
 
@@ -2005,9 +2072,9 @@ Return Value: `tl.tensor`, containing the Bessel function of the first kind of o
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 89. triton.language.extra.cann.libdevice.ldexp
+## 92. triton.language.extra.cann.libdevice.ldexp
 
 ### OP Overview
 
@@ -2028,9 +2095,9 @@ Return Value: `tl.tensor`, containing the result of x × 2^exp.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 90. triton.language.extra.cann.libdevice.lgamma
+## 93. triton.language.extra.cann.libdevice.lgamma
 
 ### OP Overview
 
@@ -2050,9 +2117,9 @@ Return Value: `tl.tensor`, containing the natural logarithm of the absolute valu
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 91. triton.language.extra.cann.libdevice.ll2float_rd
+## 94. triton.language.extra.cann.libdevice.ll2float_rd
 
 ### OP Overview
 
@@ -2072,9 +2139,9 @@ Return Value: `tl.tensor`, containing the converted floating-point number.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 92. triton.language.extra.cann.libdevice.ll2float_rn
+## 95. triton.language.extra.cann.libdevice.ll2float_rn
 
 ### OP Overview
 
@@ -2094,9 +2161,9 @@ Return Value: `tl.tensor`, containing the converted floating-point number.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 93. triton.language.extra.cann.libdevice.ll2float_ru
+## 96. triton.language.extra.cann.libdevice.ll2float_ru
 
 ### OP Overview
 
@@ -2116,9 +2183,9 @@ Return Value: `tl.tensor`, containing the converted floating-point number.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 94. triton.language.extra.cann.libdevice.ll2float_rz
+## 97. triton.language.extra.cann.libdevice.ll2float_rz
 
 ### OP Overview
 
@@ -2138,9 +2205,9 @@ Return Value: `tl.tensor`, containing the converted floating-point number.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 95. triton.language.extra.cann.libdevice.llrint
+## 98. triton.language.extra.cann.libdevice.llrint
 
 ### OP Overview
 
@@ -2160,9 +2227,9 @@ Return Value: `tl.tensor`, containing the rounded 64-bit integer.
 
 Return Type: `int64`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 96. triton.language.extra.cann.libdevice.llround
+## 99. triton.language.extra.cann.libdevice.llround
 
 ### OP Overview
 
@@ -2182,9 +2249,9 @@ Return Value: `tl.tensor`, containing the rounded 64-bit integer.
 
 Return Type: `int64`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 97. triton.language.extra.cann.libdevice.log
+## 100. triton.language.extra.cann.libdevice.log
 
 ### OP Overview
 
@@ -2204,9 +2271,9 @@ Return Value: `tl.tensor`, containing the natural logarithm of input x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 98. triton.language.extra.cann.libdevice.log10
+## 101. triton.language.extra.cann.libdevice.log10
 
 ### OP Overview
 
@@ -2226,9 +2293,9 @@ Return Value: `tl.tensor`, containing the base-10 logarithm of input x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 99. triton.language.extra.cann.libdevice.log1p
+## 102. triton.language.extra.cann.libdevice.log1p
 
 ### OP Overview
 
@@ -2248,9 +2315,9 @@ Return Value: `tl.tensor`, containing the result of log(1 + x).
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 100. triton.language.extra.cann.libdevice.log2
+## 103. triton.language.extra.cann.libdevice.log2
 
 ### OP Overview
 
@@ -2270,9 +2337,9 @@ Return Value: `tl.tensor`, containing the base-2 logarithm of input x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 101. triton.language.extra.cann.libdevice.logb
+## 104. triton.language.extra.cann.libdevice.logb
 
 ### OP Overview
 
@@ -2292,32 +2359,55 @@ Return Value: `tl.tensor`, containing the exponent value of the input parameter.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 102. triton.language.extra.cann.libdevice.mul24
+## 105. triton.language.extra.cann.libdevice.max
 
 ### OP Overview
 
-Computes the lower 24-bit multiplication result of x and y.
+Computes the element-wise maximum of x and y.
 
 Prototype:
 
 ```python
-triton.language.extra.cann.libdevice.mul24(x, y, _builder=None)
+triton.language.extra.cann.libdevice.max(x, y, _builder=None)
 ```
 
 Input Types:
 
-- x: `int32`
-- y: `int32`
+- x: `int32`, `float32`
+- y: `int32`, `float32`; must have the same type as x
 
-Return Value: `tl.tensor`, containing the lower 24-bit multiplication result of x and y.
+Return Value: `tl.tensor`, containing the element-wise maximum of x and y.
 
-Return Type: `int32`
+Return Type: Same as the input type (`int32` or `float32`).
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 103. triton.language.extra.cann.libdevice.mul_rd
+## 106. triton.language.extra.cann.libdevice.min
+
+### OP Overview
+
+Computes the element-wise minimum of x and y.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.min(x, y, _builder=None)
+```
+
+Input Types:
+
+- x: `int32`, `float32`
+- y: `int32`, `float32`; must have the same type as x
+
+Return Value: `tl.tensor`, containing the element-wise minimum of x and y.
+
+Return Type: Same as the input type (`int32` or `float32`).
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 107. triton.language.extra.cann.libdevice.mul_rd
 
 ### OP Overview
 
@@ -2338,9 +2428,9 @@ Return Value: `tl.tensor`, containing the floating-point multiplication result.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 104. triton.language.extra.cann.libdevice.mul_rn
+## 108. triton.language.extra.cann.libdevice.mul_rn
 
 ### OP Overview
 
@@ -2361,9 +2451,9 @@ Return Value: `tl.tensor`, containing the floating-point multiplication result.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 105. triton.language.extra.cann.libdevice.mul_ru
+## 109. triton.language.extra.cann.libdevice.mul_ru
 
 ### OP Overview
 
@@ -2384,9 +2474,9 @@ Return Value: `tl.tensor`, containing the floating-point multiplication result.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 106. triton.language.extra.cann.libdevice.mul_rz
+## 110. triton.language.extra.cann.libdevice.mul_rz
 
 ### OP Overview
 
@@ -2407,9 +2497,32 @@ Return Value: `tl.tensor`, containing the floating-point multiplication result.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 107. triton.language.extra.cann.libdevice.mulhi
+## 111. triton.language.extra.cann.libdevice.mul24
+
+### OP Overview
+
+Computes the lower 24-bit multiplication result of x and y.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.mul24(x, y, _builder=None)
+```
+
+Input Types:
+
+- x: `int32` or `uint32`
+- y: `int32` or `uint32`; must have the same type as x
+
+Return Value: `tl.tensor`, containing the lower 24-bit multiplication result of x and y.
+
+Return Type: Same as the input type (`int32` or `uint32`).
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 112. triton.language.extra.cann.libdevice.mulhi
 
 ### OP Overview
 
@@ -2423,16 +2536,38 @@ triton.language.extra.cann.libdevice.mulhi(x, y, _builder=None)
 
 Input Types:
 
-- x: `int32`
-- y: `int32`
+- x: `int32` or `uint32`
+- y: `int32` or `uint32`; must have the same type as x
 
 Return Value: `tl.tensor`, containing the high 32 bits of the multiplication result of x and y.
 
-Return Type: `int32`
+Return Type: Same as the input type (`int32` or `uint32`).
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 108. triton.language.extra.cann.libdevice.nearbyint
+## 113. triton.language.extra.cann.libdevice.nan
+
+### OP Overview
+
+Generates a NaN value from x.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.nan(x, _builder=None)
+```
+
+Input Types:
+
+- x: `float32`
+
+Return Value: `tl.tensor`, containing the generated NaN value.
+
+Return Type: `float32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 114. triton.language.extra.cann.libdevice.nearbyint
 
 ### OP Overview
 
@@ -2452,9 +2587,9 @@ Return Value: `tl.tensor`, containing the nearest integer.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 109. triton.language.extra.cann.libdevice.nextafter
+## 115. triton.language.extra.cann.libdevice.nextafter
 
 ### OP Overview
 
@@ -2475,9 +2610,9 @@ Return Value: `tl.tensor`, containing the next representable floating-point numb
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 110. triton.language.extra.cann.libdevice.norm3d
+## 116. triton.language.extra.cann.libdevice.norm3d
 
 ### OP Overview
 
@@ -2499,9 +2634,9 @@ Return Value: `tl.tensor`, containing the Euclidean norm of the 3D vector.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 111. triton.language.extra.cann.libdevice.norm4d
+## 117. triton.language.extra.cann.libdevice.norm4d
 
 ### OP Overview
 
@@ -2524,9 +2659,9 @@ Return Value: `tl.tensor`, containing the Euclidean norm of the 4D vector.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 112. triton.language.extra.cann.libdevice.normcdf
+## 118. triton.language.extra.cann.libdevice.normcdf
 
 ### OP Overview
 
@@ -2546,9 +2681,9 @@ Return Value: `tl.tensor`, containing the cumulative distribution function of th
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 113. triton.language.extra.cann.libdevice.normcdfinv
+## 119. triton.language.extra.cann.libdevice.normcdfinv
 
 ### OP Overview
 
@@ -2568,9 +2703,9 @@ Return Value: `tl.tensor`, containing the inverse of the cumulative distribution
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 114. triton.language.extra.cann.libdevice.popc
+## 120. triton.language.extra.cann.libdevice.popc
 
 ### OP Overview
 
@@ -2590,9 +2725,9 @@ Return Value: `tl.tensor`, containing the number of bits set to 1 in x. Range: \
 
 Return Type: `int32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 115. triton.language.extra.cann.libdevice.pow
+## 121. triton.language.extra.cann.libdevice.pow
 
 ### OP Overview
 
@@ -2613,9 +2748,9 @@ Return Value: `tl.tensor`, containing x raised to the power of y.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 116. triton.language.extra.cann.libdevice.rcbrt
+## 122. triton.language.extra.cann.libdevice.rcbrt
 
 ### OP Overview
 
@@ -2635,9 +2770,9 @@ Return Value: `tl.tensor`, containing the reciprocal cube root of x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 117. triton.language.extra.cann.libdevice.rcp_rd
+## 123. triton.language.extra.cann.libdevice.rcp_rd
 
 ### OP Overview
 
@@ -2657,9 +2792,9 @@ Return Value: `tl.tensor`, containing 1 / x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 118. triton.language.extra.cann.libdevice.rcp_rn
+## 124. triton.language.extra.cann.libdevice.rcp_rn
 
 ### OP Overview
 
@@ -2679,9 +2814,9 @@ Return Value: `tl.tensor`, containing 1 / x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 119. triton.language.extra.cann.libdevice.rcp_ru
+## 125. triton.language.extra.cann.libdevice.rcp_ru
 
 ### OP Overview
 
@@ -2701,9 +2836,9 @@ Return Value: `tl.tensor`, containing 1 / x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 120. triton.language.extra.cann.libdevice.rcp_rz
+## 126. triton.language.extra.cann.libdevice.rcp_rz
 
 ### OP Overview
 
@@ -2723,13 +2858,13 @@ Return Value: `tl.tensor`, containing 1 / x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 121. triton.language.extra.cann.libdevice.reciprocal
+## 127. triton.language.extra.cann.libdevice.reciprocal
 
 ### OP Overview
 
-Computes the reciprocal 1 / x.
+Computes the reciprocal of x (i.e., 1 / x).
 
 Prototype:
 
@@ -2745,9 +2880,9 @@ Return Value: `tl.tensor`, containing 1 / x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 122. triton.language.extra.cann.libdevice.relu
+## 128. triton.language.extra.cann.libdevice.relu
 
 ### OP Overview
 
@@ -2767,9 +2902,9 @@ Return Value: `tl.tensor`, containing the result of the rectified linear unit.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 123. triton.language.extra.cann.libdevice.remainder
+## 129. triton.language.extra.cann.libdevice.remainder
 
 ### OP Overview
 
@@ -2790,9 +2925,9 @@ Return Value: `tl.tensor`, containing the remainder of x divided by y.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 124. triton.language.extra.cann.libdevice.rhadd
+## 130. triton.language.extra.cann.libdevice.rhadd
 
 ### OP Overview
 
@@ -2806,16 +2941,16 @@ triton.language.extra.cann.libdevice.rhadd(x, y, _builder=None)
 
 Input Types:
 
-- x: `int32`
-- y: `int32`
+- x: `int32` or `uint32`
+- y: `int32` or `uint32`; must have the same type as x
 
 Return Value: `tl.tensor`, containing the rounded average of x and y.
 
-Return Type: `int32`
+Return Type: Same as the input type (`int32` or `uint32`).
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 125. triton.language.extra.cann.libdevice.rhypot
+## 131. triton.language.extra.cann.libdevice.rhypot
 
 ### OP Overview
 
@@ -2836,9 +2971,9 @@ Return Value: `tl.tensor`, containing the reciprocal of the Euclidean distance b
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 126. triton.language.extra.cann.libdevice.rint
+## 132. triton.language.extra.cann.libdevice.rint
 
 ### OP Overview
 
@@ -2858,9 +2993,9 @@ Return Value: `tl.tensor`, containing the nearest integer to x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 127. triton.language.extra.cann.libdevice.rnorm3d
+## 133. triton.language.extra.cann.libdevice.rnorm3d
 
 ### OP Overview
 
@@ -2882,9 +3017,9 @@ Return Value: `tl.tensor`, containing the reciprocal of the Euclidean norm of th
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 128. triton.language.extra.cann.libdevice.rnorm4d
+## 134. triton.language.extra.cann.libdevice.rnorm4d
 
 ### OP Overview
 
@@ -2907,9 +3042,9 @@ Return Value: `tl.tensor`, containing the reciprocal of the Euclidean norm of th
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 129. triton.language.extra.cann.libdevice.round
+## 135. triton.language.extra.cann.libdevice.round
 
 ### OP Overview
 
@@ -2929,9 +3064,9 @@ Return Value: `tl.tensor`, containing the nearest integer to x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 130. triton.language.extra.cann.libdevice.rsqrt
+## 136. triton.language.extra.cann.libdevice.rsqrt
 
 ### OP Overview
 
@@ -2951,9 +3086,9 @@ Return Value: `tl.tensor`, containing the reciprocal square root of x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 131. triton.language.extra.cann.libdevice.rsqrt_rn
+## 137. triton.language.extra.cann.libdevice.rsqrt_rn
 
 ### OP Overview
 
@@ -2973,13 +3108,13 @@ Return Value: `tl.tensor`, containing the reciprocal square root of x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 132. triton.language.extra.cann.libdevice.sad
+## 138. triton.language.extra.cann.libdevice.sad
 
 ### OP Overview
 
-Computes |x-y|+z, where x and y are signed integers and z is an unsigned integer.
+Computes |x-y|+z for signed or unsigned 32-bit integers.
 
 Prototype:
 
@@ -2987,19 +3122,19 @@ Prototype:
 triton.language.extra.cann.libdevice.sad(x, y, z, _builder=None)
 ```
 
-Input Types:
+Supported Signatures:
 
-- x: `int32`
-- y: `int32`
-- z: `int32`
+- (`int32`, `int32`, `int32`) -> `int32`
+- (`int32`, `int32`, `uint32`) -> `int32`
+- (`uint32`, `uint32`, `uint32`) -> `uint32`
 
 Return Value: `tl.tensor`, containing |x-y|+z.
 
-Return Type: `int32`
+Return Type: `int32` or `uint32`, as specified by the supported signatures.
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 133. triton.language.extra.cann.libdevice.saturatef
+## 139. triton.language.extra.cann.libdevice.saturatef
 
 ### OP Overview
 
@@ -3019,9 +3154,9 @@ Return Value: `tl.tensor`, containing the saturated value of x, in the range \[+
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 134. triton.language.extra.cann.libdevice.scalbn
+## 140. triton.language.extra.cann.libdevice.scalbn
 
 ### OP Overview
 
@@ -3042,9 +3177,9 @@ Return Value: `tl.tensor`, containing the result of x × 2^n.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 135. triton.language.extra.cann.libdevice.signbit
+## 141. triton.language.extra.cann.libdevice.signbit
 
 ### OP Overview
 
@@ -3064,9 +3199,9 @@ Return Value: `tl.tensor`, containing the sign bit of x.
 
 Return Type: `int32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 136. triton.language.extra.cann.libdevice.sin
+## 142. triton.language.extra.cann.libdevice.sin
 
 ### OP Overview
 
@@ -3086,9 +3221,9 @@ Return Value: `tl.tensor`, containing the sine of input x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 137. triton.language.extra.cann.libdevice.sinh
+## 143. triton.language.extra.cann.libdevice.sinh
 
 ### OP Overview
 
@@ -3108,9 +3243,9 @@ Return Value: `tl.tensor`, containing the hyperbolic sine of input x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 138. triton.language.extra.cann.libdevice.sinpi
+## 144. triton.language.extra.cann.libdevice.sinpi
 
 ### OP Overview
 
@@ -3130,9 +3265,9 @@ Return Value: `tl.tensor`, containing the value of sin(π × x).
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 139. triton.language.extra.cann.libdevice.sqrt
+## 145. triton.language.extra.cann.libdevice.sqrt
 
 ### OP Overview
 
@@ -3152,9 +3287,9 @@ Return Value: `tl.tensor`, containing the square root of x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 140. triton.language.extra.cann.libdevice.sqrt_rd
+## 146. triton.language.extra.cann.libdevice.sqrt_rd
 
 ### OP Overview
 
@@ -3174,9 +3309,9 @@ Return Value: `tl.tensor`, containing the square root of x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 141. triton.language.extra.cann.libdevice.sqrt_rn
+## 147. triton.language.extra.cann.libdevice.sqrt_rn
 
 ### OP Overview
 
@@ -3196,9 +3331,9 @@ Return Value: `tl.tensor`, containing the square root of x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 142. triton.language.extra.cann.libdevice.sqrt_ru
+## 148. triton.language.extra.cann.libdevice.sqrt_ru
 
 ### OP Overview
 
@@ -3218,9 +3353,9 @@ Return Value: `tl.tensor`, containing the square root of x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 143. triton.language.extra.cann.libdevice.sqrt_rz
+## 149. triton.language.extra.cann.libdevice.sqrt_rz
 
 ### OP Overview
 
@@ -3240,9 +3375,9 @@ Return Value: `tl.tensor`, containing the square root of x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 144. triton.language.extra.cann.libdevice.sub_rd
+## 150. triton.language.extra.cann.libdevice.sub_rd
 
 ### OP Overview
 
@@ -3263,9 +3398,9 @@ Return Value: `tl.tensor`, containing the subtraction result rounded down.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 145. triton.language.extra.cann.libdevice.sub_rn
+## 151. triton.language.extra.cann.libdevice.sub_rn
 
 ### OP Overview
 
@@ -3286,9 +3421,9 @@ Return Value: `tl.tensor`, containing the subtraction result rounded to the near
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 146. triton.language.extra.cann.libdevice.sub_ru
+## 152. triton.language.extra.cann.libdevice.sub_ru
 
 ### OP Overview
 
@@ -3309,9 +3444,9 @@ Return Value: `tl.tensor`, containing the subtraction result rounded up.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 147. triton.language.extra.cann.libdevice.sub_rz
+## 153. triton.language.extra.cann.libdevice.sub_rz
 
 ### OP Overview
 
@@ -3332,9 +3467,9 @@ Return Value: `tl.tensor`, containing the subtraction result rounded toward zero
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 148. triton.language.extra.cann.libdevice.tan
+## 154. triton.language.extra.cann.libdevice.tan
 
 ### OP Overview
 
@@ -3354,9 +3489,9 @@ Return Value: `tl.tensor`, containing the tangent of input x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 149. triton.language.extra.cann.libdevice.tanh
+## 155. triton.language.extra.cann.libdevice.tanh
 
 ### OP Overview
 
@@ -3376,9 +3511,9 @@ Return Value: `tl.tensor`, containing the hyperbolic tangent of input x.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 150. triton.language.extra.cann.libdevice.tgamma
+## 156. triton.language.extra.cann.libdevice.tgamma
 
 ### OP Overview
 
@@ -3398,9 +3533,9 @@ Return Value: `tl.tensor`, containing the gamma function of the input parameter.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 151. triton.language.extra.cann.libdevice.trunc
+## 157. triton.language.extra.cann.libdevice.trunc
 
 ### OP Overview
 
@@ -3420,97 +3555,9 @@ Return Value: `tl.tensor`, containing the truncation result.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT, SIMD
+Supported Compilation Mode: SIMD, SIMT
 
-## 152. triton.language.extra.cann.libdevice.uint2float_rd
-
-### OP Overview
-
-Converts a 32-bit unsigned integer to a floating-point number with round-down mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.uint2float_rd(x, _builder=None)
-```
-
-Input Types:
-
-- x: `uint32`
-
-Return Value: `tl.tensor`, containing the converted floating-point number.
-
-Return Type: `float32`
-
-Supported Compilation Mode: SIMT
-
-## 153. triton.language.extra.cann.libdevice.uint2float_rn
-
-### OP Overview
-
-Converts a 32-bit unsigned integer to a floating-point number with round-to-nearest-even mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.uint2float_rn(x, _builder=None)
-```
-
-Input Types:
-
-- x: `uint32`
-
-Return Value: `tl.tensor`, containing the converted floating-point number.
-
-Return Type: `float32`
-
-Supported Compilation Mode: SIMT
-
-## 154. triton.language.extra.cann.libdevice.uint2float_ru
-
-### OP Overview
-
-Converts a 32-bit unsigned integer to a floating-point number with round-up mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.uint2float_ru(x, _builder=None)
-```
-
-Input Types:
-
-- x: `uint32`
-
-Return Value: `tl.tensor`, containing the converted floating-point number.
-
-Return Type: `float32`
-
-Supported Compilation Mode: SIMT
-
-## 155. triton.language.extra.cann.libdevice.uint2float_rz
-
-### OP Overview
-
-Converts a 32-bit unsigned integer to a floating-point number with round-toward-zero mode.
-
-Prototype:
-
-```python
-triton.language.extra.cann.libdevice.uint2float_rz(x, _builder=None)
-```
-
-Input Types:
-
-- x: `uint32`
-
-Return Value: `tl.tensor`, containing the converted floating-point number.
-
-Return Type: `float32`
-
-Supported Compilation Mode: SIMT
-
-## 156. triton.language.extra.cann.libdevice.uint_as_float
+## 158. triton.language.extra.cann.libdevice.uint_as_float
 
 ### OP Overview
 
@@ -3530,9 +3577,97 @@ Return Value: `tl.tensor`, containing the bit pattern of the 32-bit unsigned int
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 157. triton.language.extra.cann.libdevice.ull2float_rd
+## 159. triton.language.extra.cann.libdevice.uint2float_rd
+
+### OP Overview
+
+Converts a 32-bit unsigned integer to a floating-point number with round-down mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.uint2float_rd(x, _builder=None)
+```
+
+Input Types:
+
+- x: `uint32`
+
+Return Value: `tl.tensor`, containing the converted floating-point number.
+
+Return Type: `float32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 160. triton.language.extra.cann.libdevice.uint2float_rn
+
+### OP Overview
+
+Converts a 32-bit unsigned integer to a floating-point number with round-to-nearest-even mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.uint2float_rn(x, _builder=None)
+```
+
+Input Types:
+
+- x: `uint32`
+
+Return Value: `tl.tensor`, containing the converted floating-point number.
+
+Return Type: `float32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 161. triton.language.extra.cann.libdevice.uint2float_ru
+
+### OP Overview
+
+Converts a 32-bit unsigned integer to a floating-point number with round-up mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.uint2float_ru(x, _builder=None)
+```
+
+Input Types:
+
+- x: `uint32`
+
+Return Value: `tl.tensor`, containing the converted floating-point number.
+
+Return Type: `float32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 162. triton.language.extra.cann.libdevice.uint2float_rz
+
+### OP Overview
+
+Converts a 32-bit unsigned integer to a floating-point number with round-toward-zero mode.
+
+Prototype:
+
+```python
+triton.language.extra.cann.libdevice.uint2float_rz(x, _builder=None)
+```
+
+Input Types:
+
+- x: `uint32`
+
+Return Value: `tl.tensor`, containing the converted floating-point number.
+
+Return Type: `float32`
+
+Supported Compilation Mode: SIMD, SIMT
+
+## 163. triton.language.extra.cann.libdevice.ull2float_rd
 
 ### OP Overview
 
@@ -3552,9 +3687,9 @@ Return Value: `tl.tensor`, containing the converted floating-point number.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 158. triton.language.extra.cann.libdevice.ull2float_rn
+## 164. triton.language.extra.cann.libdevice.ull2float_rn
 
 ### OP Overview
 
@@ -3574,9 +3709,9 @@ Return Value: `tl.tensor`, containing the converted floating-point number.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 159. triton.language.extra.cann.libdevice.ull2float_ru
+## 165. triton.language.extra.cann.libdevice.ull2float_ru
 
 ### OP Overview
 
@@ -3596,9 +3731,9 @@ Return Value: `tl.tensor`, containing the converted floating-point number.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 160. triton.language.extra.cann.libdevice.ull2float_rz
+## 166. triton.language.extra.cann.libdevice.ull2float_rz
 
 ### OP Overview
 
@@ -3618,9 +3753,9 @@ Return Value: `tl.tensor`, containing the converted floating-point number.
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 161. triton.language.extra.cann.libdevice.y0
+## 167. triton.language.extra.cann.libdevice.y0
 
 ### OP Overview
 
@@ -3640,9 +3775,9 @@ Return Value: `tl.tensor`, containing the Bessel function of the second kind of 
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 162. triton.language.extra.cann.libdevice.y1
+## 168. triton.language.extra.cann.libdevice.y1
 
 ### OP Overview
 
@@ -3662,9 +3797,9 @@ Return Value: `tl.tensor`, containing the Bessel function of the second kind of 
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT
 
-## 163. triton.language.extra.cann.libdevice.yn
+## 169. triton.language.extra.cann.libdevice.yn
 
 ### OP Overview
 
@@ -3685,4 +3820,4 @@ Return Value: `tl.tensor`, containing the Bessel function of the second kind of 
 
 Return Type: `float32`
 
-Supported Compilation Mode: SIMT
+Supported Compilation Mode: SIMD, SIMT

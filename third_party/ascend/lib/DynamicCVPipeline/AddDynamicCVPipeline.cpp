@@ -20,10 +20,13 @@
  * THE SOFTWARE.
  */
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Debug.h"
 
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Support/WalkResult.h"
 
 #include "ascend/include/DynamicCVPipeline/AddControlFlowCondition.h"
 #include "ascend/include/DynamicCVPipeline/AllocMultiCache.h"
@@ -38,6 +41,8 @@
 #include "ascend/include/DynamicCVPipeline/SplitDataflowPass.h"
 #include "ascend/include/DynamicCVPipeline/StandardizeOp.h"
 
+#include "DynamicCVPipeline/Common/FallbackHelper.h"
+
 static constexpr const char *DEBUG_TYPE = "AddDynamicCVPipeline";
 #define DBGS() (llvm::dbgs() << '[' << DEBUG_TYPE << "] ")
 #define LDBG(X) LLVM_DEBUG(DBGS() << (X) << "\n")
@@ -49,25 +54,22 @@ namespace triton {
 } // namespace triton
 } // namespace mlir
 
-namespace {
-
-void restoreModuleFromBackup(ModuleOp moduleOp, ModuleOp moduleBackup) {
-  Operation *moduleOperation = moduleOp.getOperation();
-  Operation *backupOperation = moduleBackup.getOperation();
-
-  moduleOperation->setLoc(backupOperation->getLoc());
-  moduleOperation->setAttrs(backupOperation->getAttrs());
-  if (moduleOperation->getPropertiesStorageSize() != 0) {
-    moduleOperation->copyProperties(backupOperation->getPropertiesStorage());
-  }
-  moduleOp.getBodyRegion().takeBody(moduleBackup.getBodyRegion());
-}
-
-} // namespace
-
 AddDynamicCVPipelinePass::AddDynamicCVPipelinePass(
     const AddDynamicCVPipelineOptions &options)
     : AddDynamicCVPipelineBase(options) {}
+
+static void checkAndDisableVfSub(ModuleOp module) {
+  static constexpr llvm::StringLiteral kDisableVfSubKernels[1]{
+      "chunk_gated_delta_rule_fwd_kernel_h_blockdim64"};
+  module->walk([=](func::FuncOp funcOp) {
+    if (llvm::is_contained(kDisableVfSubKernels, funcOp.getSymName())) {
+      CVPipeline::setFallbackAttr(module,
+                                  CVPipeline::ERRCODE_DISABLE_VF_SUBSTITUTION);
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+}
 
 void AddDynamicCVPipelinePass::runOnOperation() {
   auto moduleOp = getOperation();
@@ -82,7 +84,7 @@ void AddDynamicCVPipelinePass::runOnOperation() {
     return;
   }
 
-  ModuleOp moduleBackup(moduleOp->clone());
+  CVPipeline::FallbackHelper fallback(moduleOp);
   PassManager pm(&getContext(), moduleOp.getOperationName());
 
   pm.addPass(createPreCheckAvailablePass());
@@ -114,14 +116,13 @@ void AddDynamicCVPipelinePass::runOnOperation() {
 
     int errCode = errCodeAttr ? static_cast<int>(errCodeAttr.getInt())
                               : CVPipeline::ERRCODE_FAILED;
-    restoreModuleFromBackup(moduleOp, moduleBackup);
-    moduleBackup->destroy();
+    fallback.restore();
     moduleOp->setAttr(CVPipeline::ERRCODE_ATTR,
                       builder.getI32IntegerAttr(errCode));
     return;
   }
 
-  moduleBackup->destroy();
+  checkAndDisableVfSub(moduleOp);
   LDBG("Process successfully");
 }
 
