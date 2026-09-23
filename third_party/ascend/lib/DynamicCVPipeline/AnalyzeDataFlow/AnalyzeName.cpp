@@ -48,7 +48,7 @@ static constexpr llvm::StringLiteral interceptrFunc[]{
     "sparse_flash_attention_grad_kernel",
     "flex_attention_backward_dkdv_kernel",
     "flex_attention_backward_dkdv_kernel_tasklist",
-    "chunkwise_bwd_kernel_dhg",
+    "parallel_nsa_fwd_kernel",
 };
 
 static LogicalResult verifyFuncNames(ModuleOp module) {
