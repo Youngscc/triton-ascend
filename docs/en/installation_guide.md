@@ -1,6 +1,6 @@
 # Installation Guide
 
-**Triton-Ascend** is an optimized version of Triton adapted for Huawei Ascend processors. It provides automatic kernel tuning, operator compilation and deployment capabilities. It supports Ascend Atlas A2/A3/950 series products, is compatible with core Triton syntax, and has been deeply optimized for Ascend NPU features, including automatic parsing of kernel parameters, optimized memory access logic, and improved secure deployment mechanisms.
+**Triton-Ascend** is an optimized version of Triton adapted for Huawei Ascend processors. It provides automatic kernel tuning, operator compilation and deployment capabilities. It supports Ascend Atlas A2 products/Atlas A3 products/Ascend 950PR&950DT products, is compatible with core Triton syntax, and has been deeply optimized for Ascend NPU features, including automatic parsing of kernel parameters, optimized memory access logic, and improved secure deployment mechanisms.
 
 This guide instructs developers to install **Triton-Ascend** on **Ubuntu**, covering three installation methods: quick installation, source installation and container image installation. It also includes environment validation and common issue troubleshooting.
 
@@ -8,7 +8,7 @@ This guide instructs developers to install **Triton-Ascend** on **Ubuntu**, cove
 
 **Hardware Requirements**
 
-- Ascend products: Atlas A2/A3/950 series are supported.
+- Ascend products: Atlas A2 products/Atlas A3 products\Ascend 950PR&950DT products.
 
 - NPU configuration: at least 32 GB of memory per card is recommended.
 
@@ -136,7 +136,7 @@ If you need to customize the LLVM build process, follow the steps below to compi
 | 950 | 3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-ubuntu24.04-py3.11 | [Dockerfile](../../docker/3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-ubuntu24.04-py3.11/Dockerfile) | `docker pull quay.io/ascend/triton:3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-ubuntu24.04-py3.11` |
 | 950 | 3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-openeuler24.03-py3.11 | [Dockerfile](../../docker/3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-openeuler24.03-py3.11/Dockerfile) | `docker pull quay.io/ascend/triton:3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-openeuler24.03-py3.11` |
 
-For more images,please refer to [OVERVIEW.md](../../docker/OVERVIEW.md)
+For more images,please refer to [OVERVIEW.md](https://github.com/triton-lang/triton-ascend/blob/main/docker/OVERVIEW.md)
 
 **Using the Image**
 
@@ -175,7 +175,7 @@ Note: If you want to compile Triton‑Ascend from source inside this container, 
 
 ### Verify Installation
 
-Run the vector‑add tutorial example to validate your Triton‑Ascend setup. Example file: <a href="https://github.com/triton-lang/triton-ascend/blob/main/third_party/ascend/tutorials/01-vector-add.py" style="text-decoration: none; color: #0066cc;">01-vector-add.py </a>
+Run the vector‑add tutorial example to validate your Triton‑Ascend setup. Example file: [01-vector-add.py](https://github.com/triton-lang/triton-ascend/blob/main/third_party/ascend/tutorials/01-vector-add.py)
 
 ```bash
 # Set CANN environment variables (using root user default install path `/usr/local/Ascend` as example)
@@ -291,7 +291,7 @@ Answer: X86 and Arm use different versions of community Triton installation pack
 
 **Question 6: How to confirm the chip type**
 
-You can use the npu-smi command to view the NPU model on the system. For example, in the output of the npu-smi info command, "910B4" corresponds to chip type A2 (Ascend 910b series):
+You can use the npu-smi command to view the NPU model on the system. For example, in the output of the npu-smi info command, "910B4" corresponds to chip type Atlas A2 products:
 
 ```text
 root@localhost:/# npu-smi  info

@@ -206,7 +206,7 @@ def _parse_options(compiler, arch, opts=None):
     return backend.parse_options({} if opts is None else opts)
 
 
-@pytest.mark.skip(reason="The case is not supported on A5, skipping for now. Will be fixed in future.")
+@pytest.mark.skip(reason="The case is not supported on Ascend 950, skipping for now. Will be fixed in future.")
 @pytest.mark.parametrize(
     ("arch", "requested_capacity", "expected_capacity"),
     (
@@ -232,7 +232,7 @@ def test_npu_options_normalizes_graph_ub_budget(compiler_module, arch, requested
     assert options.graph_optimize_ub_capacity_bytes == expected_capacity
 
 
-@pytest.mark.skip(reason="The case is not supported on A5, skipping for now. Will be fixed in future.")
+@pytest.mark.skip(reason="The case is not supported on Ascend 950, skipping for now. Will be fixed in future.")
 @pytest.mark.parametrize(
     ("arch", "requested_capacity", "expected_capacity"),
     (
@@ -257,7 +257,7 @@ def test_parse_options_normalizes_graph_ub_budget(compiler_module, arch, request
     assert options.graph_optimize_ub_capacity_bytes == expected_capacity
 
 
-@pytest.mark.skip(reason="The case is not supported on A5, skipping for now. Will be fixed in future.")
+@pytest.mark.skip(reason="The case is not supported on Ascend 950, skipping for now. Will be fixed in future.")
 def test_normalized_graph_ub_budget_contributes_to_npu_hash(compiler_module):
     auto = compiler_module.NPUOptions(arch="Ascend910B1")
     explicit_none = compiler_module.NPUOptions(arch="Ascend910B1", graph_optimize_ub_capacity_bytes=None)
@@ -274,7 +274,7 @@ def test_normalized_graph_ub_budget_contributes_to_npu_hash(compiler_module):
     assert auto.hash() != small.hash()
 
 
-@pytest.mark.skip(reason="The case is not supported on A5, skipping for now. Will be fixed in future.")
+@pytest.mark.skip(reason="The case is not supported on Ascend 950, skipping for now. Will be fixed in future.")
 @pytest.mark.parametrize(
     ("requested_capacity", "error_type"),
     (
@@ -296,7 +296,6 @@ def _make_opt(
     is_pure_simt,
     superblock_factor=0,
     simt_optimization_mode=0,
-    simt_stack_limit=None,
     shared_mem_dynamic_size=None,
     disable_fma=False,
     compile_on_910_95=False,
@@ -306,7 +305,6 @@ def _make_opt(
         num_warps=4,
         warp_size=32,
         simt_optimization_mode=simt_optimization_mode,
-        simt_stack_limit=simt_stack_limit,
         shared_mem_dynamic_size=shared_mem_dynamic_size,
         disable_fma=disable_fma,
         superblock_factor=superblock_factor,
@@ -336,7 +334,6 @@ def _run_ttir_to_npubin(
     superblock_factor=0,
     common_options=(),
     simt_optimization_mode=0,
-    simt_stack_limit=None,
     resolved_simt_stack_limit=1152,
     shared_mem_dynamic_size=None,
     disable_fma=False,
@@ -384,10 +381,9 @@ def _run_ttir_to_npubin(
     )
 
     # Keep this argv matrix independent of the host torch_npu configuration
-    # while checking that Pure-SIMT passes the explicit option to the resolver.
-    def get_simt_stack_limit(user_stack_limit):
-        assert user_stack_limit == simt_stack_limit
-        return resolved_simt_stack_limit if user_stack_limit is None else user_stack_limit
+    # while checking that Pure-SIMT uses the backend-resolved stack limit.
+    def get_simt_stack_limit():
+        return resolved_simt_stack_limit
 
     monkeypatch.setattr(compiler, "get_simt_stack_limit", get_simt_stack_limit)
     monkeypatch.setattr(compiler.subprocess, "run", run_bisheng)
@@ -399,7 +395,6 @@ def _run_ttir_to_npubin(
             is_pure_simt=is_pure_simt,
             superblock_factor=superblock_factor,
             simt_optimization_mode=simt_optimization_mode,
-            simt_stack_limit=simt_stack_limit,
             shared_mem_dynamic_size=shared_mem_dynamic_size,
             disable_fma=disable_fma,
         ),
@@ -407,6 +402,13 @@ def _run_ttir_to_npubin(
     assert result == b"npubin"
     assert len(commands) == 1
     return events, commands[0]
+
+
+def test_simt_stack_limit_is_not_a_compile_option(compiler_module):
+    assert "simt_stack_limit" not in compiler_module.NPUOptions.__dataclass_fields__
+    assert "simt_stack_limit" not in _parse_options(compiler_module, "Ascend910_9581").__dict__
+    with pytest.raises(TypeError, match="simt_stack_limit"):
+        compiler_module.NPUOptions(arch="Ascend910_9581", simt_stack_limit=8192)
 
 
 def _run_linalg_to_npubin(compiler, monkeypatch, function_name, has_blacklist_op):
@@ -457,7 +459,7 @@ def _run_linalg_to_npubin(compiler, monkeypatch, function_name, has_blacklist_op
     return commands[0]
 
 
-@pytest.mark.skip(reason="The case is not supported on A5, skipping for now. Will be fixed in future.")
+@pytest.mark.skip(reason="The case is not supported on Ascend 950, skipping for now. Will be fixed in future.")
 def test_export_coalesce_metadata_removes_attrs_and_marks_row(compiler_module, monkeypatch):
     removed = []
 
@@ -509,7 +511,7 @@ def test_export_coalesce_metadata_removes_attrs_and_marks_row(compiler_module, m
     }
 
 
-@pytest.mark.skip(reason="The case is not supported on A5, skipping for now. Will be fixed in future.")
+@pytest.mark.skip(reason="The case is not supported on Ascend 950, skipping for now. Will be fixed in future.")
 def test_export_coalesce_metadata_rejects_partial_row_contract(compiler_module, monkeypatch):
 
     def get_int_attr(module, name):
@@ -545,7 +547,7 @@ def test_export_coalesce_metadata_rejects_partial_row_contract(compiler_module, 
         )
 
 
-@pytest.mark.skip(reason="The case is not supported on A5, skipping for now. Will be fixed in future.")
+@pytest.mark.skip(reason="The case is not supported on Ascend 950, skipping for now. Will be fixed in future.")
 def test_ttir_to_npubin_exports_make_ttir_row_contract_only_for_pure_simt(compiler_module, monkeypatch):
     events, _command = _run_ttir_to_npubin(
         compiler_module,
@@ -629,14 +631,14 @@ def test_make_ttir_passes_canonical_compile_mode_to_graph_optimize(compiler_modu
     assert events[-1] == "run_row"
 
 
-@pytest.mark.skip(reason="The case is not supported on A5, skipping for now. Will be fixed in future.")
+@pytest.mark.skip(reason="The case is not supported on Ascend 950, skipping for now. Will be fixed in future.")
 def test_npu_options_keep_graph_remark_compatibility_default(compiler_module):
     """The legacy graph-remarks name remains discoverable with a fixed default."""
     options = compiler_module.NPUOptions(arch="Ascend910B1")
     assert options.__dict__["graph_optimize_emit_remarks"] is False
 
 
-@pytest.mark.skip(reason="The case is not supported on A5, skipping for now. Will be fixed in future.")
+@pytest.mark.skip(reason="The case is not supported on Ascend 950, skipping for now. Will be fixed in future.")
 @pytest.mark.parametrize(
     ("arch", "expected_capacity"),
     (
@@ -814,7 +816,7 @@ def test_non_pure_simt_linalg_compilers_keep_blacklist_auto_blockify_gate(
 
 
 def test_default_compile_mode_keeps_the_91095_layout_memory_gate_prepared(compiler_module):
-    """The canonical default is portable and enables the A5 template gate."""
+    """The canonical default is portable and enables the Ascend 950 template gate."""
 
     a2_default = compiler_module.NPUOptions(arch="Ascend910B1")
     assert a2_default.compile_on_910_95 is False

@@ -75,6 +75,10 @@ def test_add(size: int):
     output_triton = add_autotune(x, y)
     assert torch.allclose(output_triton, output_torch)
     print(f"Vector Add {size} PASSED!")
+    triton_us = do_bench_npu(lambda: add_autotune(x, y))
+    torch_us = do_bench_npu(lambda: add_torch(x, y))
+    print(f"Triton kernel execution time: {triton_us:.4f} ms")
+    print(f"PyTorch kernel execution time: {torch_us:.4f} ms")
 
 
 if __name__ == "__main__":
@@ -120,7 +124,7 @@ def kernel(...):
 如果希望某个 `tl.constexpr` 参与自动 Tiling 生成，需要同时满足下面三点：
 
 - 它本身必须是 Tiling 参数，也就是会影响每个 block（逻辑核）处理的数据规模或 tile 大小的参数；
-- 不要在 launch 时把它显式传值写死；
+- 不要在 launch 时把它显式传值硬编码；
 - 不要在 kernel 定义里给它设置默认值。
 
 例如下面这种写法，`BLOCK_M` 会参与自动调优：
@@ -244,6 +248,28 @@ def kernel(...):
 - 框架负责 benchmark、选择最优配置和缓存复用；
 - 使用习惯与社区 autotune 保持一致。
 
+### 查看调优日志
+
+设置 `TRITON_PRINT_AUTOTUNING=1`，可查看调优日志。实际完成测速后，会打印调优耗时、最佳配置和各个成功配置的测速结果。以下为示意输出（`...` 表示省略的配置参数）：
+
+```text
+Triton autotuning for function kernel finished after 0.12s; best config selected: BLOCK_M: 128, BLOCK_N: 128, ...;
+Triton autotuning benchmark results for function kernel:
+  config=BLOCK_M: 128, BLOCK_N: 128, ...; p50=0.0100 ms, p20=0.0090 ms, p80=0.0110 ms [selected]
+  config=BLOCK_M: 64, BLOCK_N: 256, ...; p50=0.0140 ms, p20=0.0130 ms, p80=0.0150 ms
+```
+
+`[selected]` 标记被选中的最佳配置。`p50`、`p20`、`p80` 分别为第 50、20、80 百分位耗时，单位为毫秒；若测速返回平均耗时，则显示 `mean=... ms`。
+
+用户配置（`configs`，包括通过 `hints` 展开的配置）发生失败，或调优因异常中断时，会打印相应配置的状态和原因。以下分别为编译失败和调优中断的示意输出：
+
+```text
+Triton autotuning: config=BLOCK_M: 128, BLOCK_N: 128, ...; compile_failed; reason=CompileTimeAssertionFailure: <错误信息>
+Triton autotuning: config=BLOCK_M: 64, BLOCK_N: 256, ...; not_evaluated; reason=No benchmark result was produced. Autotuning interrupted: RuntimeError: <错误信息>
+```
+
+其中，`compile_failed` 表示编译失败，`not_evaluated` 表示配置尚未完成评估，`reason` 给出失败或中断原因。
+
 ## 进阶用法：自动 Tiling 与其他参数联合调优
 
 以下内容属于进阶用法，只有当用户希望在自动 Tiling 模式下，继续联合调优 kernel 的非 Tiling 参数或编译参数时，再考虑使用。
@@ -324,6 +350,7 @@ def matmul_kernel(a, b, M, N, K, BLOCK_M, BLOCK_N, BLOCK_K, GROUP_SIZE_M):
     ...
 
 
+grid = lambda meta: (triton.cdiv(M, meta["BLOCK_M"]) * meta["GROUP_SIZE_M"], triton.cdiv(N, meta["BLOCK_N"]))
 matmul_kernel[grid](a, b, M, N, K)
 ```
 

@@ -94,7 +94,7 @@
 | 19  | buf_slot_num_of_veccore                       | NPU        | 配置 veccore 内部 buffer slot 数量。 |
 | 20  | buf_slot_num_of_crosscore                     | NPU        | 配置跨 core buffer slot 数量。 |
 | 21  | buf_slot_num_of_gm                            | NPU        | 配置 GM load buffer slot 数量。 |
-| 22  | compile_mode                                  | NPU        | 编译模式：`"simd_simt_template"`（默认）/ `"simd"` / `"simt_only"`；`"simt_only"` 仅支持 Ascend 950。 |
+| 22  | compile_mode                                  | NPU        | 编译模式：`"simd_simt_template"`（默认）/ `"simd"` / `"simt_only"`；`"simt_only"` 仅支持 Ascend 950PR&950DT系列产品。 |
 
 已废弃选项的兼容行为和更名映射见 {ref}`编译选项清理与兼容性 <compiler-option-cleanup-and-compatibility>`。
 
@@ -113,9 +113,9 @@
 
 | Converter                | 功能  | 局限性 |
 | ------------------------ | -------------------------- | ------------------------- |
-| RewriteAddPtrOp          | 分析 `tl.load`, `tl.store`等操作中的指针表达式 (`AddPtrOp`)。将原始的指针偏移计算分解并建模为包含各维度（轴）具体偏移信息的 `PtrState` 对象。例如，对于形如 `ptr + x // 1024 * 4096 + x % 1024 * 4 + y` 的表达式，分析出 `x` 和 `y` 轴的贡献与关系。                   | 1. 所涉及的原始迭代轴（如`x`）必须能被分裂轴（如`1024`）整除。<br>2. 外部的 `XBLOCK` 大小必须是分裂轴`divisor`的整数倍或其约数。                               |
+| RewriteAddPtrOp          | 分析 `tl.load`, `tl.store`等操作中的指针表达式 (`AddPtrOp`)。将原始的指针偏移计算分解并建模为包含各维度（轴）具体偏移信息的 `PtrState` 对象。例如，对于形如 `ptr + x // 1024 * 4096 + x % 1024 * 4 + y` 的表达式，分析出 `x` 和 `y` 轴的贡献与关系。                   | 1. 所涉及的原始迭代轴（如`x`）必须能被分裂轴（如`1024`）整除；2. 外部的 `XBLOCK` 大小必须是分裂轴`divisor`的整数倍或其约数。                               |
 | CreateAddPtr              | 根据分析得到的 `PtrState` 对象，重新构造一个新的 `AddPtrOp` 指针计算操作。新生成的指针表达式将消除原表达式中的整数除法 (`//`) 和取模 (`%`) 操作。                                                                       | 依赖于 `RewriteAddPtrOp` 成功生成的、合法的 `PtrState`。                                                                                                     |
-| RewriteLoadOp            | 分析 `tl.load` 操作中的掩码 (`mask`) 表达式。将包含整除/取余的复杂掩码条件分解并建模为包含各维度边界信息的 `MaskState` 对象。例如，对于 `mask = x // 1024 < 8 and x % 1024 < 1024 and y < 4`，分析出各维度的独立约束条件。                                                                     | 1. 所涉及的原始迭代轴（如`x`）必须能被分裂轴（如`1024`）整除。<br>2. 外部的 `XBLOCK` 大小必须是分裂轴`divisor`的整数倍或其约数。                               |
+| RewriteLoadOp            | 分析 `tl.load` 操作中的掩码 (`mask`) 表达式。将包含整除/取余的复杂掩码条件分解并建模为包含各维度边界信息的 `MaskState` 对象。例如，对于 `mask = x // 1024 < 8 and x % 1024 < 1024 and y < 4`，分析出各维度的独立约束条件。                                                                     | 1. 所涉及的原始迭代轴（如`x`）必须能被分裂轴（如`1024`）整除；2. 外部的 `XBLOCK` 大小必须是分裂轴`divisor`的整数倍或其约数。                               |
 | BuildMask                | 根据分析得到的 `MaskState` 对象，重新构造一个新的掩码 (`mask`) 表达式。新掩码将消除原表达式中的整数除法 (`//`) 和取模 (`%`) 操作。                                                                                            | 仅处理由 `RewriteLoadOp` 或 `RewriteStoreOp` 生成的 `MaskState`。无法处理任意复杂的、非规范化的掩码表达式。                                                   |
 | CreateLoad               | 使用由 `CreateAddPtr` 生成的新指针表达式和由 `BuildMask` 生成的新掩码表达式，重新创建（替换）原始的 `tl.load` 操作，完成指令重写。                                                                                                                                                               | 依赖于 `RewriteAddPtrOp`, `CreateAddPtr`, `RewriteLoadOp`, `BuildMask` 等前置步骤均成功执行。                                                                |
 | RewriteStoreOp           | 分析 `tl.store` 操作中的掩码 (`mask`) 表达式。其功能与 `RewriteLoadOp` 类似，将包含整除/取余的复杂掩码条件分解并建模为 `MaskState` 对象。                                                                                                                                                       | 与 `RewriteLoadOp` 相同。                                                                                                                                    |
@@ -131,15 +131,14 @@
 |------|-------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | 1    | discrete-mask-access-conversion           | 将Triton中基于离散索引掩码（Discrete Mask）的内存访问模式（如`triton.language.load`带非连续mask）进行分析与转换，为后续将离散轴展开为循环做准备。该Pass识别出那些无法被后端硬件高效处理的、非规律性的或稀疏的访问模式。 |
 | 2    | triton-to-unstructured           | 将经过`discrete-mask-access-conversion`识别出的、包含离散轴（Discrete Axes）的张量操作，转换为基于显式标量循环的标量访存。 |
-| 3    | bubble-up-operation                       | 主要对`extract op/extract_slice`顺序上移优化。这可以优化数据局部性，有些场景能消除转换后产生的不必要的循环，从而提升生成代码的执行效率。 |
 
 ###### 3.2.2.2.1 discrete-mask-access-conversion
 
 | 转换器名称                  | 描述|
 |----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| DiscreteMaskStoreConversion | 首先进行mask分析，如果mask分析结果是非连续的，将原始的store操作转化为以下序列：<br>1. load（加载目标存储地址的内容）<br>2. select（根据mask挑选目标存储内容和待存储的value内容）<br>3. store（将select的结果存储回目标地址） |
-| DiscreteMaskLoadConversion  | 首先进行mask分析，如果mask分析结果是非连续的，将原始的load操作转化为以下序列：<br>1. load（加载源tensor的所有内容）<br>2. select（根据mask挑选源tensor内容，被掩盖部分设置为other值）                     |
-| DiscreteMaskAtomicAddConversion | 首先进行mask分析，如果mask分析结果是非连续的，将原始的atomic_add操作转化为以下序列：<br>1. select（根据mask挑选value的值，被掩盖部分设为0）<br>2. atomic_add（使用select后的结果重新生成atomic_add操作） |
+| DiscreteMaskStoreConversion | 首先进行mask分析，如果mask分析结果是非连续的，将原始的store操作转化为以下序列：1. load（加载目标存储地址的内容）→ 2. select（根据mask挑选目标存储内容和待存储的value内容）→ 3. store（将select的结果存储回目标地址） |
+| DiscreteMaskLoadConversion  | 首先进行mask分析，如果mask分析结果是非连续的，将原始的load操作转化为以下序列：1. load（加载源tensor的所有内容）→ 2. select（根据mask挑选源tensor内容，被掩盖部分设置为other值）                     |
+| DiscreteMaskAtomicAddConversion | 首先进行mask分析，如果mask分析结果是非连续的，将原始的atomic_add操作转化为以下序列：1. select（根据mask挑选value的值，被掩盖部分设为0）→ 2. atomic_add（使用select后的结果重新生成atomic_add操作） |
 
 ###### 3.2.2.2.2 triton-to-unstructured
 
@@ -203,8 +202,8 @@ TritonToLinalg converts ttir to linalg ir.
 | MatmulConverter                            | triton::DotOp to linalg::MatmulOp                            |
 | SortOpConverter                            | triton::SortOp to func::FuncOp                               |
 | DotScaledConverter                         | triton::DotScaledOp to linalg::MatmulOp                      |
-| PtrToIntConverter                          | triton::PtrToIntOp                                           |
-| MakeTensorPtrConverter                     | triton::PtrToIntOp to arith::IndexCastOp                     |
+| PtrToIntConverter                          | triton::PtrToIntOp to memref::ExtractAlignedPointerAsIndexOp, arith::IndexCastOp |
+| MakeTensorPtrConverter                     | triton::MakeTensorPtrOp to memref::ReinterpretCastOp         |
 
 ##### 3.2.2.4 other passes
 
@@ -212,12 +211,12 @@ TritonToLinalg converts ttir to linalg ir.
 |---|---|---|---|
 | triton-to-annotation | 处理Ascend NPU特有的编译提示指令 (`tl.compile_hint`)，将其转换为后端的Annotation方言，用于指导后续的硬件特定优化或资源配置。 | TritonAnnotationConversion | 将 `triton::AnnotationOp` 转换为 `annotation::MarkOp`，实现高级编译提示信息向底层注释标记的传递。 |
 | triton-to-hfusion | 将Triton中的`TTIR`转换为Ascend NPU硬件加速器`HFusion`方言中的对应操作。 | TritonHistogramToHFusionConversion | 将 `triton::HistogramOp` 转换为 `hfusion::HistogramOp`，使其能在NPU的专用硬件上高效执行。 |
-| triton-to-hivm | 处理Triton的块同步操作 (`tl.sync_block_all`, `tl.sync_block_set`, `tl.sync_block_wait`)，将其转换为Ascend NPU的`HIVM`方言中的跨核心同步指令。这些指令用于管理多核流水线中的同步与数据依赖，是流水优化的关键。 | TritonCustomOpToHIVMSyncOpConversion | 实现Triton同步指令到HIVM同步指令的转换：<br>• `sync_block_all`：全局块同步<br>• `sync_block_set`：设置同步点<br>• `sync_block_wait`：等待同步点 |
+| triton-to-hivm | 处理Triton的块同步操作 (`tl.sync_block_all`, `tl.sync_block_set`, `tl.sync_block_wait`)，将其转换为Ascend NPU的`HIVM`方言中的跨核心同步指令。这些指令用于管理多核流水线中的同步与数据依赖，是流水优化的关键。 | TritonCustomOpToHIVMSyncOpConversion | 实现Triton同步指令到HIVM同步指令的转换：`sync_block_all`（全局块同步）；`sync_block_set`（设置同步点）；`sync_block_wait`（等待同步点） |
 | triton-to-llvm | 将Triton中的内联汇编操作 (`tl.inline_assembly`) 转换为LLVM方言的内联汇编，并最终映射为Ascend NPU的CCE硬件固有函数（Intrinsics） | ElementwiseInlineAsmOpConversion | 将 `triton::ElementwiseInlineAsmOp` 转换为 `LLVM::InlineAsmOp` 。|
 
-#### 3.2.3 SIMT Compiler（Ascend 950）
+#### 3.2.3 SIMT Compiler（Ascend 950PR&950DT系列产品）
 
-昇腾 950 在 SIMD 路径之外增加 SIMT 能力，用于加速**非结构化 / 离散**访存（如间接索引的 load/store）。
+Ascend 950PR&950DT系列产品 在 SIMD 路径之外增加 SIMT 能力，用于加速**非结构化 / 离散**访存（如间接索引的 load/store）。
 开发者通过 `compile_mode` 选择编译路径。
 
 ##### 3.2.3.1 `compile_mode` 说明
@@ -234,7 +233,7 @@ TritonToLinalg converts ttir to linalg ir.
 # 纯 SIMD
 kernel[grid](..., compile_mode="simd")
 
-# 混合（默认；950 上离散访存优先走 SIMT）
+# 混合（默认；Ascend 950PR&950DT系列产品 上离散访存优先走 SIMT）
 kernel[grid](..., compile_mode="simd_simt_template")
 
 # 纯 SIMT
@@ -284,7 +283,7 @@ flowchart TD
 
 | 阶段 | `"simd"` | `"simd_simt_template"` | `"simt_only"` |
 |------|----------|--------------------------|---------------|
-| 离散 mask 处理 | 拆成连续/离散边界，用 load + select / store 处理 | Ascend 950 且张量维数 ≤ 5：标记后交给下游；否则同左 | 不运行 |
+| 离散 mask 处理 | 拆成连续/离散边界，用 load + select / store 处理 | Ascend 950PR&950DT系列产品 且张量维数 ≤ 5：标记后交给下游；否则同左 | 不运行 |
 | 非结构化访存 | 展开为标量循环 | 尽量转为 SIMT 间接访存（维数 ≤ 5）；失败则回退标量循环 | 不运行 |
 | TritonToLinalg | 常规 Linalg IR 降级 | 常规 Linalg IR 降级 | 不运行 |
 
@@ -293,11 +292,11 @@ flowchart TD
 混合模式**不会**把整个 kernel 切到 SIMT，只对离散 / 非结构化访存点走 SIMT，其余仍走 SIMD：
 
 1. **离散 mask 处理**
-   - 若判定为非连续 mask，且满足 Ascend 950、混合模式、维数 ≤ 5：不改写 IR，只标记「下游走 SIMT」。
+   - 若判定为非连续 mask，且满足 Ascend 950PR&950DT系列产品、混合模式、维数 ≤ 5：不改写 IR，只标记「下游走 SIMT」。
    - 否则（纯 SIMD 或不满足条件）：将 mask 拆成连续 / 离散部分，用连续边界限定全局内存访问，再通过 select 合并结果。
 
 2. **非结构化访存处理**
-   - 在 Ascend 950 混合模式下，对非结构化访存或已标记的离散访存走 SIMT 快速通道：
+   - 在 Ascend 950PR&950DT系列产品 混合模式下，对非结构化访存或已标记的离散访存走 SIMT 快速通道：
      - `load` / `store` → `indirect_load` / `indirect_store`（维数 ≤ 5）
      - `atomic` 操作 → `hivm.custom(symbol="__builtin_indirect_atomic")`
    - 不满足条件则回退为标量循环（与 `"simd"` 一致）。
@@ -307,7 +306,7 @@ flowchart TD
 
 ##### 3.2.3.4 纯 SIMT（`simt_only`）
 
-`"simt_only"` 直接下发 Triton IR 交给 AscendNPU IR 做纯 SIMT 编译。
+`simt_only` 直接下发 Triton IR 交给 AscendNPU IR 做纯 SIMT 编译。
 
 #### 3.2.4 Ascend affinitive Operators
 

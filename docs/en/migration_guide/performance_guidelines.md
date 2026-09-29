@@ -132,7 +132,7 @@ When executing Triton operators, NPUs leverage parallel mechanisms such as multi
 
 ### I. Core Principles of Data Type Optimization
 
-Some operations of the A2/A3 vector units do not support certain data types. In this case, the corresponding vector operations will degrade to scalar operations, affecting performance. If the overall operator accuracy is not affected, it is advisable to use supported data types to improve performance.
+Some operations of the Atlas A2 products/Atlas A3 products vector units do not support certain data types. In this case, the corresponding vector operations will degrade to scalar operations, affecting performance. If the overall operator accuracy is not affected, it is advisable to use supported data types to improve performance.
 The following operations are involved.
 
 |  **Operator Name** |  **Unsupported Data Type** |

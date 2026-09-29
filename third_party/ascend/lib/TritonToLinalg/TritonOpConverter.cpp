@@ -1740,14 +1740,13 @@ ScanConverter::convertToTargetOp(triton::ScanOp op,
       argTypes.push_back(rewriter.getI1Type());
     }
     auto libFnType = rewriter.getFunctionType(argTypes, {resTy});
-    auto funcOp = rewriter.create<func::FuncOp>(loc, funcName.str(), libFnType);
-
-    SymbolTable symTab(moduleOp);
-    auto maybePrintFuncNameAttr = symTab.renameToUnique(funcOp, {&symTab});
-    if (failed(maybePrintFuncNameAttr)) {
-      return op->emitError(
-          "failed to create a unique func name for device_print");
-    }
+    // Unique the name before creating the op: building a SymbolTable over a
+    // module that already holds a symbol of this name -- a kernel named
+    // "triton_cumsum", say -- trips SymbolTable's "uniquely named symbol
+    // operations" assertion before any renaming can happen.
+    auto uniqueName = generateUniqueFuncName(moduleOp, funcName);
+    auto funcOp =
+        rewriter.create<func::FuncOp>(loc, uniqueName.str(), libFnType);
     SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
 
     rewriter.setInsertionPoint(op);
@@ -2605,14 +2604,11 @@ LogicalResult DevicePrintConverter::matchAndRewrite(
     inputTypes.push_back(arg.getType());
   }
   auto libFnType = rewriter.getFunctionType(inputTypes, {});
+  // See ScanConverter: the name is uniqued before the op is created so that a
+  // kernel named "triton_print" cannot make SymbolTable assert.
+  auto funcName = generateUniqueFuncName(moduleOp, printFuncNameBase);
   auto funcOp =
-      rewriter.create<func::FuncOp>(op.getLoc(), printFuncNameBase, libFnType);
-  SymbolTable symTab(moduleOp);
-  auto maybePrintFuncNameAttr = symTab.renameToUnique(funcOp, {&symTab});
-  if (failed(maybePrintFuncNameAttr)) {
-    return op->emitError(
-        "failed to create a unique func name for device_print");
-  }
+      rewriter.create<func::FuncOp>(op.getLoc(), funcName.str(), libFnType);
   SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
   auto prefixAttr = op.getPrefixAttr();
   funcOp->setAttr(prefixAttrName, prefixAttr);
@@ -2644,14 +2640,11 @@ LogicalResult DeviceAssertConverter::matchAndRewrite(
   auto conditionType = op.getCondition().getType();
 
   auto libFnType = rewriter.getFunctionType({conditionType}, {});
+  // See ScanConverter: the name is uniqued before the op is created so that a
+  // kernel named "triton_assert" cannot make SymbolTable assert.
+  auto funcName = generateUniqueFuncName(moduleOp, printFuncNameBase);
   auto funcOp =
-      rewriter.create<func::FuncOp>(op.getLoc(), printFuncNameBase, libFnType);
-  mlir::SymbolTable symTab(moduleOp);
-  auto maybePrintFuncNameAttr = symTab.renameToUnique(funcOp, {&symTab});
-  if (failed(maybePrintFuncNameAttr)) {
-    return op->emitError(
-        "failed to create a unique func name for device_assert");
-  }
+      rewriter.create<func::FuncOp>(op.getLoc(), funcName.str(), libFnType);
   SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
   funcOp->setAttr(msgAttrName, msgAttr);
 
@@ -3201,19 +3194,9 @@ DotScaledConverter::matchAndRewrite(triton::DotScaledOp op, OpAdaptor adaptor,
   if (lhsScaleTy.getElementType().isIntOrIndex()) {
     RankedTensorType lhsScaleI16Ty =
         RankedTensorType::get(lhsScaleTy.getShape(), i16Ty);
-    Value lhsScaleI16 =
-        rewriter.create<arith::ExtSIOp>(op.getLoc(), lhsScaleI16Ty, lhsScale);
-
-    Value lhsShift127Empty = rewriter.create<tensor::EmptyOp>(
-        op.getLoc(), lhsScaleI16Ty.getShape(), i16Ty);
-    Value lhsShift127 =
-        rewriter
-            .create<linalg::FillOp>(op.getLoc(), ValueRange{c127},
-                                    ValueRange{lhsShift127Empty})
-            .getResult(0);
-
-    Value lhsScaleI16Add127 =
-        rewriter.create<arith::AddIOp>(op.getLoc(), lhsScaleI16, lhsShift127);
+    Value lhsScaleI16;
+    lhsScaleI16 =
+        rewriter.create<arith::ExtUIOp>(op.getLoc(), lhsScaleI16Ty, lhsScale);
 
     Value lhsShift7Empty = rewriter.create<tensor::EmptyOp>(
         op.getLoc(), lhsScaleI16Ty.getShape(), i16Ty);
@@ -3221,8 +3204,8 @@ DotScaledConverter::matchAndRewrite(triton::DotScaledOp op, OpAdaptor adaptor,
                           .create<linalg::FillOp>(op.getLoc(), ValueRange{c7},
                                                   ValueRange{lhsShift7Empty})
                           .getResult(0);
-    Value lhsScaleI16Shifted = rewriter.create<arith::ShLIOp>(
-        op.getLoc(), lhsScaleI16Add127, lhsShift7);
+    Value lhsScaleI16Shifted =
+        rewriter.create<arith::ShLIOp>(op.getLoc(), lhsScaleI16, lhsShift7);
 
     RankedTensorType lhsScaleBF16Ty =
         RankedTensorType::get(lhsScaleTy.getShape(), bf16Ty);
@@ -3264,26 +3247,18 @@ DotScaledConverter::matchAndRewrite(triton::DotScaledOp op, OpAdaptor adaptor,
         DenseI32ArrayAttr::get(rewriter.getContext(), ArrayRef<int32_t>{1, 0}));
     RankedTensorType rhsScaleI16Ty =
         RankedTensorType::get(transposedShape, i16Ty);
-    Value rhsScaleI16 = rewriter.create<arith::ExtSIOp>(
-        op.getLoc(), rhsScaleI16Ty, transposedRhsScale);
-    Value rhsShift127Empty = rewriter.create<tensor::EmptyOp>(
-        op.getLoc(), rhsScaleI16Ty.getShape(), i16Ty);
-    Value rhsShift127 =
-        rewriter
-            .create<linalg::FillOp>(op.getLoc(), ValueRange{c127},
-                                    ValueRange{rhsShift127Empty})
-            .getResult(0);
+    Value rhsScaleI16;
+    rhsScaleI16 = rewriter.create<arith::ExtUIOp>(op.getLoc(), rhsScaleI16Ty,
+                                                  transposedRhsScale);
 
-    Value rhsScaleI16Add127 =
-        rewriter.create<arith::AddIOp>(op.getLoc(), rhsScaleI16, rhsShift127);
     Value rhsShift7Empty = rewriter.create<tensor::EmptyOp>(
         op.getLoc(), rhsScaleI16Ty.getShape(), i16Ty);
     Value rhsShift7 = rewriter
                           .create<linalg::FillOp>(op.getLoc(), ValueRange{c7},
                                                   ValueRange{rhsShift7Empty})
                           .getResult(0);
-    Value rhsScaleI16Shifted = rewriter.create<arith::ShLIOp>(
-        op.getLoc(), rhsScaleI16Add127, rhsShift7);
+    Value rhsScaleI16Shifted =
+        rewriter.create<arith::ShLIOp>(op.getLoc(), rhsScaleI16, rhsShift7);
 
     RankedTensorType rhsScaleBF16Ty =
         RankedTensorType::get(transposedShape, bf16Ty);

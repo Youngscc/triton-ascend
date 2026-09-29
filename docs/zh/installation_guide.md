@@ -1,6 +1,7 @@
 # 安装指南
 
-**Triton-Ascend**是适配华为Ascend处理器的Triton优化版本，提供核函数自动调优、算子编译及部署能力。支持Ascend Atlas A2/A3/950系列产品，兼容Triton核心语法，并针对昇腾NPU特性进行了深度优化，包括自动解析核函数参数、优化内存访问逻辑、完善安全部署机制等。
+**Triton-Ascend**是适配华为Ascend处理器的Triton优化版本，提供核函数自动调优、算子编译及部署能力。支持Atlas A2系列产品、Atlas A3系列产品、Ascend 950PR&950DT系列产品，兼容Triton核心语法，并针对昇腾NPU特性进行了深度优化，包括自动解析核函数参数、优化内存访问逻辑、完善安全部署机制等。
+**Triton-Ascend**是适配华为Ascend处理器的Triton优化版本，提供核函数自动调优、算子编译及部署能力。支持Atlas A2系列产品、Atlas A3系列产品、Ascend 950PR&950DT系列产品，兼容Triton核心语法，并针对昇腾NPU特性进行了深度优化，包括自动解析核函数参数、优化内存访问逻辑、完善安全部署机制等。
 
 本指南指导开发者在**Ubuntu**环境下安装**Triton-Ascend**，涵盖快速安装、源码安装及镜像安装三种方式，并包含环境验证与常见问题排查。
 
@@ -8,7 +9,7 @@
 
 **硬件要求**
 
-- Ascend产品：支持Atlas A2/A3/950系列。
+- Ascend产品：支持Atlas A2系列产品、Atlas A3系列产品、Ascend 950PR&950DT系列产品。
 
 - NPU配置：建议单卡32GB及以上内存。
 
@@ -114,7 +115,7 @@ pip install -e .
   | `TRITON_BUILD_WITH_CCACHE`    | true          | 启用 ccache 缓存编译结果，加速重复构建，需提前安装 ccache。                                                                                                        |
   | `TRITON_BUILD_PROTON`         | OFF           | 是否构建 Proton 性能分析器（profiler）。需要时设为 `ON`。                                                                                                      |
   | `TRITON_BUILD_TD`             | OFF           | 是否构建 TD（Triton-distributed-ascend）相关组件，默认关闭。                                                                                                 |
-  | `TRITON_BUILD_NPUIR`          | OFF           | 是否在安装过程中同步编译 AscendNPU-IR。设为 `ON` 时会触发 `build_npuir.py` 流程。<br> AscendNPU-IR编译依赖CANN，需source /usr/local/Ascend/ascend-toolkit/set_env.sh（以root用户默认安装路径为例）且可用磁盘大于30GB。 |
+  | `TRITON_BUILD_NPUIR`          | OFF           | 是否在安装过程中同步编译 AscendNPU-IR。设为 `ON` 时会触发 `build_npuir.py` 流程；AscendNPU-IR编译依赖CANN，需source /usr/local/Ascend/ascend-toolkit/set_env.sh（以root用户默认安装路径为例）且可用磁盘大于30GB。 |
   | `TRITON_WHEEL_NAME`           | triton_ascend | 生成的 wheel 包名称，一般无需修改。                                                                                                                        |
   | `TRITON_APPEND_CMAKE_ARGS`    | None          | 追加透传给 CMake 的参数，多个参数用空格分隔。例如追加 `-DTRITON_BUILD_UT=OFF` 可关闭单元测试构建。                                                                             |
   | `TRITON_OFFLINE_BUILD`        | OFF           | 设为 `ON` 后禁止构建过程中访问网络下载依赖（会自动关闭需联网拉取 googletest 的单元测试构建），用于离线环境。                                                                              |
@@ -138,7 +139,7 @@ pip install -e .
 | 950 | 3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-ubuntu24.04-py3.11 | [Dockerfile](../../docker/3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-ubuntu24.04-py3.11/Dockerfile) | `docker pull quay.io/ascend/triton:3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-ubuntu24.04-py3.11` |
 | 950 | 3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-openeuler24.03-py3.11 | [Dockerfile](../../docker/3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-openeuler24.03-py3.11/Dockerfile) | `docker pull quay.io/ascend/triton:3.2.2-cann9.1.0-torch_npu2.7.1.post8-950-openeuler24.03-py3.11` |
 
-> 更多镜像请参考[OVERVIEW.md](../../docker/OVERVIEW.zh.md)。
+> 更多镜像请参考[OVERVIEW.md](https://github.com/triton-lang/triton-ascend/blob/main/docker/OVERVIEW.zh.md)。
 
 **镜像使用**
 
@@ -286,7 +287,7 @@ triton-ascend 3.2.1 requires triton==3.5.0, but you have triton 3.5.1 which is i
 
 **问题六：如何确认芯片类型？**
 
-可以使用npu-smi命令查看系统上的NPU型号。例如，在npu-smi info命令的输出中，“910B4”对应芯片类型A2（昇腾910b系列）：
+可以使用npu-smi命令查看系统上的NPU型号。例如，在npu-smi info命令的输出中，“910B4”对应芯片类型Atlas A2系列产品：
 
 ```text
 root@localhost:/# npu-smi  info

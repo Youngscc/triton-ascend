@@ -1,4 +1,6 @@
-# 昇腾与GPU的开发差异
+# 架构差异分析
+
+本⽂系统性梳理两⼤平台的核⼼架构、编程规则与优化⼿段差异，拆解昇腾NPU Triton专属开发特性与适配要点，帮助开发者快速建⽴昇腾NPU Triton开发思维，精准完成算⼦迁移、代码适配与性能调优⼯作，规避迁移常⻅问题。
 
 ## 多核任务并行策略
 
@@ -21,11 +23,11 @@ NPU的Vector核、Cube核属于多个物理核，不同代际硬件核数不同�
 triton_gelu[n, 1, 1](...)  # 第一个参数表示使用的核数，n表示使用n个核
 ```
 
-通过对核数的调优，可实现对所有计算资源的充分调度和利用，从而最大化并行度与吞吐量。未启用 `auto-blockify`（见下节）时，发射 grid 的核数需小于等于 65,535。
+通过对核数的调优，可实现对所有计算资源的充分调度和利用，从而最大化并行度与吞吐量。未启用 `auto-blockify`（见下节）时，启动grid的核数需小于等于 65,535。
 
 ### auto-blockify：突破 65,535 逻辑块上限
 
-社区 Triton 在 NVIDIA GPU 上把 grid 视为纯逻辑维度 —— `n` 个逻辑块按 1:1 映射到 `n` 个硬件块，运行时由硬件分发到各 SM，每个块不需要内部循环。昇腾上由于上节描述的物理核强绑定，可启动的 grid 上限被卡在 65,535，对含百万级逻辑工作项的 kernel（autotune 后的 reduce/scan、megablocks 风格的稀疏 kernel 等）过于严苛。
+社区 Triton 在 NVIDIA GPU 上把 grid 视为纯逻辑维度 —— `n` 个逻辑块按 1:1 映射到 `n` 个硬件块，运行时由硬件分发到各 SM，每个块不需要内部循环。昇腾上由于[多核任务并行策略](#多核任务并行策略)中描述的物理核强绑定，可启动的 grid 上限被限制在 65,535，对含百万级逻辑工作项的 kernel（autotune 后的 reduce/scan、megablocks 风格的稀疏 kernel 等）过于严苛。
 
 `auto-blockify`（`SIMTAutoBlockify` 编译期 pass + 配套的运行期 cap）通过"编译期视为逻辑、启动期折叠到物理核"消除该限制：
 
@@ -59,7 +61,7 @@ xblock_sub：核内切分粒度（核内细粒度划分）
 
 以GELU算子为例，通过调整切分参数，可以有效适配片上缓存容量限制，从而提升执行效率。
 
-注：Atlas 800T/I A2产品的片上内存容量为192KB，因此在设计切分策略时需考虑该限制，确保每轮计算的数据量不超过片上内存容量。
+注：Atlas 800T A2训练服务器、Atlas 800I A2推理服务器的片上内存容量为192KB，因此在设计切分策略时需考虑该限制，确保每轮计算的数据量不超过片上内存容量。
 
 #### GELU算子示例
 
@@ -102,10 +104,9 @@ def triton_easy_kernel(in_ptr0, out_ptr0, NUMEL: tl.constexpr):
     tl.store(out_ptr0 + idx_block, ret)
 
 # 调用triton_kernel核函数
-ncore = 32
 x0 = torch.rand(32768, device='npu')
 out1 = torch.empty_like(x0)
-triton_easy_kernel[ncore, 1, 1](x0, out1, x0.numel())
+triton_easy_kernel[1, 1, 1](x0, out1, x0.numel())
 ```
 
 注意事项
@@ -184,12 +185,12 @@ tl.load() 和 tl.store()
 
 | 选项      | 能力       | 是否开启 |
 | ----------------- | ------------ | ----------------- |
-| multibuffer                                   | 开启流水并行数据搬运  | 默认true； true , false。 autotune中可配置                     |
-| unit_flag                                     | cube搬出的一个优化项                                         | 默认None；true , false。  autotune中可配置                     |
-| limit_auto_multi_buffer_only_for_local_buffer | CV算子一个优化项，cube搬出的一个优化项                         | 默认None；true , false。 autotune中可配置 |
+| multibuffer                                   | 开启流水并行数据搬运  | 默认true；true , false。autotune中可配置                     |
+| unit_flag                                     | cube搬出的一个优化项                                         | 默认None；true , false。autotune中可配置                     |
+| limit_auto_multi_buffer_only_for_local_buffer | CV算子一个优化项，cube搬出的一个优化项                         | 默认None；true , false。autotune中可配置 |
 | limit_auto_multi_buffer_of_local_buffer       | cube算子开启double buffer具体的scope                         | 默认None；可取值 "no-limit" 或 "no-l0c"，autotune中可配置           |
 | set_workspace_multibuffer                     | 配置 workspace multi-buffer 档位，用于为 workspace 相关数据搬运启用多缓冲。 | 默认None；可取单个值，如 2 或 4；autotune中可配置候选值                            |
-| enable_hivm_auto_cv_balance                   | 启用或禁用自动 CV balance，用于在 CV 融合场景下平衡 Cube 与 Vector 执行。 | 默认None；true , false。 autotune中可配置 |
+| enable_hivm_auto_cv_balance                   | 启用或禁用自动 CV balance，用于在 CV 融合场景下平衡 Cube 与 Vector 执行。 | 默认None；true , false。autotune中可配置 |
 | tile_mix_vector_loop                          | CV算子的一个优化项，当前vector可以切几份                        | 默认None；可取单个值，如 2、4 或 8；autotune中可配置候选值                       |
 | tile_mix_cube_loop                            | CV算子一个优化项，当前cube可以切几份      | 默认None；可取单个值，如 2、4 或 8；autotune中可配置候选值                      |
 

@@ -12,7 +12,7 @@
 
 支持的操作系统：Linux（aarch64/x86_64）
 
-支持的Ascend产品：Atlas A2/A3/950系列
+支持的Ascend产品：Atlas A2系列产品、Atlas A3系列产品、Ascend 950PR&950DT系列产品
 
 最小硬件配置：单卡32GB内存（推荐）
 

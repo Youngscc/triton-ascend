@@ -297,7 +297,7 @@ The following environment variables affect the runtime behavior of `triton_launc
 
 ### Platform
 
-- Ascend NPU only (Atlas A2/A3 series). GPU is not supported.
+- Ascend NPU only (Atlas A2 products/Atlas A3 products). GPU is not supported.
 
 ### Return Value and Error Handling
 

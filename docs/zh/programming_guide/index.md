@@ -183,10 +183,12 @@ def pick_kernel(
 
 各指标含义说明：
 
-- **aiv_mte2_time(μs)**：AI Vector（AIV）核上 MTE2（Move Engine 2）搬运阶段耗时，单位为微秒（μs），反映数据从全局内存搬运到片上内存（UB）的时间开销。
+- **aiv_mte2_time(μs)**：AI Vector（AIV）核上 MTE2（Memory Transfer Engine 2）搬运阶段耗时，单位为微秒（μs），反映数据从全局内存搬运到片上内存（UB）的时间开销。
 - **aiv_mte2_ratio**：MTE2 搬运时间占算子总执行时间的比例，数值越大说明搬运耗时占比越高，可用于评估搬运与计算的重叠程度。
 
 通过分析表格中的数据可以发现，优化前后的aiv_mte2_time(μs)和aiv_mte2_ratio差距较大，优化方案通过先将大部分数据搬运到UB上，减少小批量数据通过L2搬运到UB的次数，减少了L2搬运到UB上的总时间。
+
+> 注意：优化后的 aiv_mte2_time 反而更高，这是因为优化方案一次性将大量数据搬运到 UB（增加 MTE2 耗时），但消除了原先通过 L2 逐条搬运 UB 的低效路径，整体性能更优。
 
 ### 存算并行
 
@@ -200,7 +202,7 @@ Triton-Ascend支持两种数据处理模式：存算串行和存算并行。
 
 ### Tiling优化
 
-AI Core进行计算的时候要先将数据搬运至片上内存，而片上内存的空间通常远小于AI Core要处理的总数据量，以Atlas 800T/I A2产品为例，片上内存容量为192KB，默认开启doublebuffer特性后容量还会减至原来的一半。因此算子计算时需要对数据进行分块操作，每次只加载处理其中的一小部分数据。
+AI Core进行计算的时候要先将数据搬运至片上内存，而片上内存的空间通常远小于AI Core要处理的总数据量，以Atlas 800T A2训练服务器、Atlas 800I A2推理服务器产品为例，片上内存容量为192KB，默认开启doublebuffer特性后容量还会减至原来的一半。因此算子计算时需要对数据进行分块操作，每次只加载处理其中的一小部分数据。
 
 - 示例
 
@@ -337,7 +339,7 @@ large or block number is more than what user expect due to multi-buffer feature 
 
 1. **触发阶段：** 该错误发生在核函数编译期——昇腾后端在将MLIR转换为二进制阶段失败，而非程序运行期；编译失败意味着核函数未生成可执行二进制。
 
-2. **直接原因：** 编译器估算单个tile所需UB为3072256 bit，而硬件可用UB上限为1572864 bit（A2系列，即192 KB），需求量超出上限1499392 bit（3072256 − 1572864 = 1499392），约为可用容量的1.95倍，因此判定ub overflow。
+2. **直接原因：** 编译器估算单个tile所需UB为3072256 bit，而硬件可用UB上限为1572864 bit（Atlas A2系列产品，即192 KB），需求量超出上限1499392 bit（3072256 − 1572864 = 1499392），约为可用容量的1.95倍，因此判定ub overflow。
 
 3. **根本原因：** ①块大小参数（如BLOCK_SIZE）过大，单个tile元素数过多；②编译器默认开启multi-buffer存算并行（编译器侧配置项为`multiBuffer=True`，用户在`triton.Config`或kernel launch中通过`multibuffer`参数控制，默认开启），为搬运与计算的流水重叠创建多份张量副本，部分算子需要额外local buffer，使UB占用成倍放大；③核函数内中间张量过多，累积占用超过上限。
 
@@ -349,7 +351,7 @@ large or block number is more than what user expect due to multi-buffer feature 
 | `[ConvertLinalgRToBinary] encounters error`、`Failed to run BishengHIR pipeline` | 昇腾后端在MLIR到二进制的转换阶段失败 |
 | `ub overflow` | UB（统一缓冲区）溢出：编译期估算的片上缓冲区需求量超过硬件容量上限 |
 | `requires 3072256 bits` | 本次编译中单个tile所需的UB位数：3072256 bit（约375 KB） |
-| `1572864 bits available` | 当前硬件可用UB上限：1572864 bit，即192 KB（A2系列） |
+| `1572864 bits available` | 当前硬件可用UB上限：1572864 bit，即192 KB（Atlas A2系列产品） |
 | `multi-buffer feature is enabled and some ops need extra local buffer` | 编译器提示：multi-buffer（存算并行多缓冲）已开启，部分算子需要额外local buffer副本，会放大UB占用 |
 
 #### 解决步骤
@@ -433,15 +435,15 @@ large or block number is more than what user expect due to multi-buffer feature 
 | 关注multi-buffer影响 | 编译器默认开启存算并行（`multiBuffer=True`），多缓冲使UB占用按buffer份数成倍增加；UB紧张时在Config中设置`multibuffer=False`（参见本文档「存算并行」章节） |
 | 长序列分批处理 | 当序列长度导致单tile估算占用接近或超过UB上限时，在核函数内用for循环按序列维度分块load/计算/store，避免单次整段搬运 |
 
-UB占用估算示例：65536个float32元素（4字节）、双缓冲（2份）时，仅该张量即需65536×4×2×8 = 4194304 bit，已超过A2系列可用的1572864 bit；按A2系列1572864 bit上限反推，单张量float16、双缓冲下的理论上限约49152个元素（1572864÷8÷2÷2 = 49152）。
+UB占用估算示例：65536个float32元素（4字节）、双缓冲（2份）时，仅该张量即需65536×4×2×8 = 4194304 bit，已超过Atlas A2系列产品可用的1572864 bit；按Atlas A2系列产品1572864 bit上限反推，单张量float16、双缓冲下的理论上限约49152个元素（1572864÷8÷2÷2 = 49152）。
 
-【注意】A2系列产品UB大小为192 KB（即1572864 bit）。各产品系列片上内存规格如下：
+【注意】Atlas A2系列产品UB大小为192KB（即1572864bit）。各产品系列片上内存规格如下：
 
 | 产品系列 | UB容量 | L1容量 |
 | --- | --- | --- |
-| A2系列 | 192 KB | 512 KB |
-| A3系列 | 192 KB | 512 KB |
-| A5系列 | 248 KB | 512 KB |
+| Atlas A2系列产品 | 192KB | 512KB |
+| Atlas A3系列产品 | 192KB | 512KB |
+| Ascend 950PR&950DT系列产品 | 248KB | 512KB |
 
 ## 通用单核数据运算
 
@@ -625,6 +627,9 @@ Triton 算子处理多维张量时，核心思想是将高维数据映射到硬�
 ```python
 @triton.jit
 def matmul_kernel(a_ptr, b_ptr, c_ptr, M, N, K,
+                  stride_am, stride_ak,
+                  stride_bk, stride_bn,
+                  stride_cm, stride_cn,
                   BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr):
     # 1. 任务划分：计算当前 Block 在 M 和 N 维度上的坐标
     pid_m = tl.program_id(0)

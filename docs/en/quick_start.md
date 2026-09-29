@@ -12,7 +12,7 @@ This document uses the online installation and running of the vector addition ex
 
 Supported operating systems: Linux (aarch64/x86_64)
 
-Supported Ascend products: Atlas A2/A3/950 series
+Supported Ascend products: Atlas A2 products/Atlas A3 products/Ascend 950PR&950DT products
 
 Minimum hardware configuration: 32 GB memory per card (recommended)
 
